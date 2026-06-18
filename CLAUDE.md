@@ -34,7 +34,14 @@ grep -RIn --exclude-dir=.venv --exclude-dir=.git \
      "pip install" .   # must return nothing
 ```
 
-There is no test suite or linter configured yet — the README lists "单元测试 / CI" as an open todo. Do not invent a `pytest` / `ruff` invocation; if you need to validate a change, run the CLI end-to-end on a synthetic image (the pattern used during development is `protect → verify`, asserting the payload round-trips).
+## Tests and CI
+
+- `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈26 cases, ~11s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a HuggingFace download; do not run them unless explicitly asked.
+- `.github/workflows/ci.yml` runs three steps: AGENTS.md 6.4 grep, `uv sync --frozen --group dev`, then the fast pytest tier. The grep step exists both in CI and as `tests/test_compliance.py` (belt and braces).
+- Two pytest files act as fail-loud regression locks for the non-obvious decisions documented elsewhere here:
+  - `tests/test_invisible_watermark_roundtrip.py::test_embed_survives_jpeg85_and_visible_watermark` pins `dwtDctSvd`. Reverting `config.WATERMARK_METHOD` to `dwtDct` reds it instantly.
+  - `tests/test_pipeline_order.py::test_protect_then_verify_round_trip` is end-to-end and breaks if anyone "fixes" the resize-before-embed ordering.
+- `tests/test_perturb_registry.py::test_importing_perturb_does_not_import_torch` guards the lazy-import contract for `SDEncoderPerturber`. Do not move `import torch` / `import diffusers` into `perturb.py` or any module loaded eagerly from `__init__.py` — the test will fail.
 
 ## Architecture: the three-layer pipeline
 

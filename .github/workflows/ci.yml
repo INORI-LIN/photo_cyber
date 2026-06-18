@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compliance grep (AGENTS.md 6.4)
+        run: |
+          set -e
+          # Match the literal "pip<space>install" anywhere except docs / lock /
+          # the test file that documents the rule itself. Any hit fails CI per
+          # AGENTS.md 6.4: "可在 CI 加一道检查：检索脚本与文档中是否出现
+          # `pip install`，命中即判失败".
+          if grep -RIn \
+                  --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
+                  --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
+                  --exclude=CLAUDE.md --exclude=test_compliance.py \
+                  "pip install" .; then
+            echo "::error::pip install reference found — AGENTS.md 6 forbids pip"
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.11
+
+      - name: Sync (frozen, dev group)
+        run: uv sync --frozen --group dev
+
+      - name: Run pytest (fast tier only)
+        run: uv run pytest -m 'not slow' -v

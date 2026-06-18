@@ -165,12 +165,12 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 - [x] 把 `opencv-python` 换成 `opencv-python-headless`（避免无头机器缺 `libGL.so.1`）
 - [x] **明水印「绑定主体」真实版**：`subject.py` 三级 fallback（haar → Sobel 显著性 → 几何中心），`watermark_visible.apply_subject` 接入；CLI 默认 `--visible-mode=subject`。
 - [x] **真 PhotoGuard `SDEncoderPerturber` 接入**：`photoguard.py` 用 PGD 攻击 SD VAE encoder；`[project.optional-dependencies].photoguard` 隔离重依赖；CLI 暴露 `--perturber sd` + `--perturber-eps/-steps/-step-size/-model`；端到端 protect→verify 在 SD 扰动 + JPEG q=85 之后隐水印仍能完整还原。
+- [x] **单元测试 + GitHub Actions CI**：`tests/` 7 文件 26 用例覆盖合规（AGENTS.md 6.4 grep）、注册表与 lazy-import 契约、隐水印往返（含 q=85 + 明水印后还原回归）、pipeline 顺序回归、subject 三级 fallback、可见水印三模式 smoke、CLI 退出码（0/1/2）。`.github/workflows/ci.yml` 跑 grep → `uv sync --frozen --group dev` → `pytest -m 'not slow'`。本地：`uv sync --group dev && uv run pytest -m 'not slow'`，全绿约 11s。slow 标记的 SD 攻击测试需 `uv sync --extra photoguard` 后手动跑。
 
 ## 待办 / 已知边界
 
 - [ ] **更强的主体检测**：`haar` 漏检侧脸 / 戴口罩 / 小脸，后续可换 `mediapipe` 或 ONNX 化的 RetinaFace；多人脸场景目前只取最大框，可改为多框分别贴。
 - [ ] **平台二次压缩鲁棒性**：当前 `dwtDctSvd` 在 q≥75 单次压缩可还原；社交平台多重压缩 + 裁切场景需要更高强度或重复嵌入策略，是 AGENTS.md 第四节自己点出的固有边界。
-- [ ] 单元测试 / CI（含 `grep "pip install"` 合规检查）。
 
 ---
 

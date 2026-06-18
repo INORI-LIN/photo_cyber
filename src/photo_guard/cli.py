@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # decoding failures vary by backend
             print(f"verify failed: {exc}", file=sys.stderr)
             return 2
-        if not payload or all(c == "\x00" for c in payload):
+        if _looks_like_no_payload(payload):
             print(
                 "no payload recovered; image may have been deeply repainted "
                 "or never carried a photo-guard watermark",
@@ -136,3 +136,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     return 2
+
+
+def _looks_like_no_payload(payload: str) -> bool:
+    """A recovered string counts as 'no payload' when it is:
+    - empty, or
+    - entirely NUL bytes (decoder returned zeros), or
+    - dominated by UTF-8 replacement chars / control chars (decoder returned
+      garbage that errors='replace' patched up).
+    """
+    if not payload:
+        return True
+    bad = sum(
+        1
+        for ch in payload
+        if ch == "\x00" or ch == "�" or (ord(ch) < 0x20 and ch not in "\t\n\r")
+    )
+    return bad >= max(1, len(payload) // 2)
