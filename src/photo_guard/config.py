@@ -18,6 +18,13 @@ DEFAULT_PAYLOAD = "photo-guard"
 DEFAULT_PERTURBER = "noop"  # AGENTS.md 三②: 预留接入位
 NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 
+# PhotoGuard SD-encoder attack (AGENTS.md 三② 真实实现).
+# Loaded lazily; only used when --perturber sd. ε in image-space [0,1].
+PHOTOGUARD_MODEL_ID = "stabilityai/sd-vae-ft-mse"
+PHOTOGUARD_EPSILON = 8.0 / 255.0
+PHOTOGUARD_STEP_SIZE = 2.0 / 255.0
+PHOTOGUARD_STEPS = 10
+
 # Layer ③ visible watermark
 # AGENTS.md 三③ wants "压在主体关键纹理上" — `subject` mode binds the
 # watermark to a detected face/saliency box, which is the most faithful

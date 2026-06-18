@@ -13,7 +13,7 @@
 |--------|------|----------|
 | ① 隐形水印（DWT-DCT-SVD） | 肉眼不可见、可提取，用于确权 | 两类威胁均覆盖 |
 | ② PhotoGuard 对抗扰动 | 误导扩散模型，使去水印 / 改图 / 换脸重绘崩坏 | AI 二次生成 |
-| ③ 明水印（tile / center） | 给人看，与主体纹理交织，擦除即毁图 | 直接盗图搬运 |
+| ③ 明水印（subject / tile / center） | 给人看，与主体纹理交织，擦除即毁图 | 直接盗图搬运 |
 
 执行顺序经过 AGENTS.md 第二节与第五节双约束推导后定为：
 
@@ -40,8 +40,10 @@ photo_cyber/
     ├── pipeline.py            # 顺序编排（① → ② → ③）
     ├── config.py              # 集中默认参数
     ├── watermark_invisible.py # ① 隐水印（imwatermark, dwtDctSvd）
-    ├── perturb.py             # ② Perturber 接口 + Noop / Noise
-    ├── watermark_visible.py   # ③ 明水印（tile / center 双模式）
+    ├── perturb.py             # ② Perturber 接口 + Noop / Noise / SDEncoder
+    ├── photoguard.py          # ② SD-VAE encoder PGD 攻击（懒加载）
+    ├── watermark_visible.py   # ③ 明水印（subject / tile / center 三模式）
+    ├── subject.py             # ③ 主体检测（haar → Sobel 显著性 → 中心）
     └── compress.py            # 长边 resize 至平台规格
 ```
 
@@ -55,14 +57,22 @@ photo_cyber/
 # 一次性环境准备
 uv python install 3.11
 uv python pin 3.11
-uv sync --frozen          # 按 uv.lock 精确还原依赖
+uv sync --frozen          # 按 uv.lock 精确还原核心依赖（不含 PhotoGuard）
 
-# 保护一张图（三层全跑）
+# 想用真 PhotoGuard SD-encoder 攻击时再加可选 extra（拉取 torch 系生态 + diffusers + accelerate，约几 GB）
+uv sync --extra photoguard
+
+# 保护一张图（三层全跑，默认占位扰动）
 uv run python -m photo_guard protect input.jpg -o out.jpg \
   --payload "owner:inori-lin#2026-06-18" \
   --perturber noise \
-  --visible-mode tile \
+  --visible-mode subject \
   --visible-text "© inori-lin"
+
+# 用真 PhotoGuard 扰动（首次会下载 sd-vae-ft-mse ≈335MB；CPU 也能跑，慢）
+uv run python -m photo_guard protect input.jpg -o out.jpg \
+  --payload "owner:inori-lin#sd" \
+  --perturber sd --perturber-steps 10 --perturber-eps 0.0314
 
 # 从可疑图中提取隐水印做确权
 uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
@@ -78,12 +88,16 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--payload` | `photo-guard` | 要嵌入的唯一 ID / 署名 |
-| `--perturber` | `noop` | `noop` 或 `noise`（占位） |
+| `--perturber` | `noop` | `noop` / `noise`（占位）/ `sd`（真 PhotoGuard SD-encoder PGD，需要 `--extra photoguard`） |
 | `--visible-mode` | `subject` | `subject` 主体绑定 / `tile` 全图平铺 / `center` 画面中心 |
 | `--visible-text` | `© photo-guard` | 明水印文字 |
 | `--visible-alpha` | `0.10` | 透明度，5%–15% 区间见 AGENTS.md 三③ |
 | `--long-edge` | `1080` | 长边像素 |
 | `--quality` | `85` | JPEG 质量 |
+| `--perturber-eps` | `8/255` | SD 攻击 L∞ 像素预算（仅 `--perturber sd` 生效） |
+| `--perturber-steps` | `10` | SD 攻击 PGD 迭代次数 |
+| `--perturber-step-size` | `2/255` | SD 攻击单步符号梯度幅度 |
+| `--perturber-model` | `stabilityai/sd-vae-ft-mse` | HuggingFace VAE 模型 ID |
 
 `verify`：
 
@@ -103,13 +117,17 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 - 选型理由：纯 `dwtDct` 在 JPEG q=85 直接全损；SVD 变体在 q=75 仍能 100% 还原，更符合 AGENTS.md 三①「抗压缩、抗缩放、强度调高」的要求。
 - 对外接口仅 `embed(bgr, payload)` / `extract(bgr, payload_bytes)` 两个函数，参数控制收敛在 `config.py`。
 
-### ② PhotoGuard 对抗扰动 — `perturb.py`
+### ② PhotoGuard 对抗扰动 — `perturb.py` + `photoguard.py`
 
 - 抽象基类 `Perturber.apply(bgr) -> bgr`，注册表 `_REGISTRY` 按名取实例。
-- 内置实现：
+- 三个实现：
   - `NoopPerturber`：默认，原样返回，对应 AGENTS.md 三② 原话「预留接入位」。
-  - `GaussianNoisePerturber(epsilon=2/255)`：ε-bounded 噪声，肉眼无感的占位实现，证明该层确实在 pipeline 上跑通。
-- 接真 PhotoGuard 时只需新增一个 `SDEncoderPerturber(Perturber)` 并注册到 `_REGISTRY`，pipeline 与 CLI 都不用改。
+  - `GaussianNoisePerturber(epsilon=2/255)`：ε-bounded 噪声，肉眼无感的占位实现。
+  - `SDEncoderPerturber`：**真 PhotoGuard 实现**——PGD 攻击 Stable Diffusion VAE encoder（`stabilityai/sd-vae-ft-mse`，仅 ~335MB），让 latent 漂移到零向量；任何 img2img / inpainting / 换脸都会以这个被污染的 latent 为起点而崩坏。
+- **懒加载**：`SDEncoderPerturber` 的 `apply()` 第一次被调用才会 import torch / diffusers / accelerate 并下载模型；普通用户只 `uv sync` 不会拖几 GB 重依赖。
+- **可选 extra**：依赖隔离在 `[project.optional-dependencies].photoguard`，文档第六节合规——所有依赖仍由 `pyproject.toml` + `uv.lock` 锁定，启用方式是 `uv sync --extra photoguard`，不出现 `pip`。
+- **CPU/GPU 自适应**：检测 `torch.cuda.is_available()`，CUDA 上 fp16，CPU 上 fp32（慢但可用，256×256 / 2 步 PGD 在常规 CPU 约 35s）。
+- **几何对齐**：自动把图像裁到 8 的倍数尺寸（VAE 卷积步长要求），对应 AGENTS.md 五节 1080 长边后会变成 1080×808 之类，肉眼几乎无差。
 
 ### ③ 明水印 — `watermark_visible.py`
 
@@ -146,10 +164,10 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 - [x] `uv sync --frozen` 复现验证通过
 - [x] 把 `opencv-python` 换成 `opencv-python-headless`（避免无头机器缺 `libGL.so.1`）
 - [x] **明水印「绑定主体」真实版**：`subject.py` 三级 fallback（haar → Sobel 显著性 → 几何中心），`watermark_visible.apply_subject` 接入；CLI 默认 `--visible-mode=subject`。
+- [x] **真 PhotoGuard `SDEncoderPerturber` 接入**：`photoguard.py` 用 PGD 攻击 SD VAE encoder；`[project.optional-dependencies].photoguard` 隔离重依赖；CLI 暴露 `--perturber sd` + `--perturber-eps/-steps/-step-size/-model`；端到端 protect→verify 在 SD 扰动 + JPEG q=85 之后隐水印仍能完整还原。
 
 ## 待办 / 已知边界
 
-- [ ] **真 PhotoGuard 接入**：当前 `perturb.py` 只有 noop / noise 占位。计划中的 `SDEncoderPerturber` 需要 `torch` + `diffusers`，按 AGENTS.md 第六节用 `uv add torch diffusers --index https://download.pytorch.org/whl/cpu` 引入；GPU 环境上才有合理速度。
 - [ ] **更强的主体检测**：`haar` 漏检侧脸 / 戴口罩 / 小脸，后续可换 `mediapipe` 或 ONNX 化的 RetinaFace；多人脸场景目前只取最大框，可改为多框分别贴。
 - [ ] **平台二次压缩鲁棒性**：当前 `dwtDctSvd` 在 q≥75 单次压缩可还原；社交平台多重压缩 + 裁切场景需要更高强度或重复嵌入策略，是 AGENTS.md 第四节自己点出的固有边界。
 - [ ] 单元测试 / CI（含 `grep "pip install"` 合规检查）。
@@ -160,4 +178,4 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 
 - [`AGENTS.md`](./AGENTS.md) — 方案、技术细节、环境管理规范（uv 强制）。
 - [invisible-watermark](https://github.com/ShieldMnt/invisible-watermark) — 隐水印实现来源。
-- [PhotoGuard (MIT)](https://gradientscience.org/photoguard/) — 对抗扰动方案，将作为 `perturb.py` 真实实现的接入目标。
+- [PhotoGuard (MIT)](https://gradientscience.org/photoguard/) — 对抗扰动方案，已通过 `photoguard.py` 中的 SD-VAE encoder PGD 攻击落地。

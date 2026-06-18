@@ -17,6 +17,13 @@ dependencies = [
 [project.scripts]
 photo-guard = "photo_guard:main"
 
+[project.optional-dependencies]
+photoguard = [
+    "accelerate>=1.14.0",
+    "diffusers>=0.38.0",
+    "safetensors>=0.8.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"

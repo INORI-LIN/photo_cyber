@@ -14,8 +14,9 @@ So the concrete order is:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -27,6 +28,7 @@ from . import compress, config, perturb, watermark_invisible, watermark_visible
 class ProtectOptions:
     payload: str = config.DEFAULT_PAYLOAD
     perturber: str = config.DEFAULT_PERTURBER
+    perturber_kwargs: dict[str, Any] = field(default_factory=dict)
     visible_mode: str = config.DEFAULT_VISIBLE_MODE
     visible_text: str = config.DEFAULT_VISIBLE_TEXT
     visible_alpha: float = config.DEFAULT_VISIBLE_ALPHA
@@ -57,8 +59,9 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     bgr = _pil_rgb_to_bgr(src)
     bgr = watermark_invisible.embed(bgr, opts.payload)
 
-    # ② adversarial perturbation — placeholder slot per AGENTS.md 三②.
-    perturber = perturb.get(opts.perturber)
+    # ② adversarial perturbation — PhotoGuard SD-encoder attack when
+    #    perturber=='sd', else noop / noise placeholders.
+    perturber = perturb.get(opts.perturber, **opts.perturber_kwargs)
     bgr = perturber.apply(bgr)
 
     rgb = _bgr_to_pil_rgb(bgr)

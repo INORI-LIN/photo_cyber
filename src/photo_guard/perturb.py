@@ -1,16 +1,22 @@
-"""Layer ② — adversarial perturbation (AGENTS.md 三②, 预留接入位).
+"""Layer ② — adversarial perturbation (AGENTS.md 三②).
 
-Defines the `Perturber` interface so a future PhotoGuard / SD-encoder attack
-can drop in without touching the pipeline. Two stub implementations are
-provided today:
+Three implementations:
 
-- NoopPerturber: identity, default — keeps the slot reserved as the doc says.
-- GaussianNoisePerturber: ε-bounded noise, lightweight placeholder showing
-  the layer is wired up end-to-end.
+- ``NoopPerturber``: identity. Pipeline-only smoke testing / "off" switch.
+- ``GaussianNoisePerturber``: ε-bounded Gaussian noise, deterministic seed.
+  Lightweight placeholder; mostly useful for testing the wiring.
+- ``SDEncoderPerturber``: real PhotoGuard-style PGD attack against a Stable
+  Diffusion VAE encoder. Loaded lazily — importing this module does **not**
+  import torch / diffusers; the heavy import only happens when you actually
+  call ``apply()`` on an SD perturber instance.
+
+The CLI selects an implementation by name via :func:`get`; per-implementation
+kwargs (``epsilon``, ``steps`` …) are forwarded through the same call.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
 
@@ -37,7 +43,9 @@ class GaussianNoisePerturber(Perturber):
 
     name = "noise"
 
-    def __init__(self, epsilon: float = config.NOISE_EPSILON, seed: int = 0) -> None:
+    def __init__(
+        self, *, epsilon: float = config.NOISE_EPSILON, seed: int = 0, **_: Any
+    ) -> None:
         self.epsilon = epsilon
         self._rng = np.random.default_rng(seed)
 
@@ -48,18 +56,61 @@ class GaussianNoisePerturber(Perturber):
         return np.clip(out, 0, 255).astype(np.uint8)
 
 
+class SDEncoderPerturber(Perturber):
+    """PhotoGuard encoder-attack: PGD against a SD VAE encoder.
+
+    Lazily imports torch / diffusers / safetensors via :mod:`.photoguard` so
+    the rest of the package stays usable without the optional extra.
+    """
+
+    name = "sd"
+
+    def __init__(
+        self,
+        *,
+        epsilon: float = config.PHOTOGUARD_EPSILON,
+        steps: int = config.PHOTOGUARD_STEPS,
+        step_size: float = config.PHOTOGUARD_STEP_SIZE,
+        model_id: str = config.PHOTOGUARD_MODEL_ID,
+        **_: Any,
+    ) -> None:
+        self.epsilon = epsilon
+        self.steps = steps
+        self.step_size = step_size
+        self.model_id = model_id
+        self._attack = None  # lazy
+
+    def _ensure(self):
+        if self._attack is None:
+            from . import photoguard  # local import; pulls torch/diffusers
+
+            self._attack = photoguard.build_attack(
+                photoguard.PGDConfig(
+                    epsilon=self.epsilon,
+                    step_size=self.step_size,
+                    steps=self.steps,
+                    model_id=self.model_id,
+                )
+            )
+
+    def apply(self, image_bgr: np.ndarray) -> np.ndarray:
+        self._ensure()
+        return self._attack.attack(image_bgr)
+
+
 _REGISTRY: dict[str, type[Perturber]] = {
     NoopPerturber.name: NoopPerturber,
     GaussianNoisePerturber.name: GaussianNoisePerturber,
+    SDEncoderPerturber.name: SDEncoderPerturber,
 }
 
 
-def get(name: str) -> Perturber:
+def get(name: str, **kwargs: Any) -> Perturber:
     if name not in _REGISTRY:
         raise ValueError(
             f"unknown perturber {name!r}; available: {sorted(_REGISTRY)}"
         )
-    return _REGISTRY[name]()
+    return _REGISTRY[name](**kwargs)
 
 
 def available() -> list[str]:
