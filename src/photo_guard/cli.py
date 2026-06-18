@@ -30,7 +30,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--visible-mode",
         default=config.DEFAULT_VISIBLE_MODE,
-        choices=["tile", "center"],
+        choices=["subject", "tile", "center"],
     )
     p.add_argument("--visible-text", default=config.DEFAULT_VISIBLE_TEXT)
     p.add_argument(

@@ -1,20 +1,24 @@
 """Layer ③ — visible watermark (AGENTS.md 三③).
 
-Two modes:
+Three modes:
+- subject: detect the dominant subject (face → saliency → center) and stamp
+  the watermark *across* it so erasing the watermark = repainting the subject
+  = destroying the photo. This is the most faithful realisation of the doc's
+  「半透明压在脸部 / 主体关键纹理上」 requirement.
 - tile: low-alpha rotated text grid across the whole image (5%–15% per doc).
-- center: half-transparent text bound to the central 60% region — a
-  no-face-detection stand-in for "压在主体关键纹理上".
+- center: half-transparent text fixed to the geometric centre.
 
 Compositing uses Image.alpha_composite, which is closest to the doc's
-overlay/multiply intent without pulling in OpenCV just for this step.
+overlay/multiply intent without leaving Pillow.
 """
 from __future__ import annotations
 
 import math
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from . import config
+from . import config, subject as subject_mod
 
 
 def _load_font(size: int) -> ImageFont.ImageFont:
@@ -119,4 +123,65 @@ def apply(
         return apply_tile(image_rgb, text, alpha=alpha)
     if mode == "center":
         return apply_center(image_rgb, text, alpha=max(alpha, 0.25))
-    raise ValueError(f"unknown visible-mode {mode!r}; expected tile|center")
+    if mode == "subject":
+        return apply_subject(image_rgb, text, alpha=max(alpha, 0.30))
+    raise ValueError(
+        f"unknown visible-mode {mode!r}; expected subject|tile|center"
+    )
+
+
+def apply_subject(
+    image_rgb: Image.Image,
+    text: str,
+    *,
+    alpha: float = 0.35,
+    padding_frac: float = 0.05,
+) -> Image.Image:
+    """Stamp the watermark across the detected subject region.
+
+    Uses `subject.detect_subject` (face → saliency → center fallback) so the
+    output binds the watermark to high-importance pixels: erasing it forces
+    a full subject repaint, which is the deterrent AGENTS.md 三③ describes.
+    """
+    base = image_rgb.convert("RGBA")
+    w, h = base.size
+
+    bgr = np.array(image_rgb.convert("RGB"))[:, :, ::-1].copy()
+    box = subject_mod.detect_subject(bgr)
+
+    pad_x = int(box.w * padding_frac)
+    pad_y = int(box.h * padding_frac)
+    region_w = max(64, box.w - 2 * pad_x)
+    region_h = max(40, box.h - 2 * pad_y)
+
+    target_w = int(region_w * 0.95)
+    size = max(24, target_w // max(len(text), 1))
+    # cap so a tiny face on a large image doesn't get a 200px font
+    size = min(size, max(28, h // 6))
+    font = _load_font(size)
+
+    bbox = font.getbbox(text)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+    cx, cy = box.center()
+    pos_x = max(0, min(w - tw, cx - tw // 2))
+    pos_y = max(0, min(h - th, cy - th // 2))
+
+    shadow = _text_layer(base.size)
+    ImageDraw.Draw(shadow).text(
+        (pos_x + 2, pos_y + 2),
+        text,
+        font=font,
+        fill=(0, 0, 0, _alpha(alpha * 0.6)),
+    )
+    overlay = _text_layer(base.size)
+    ImageDraw.Draw(overlay).text(
+        (pos_x, pos_y),
+        text,
+        font=font,
+        fill=(255, 255, 255, _alpha(alpha)),
+    )
+
+    composed = Image.alpha_composite(base, shadow)
+    composed = Image.alpha_composite(composed, overlay)
+    return composed.convert("RGB")

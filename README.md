@@ -79,7 +79,7 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 |------|------|------|
 | `--payload` | `photo-guard` | 要嵌入的唯一 ID / 署名 |
 | `--perturber` | `noop` | `noop` 或 `noise`（占位） |
-| `--visible-mode` | `tile` | `tile` 全图平铺 / `center` 中心区域 |
+| `--visible-mode` | `subject` | `subject` 主体绑定 / `tile` 全图平铺 / `center` 画面中心 |
 | `--visible-text` | `© photo-guard` | 明水印文字 |
 | `--visible-alpha` | `0.10` | 透明度，5%–15% 区间见 AGENTS.md 三③ |
 | `--long-edge` | `1080` | 长边像素 |
@@ -113,11 +113,20 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 
 ### ③ 明水印 — `watermark_visible.py`
 
-- 后端：纯 `Pillow`（不引入 OpenCV 仅为这一步加复杂度）。
-- 两种模式：
+- 后端：纯 `Pillow` + `subject.py`（用 cv2 自带 haar cascade，无新依赖）。
+- 三种模式：
+  - `subject`（默认）：`subject.detect_subject` 三级检测——haar 人脸 → Sobel 显著性矩形 → 几何中心兜底——再把半透明水印压在主体框上。这是 AGENTS.md 三③「绑定主体」原话最贴近的实现：擦水印=重绘主体=毁图。
   - `tile`：低透明度文字网格，按 `gap` 间距 + 30° 旋转铺满全图，与主体纹理交织；
-  - `center`：半透明文字压在画面中心 60% 区域，是「绑定主体」的简化版（不做人脸检测）。
+  - `center`：半透明文字压在画面几何中心。
 - 合成：`Image.alpha_composite`，语义接近 AGENTS.md 三③ 提到的 overlay。
+
+### 主体检测 — `subject.py`
+
+- 完全用 `opencv-python-headless` 已自带的资源，零新依赖。
+- 三级 fallback 永远返回一个合理的 `(x, y, w, h)` 框：
+  1. **haar frontal-face**（`haarcascade_frontalface_default.xml`，cv2.data 自带 XML）；
+  2. **Sobel 显著性**：用积分图 + 滑窗在 O(W·H) 时间内找梯度能量最高的 30% × 30% 矩形；
+  3. **几何中心**：上面两步都退化时，落到画面中心 60% 区域。
 
 ### 预压缩 — `compress.py`
 
@@ -136,11 +145,12 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 - [x] AGENTS.md 6.4 节合规检查：`requirements.txt` 不存在；除 AGENTS.md 自身外仓库内 `pip install` 命中数 0
 - [x] `uv sync --frozen` 复现验证通过
 - [x] 把 `opencv-python` 换成 `opencv-python-headless`（避免无头机器缺 `libGL.so.1`）
+- [x] **明水印「绑定主体」真实版**：`subject.py` 三级 fallback（haar → Sobel 显著性 → 几何中心），`watermark_visible.apply_subject` 接入；CLI 默认 `--visible-mode=subject`。
 
 ## 待办 / 已知边界
 
 - [ ] **真 PhotoGuard 接入**：当前 `perturb.py` 只有 noop / noise 占位。计划中的 `SDEncoderPerturber` 需要 `torch` + `diffusers`，按 AGENTS.md 第六节用 `uv add torch diffusers --index https://download.pytorch.org/whl/cpu` 引入；GPU 环境上才有合理速度。
-- [ ] **明水印「绑定主体」的真实版**：现 `center` 模式按图像几何中心粗略放置；接入人脸 / 显著性检测后才是 AGENTS.md 三③ 描述的「压在脸部 / 主体关键纹理上」。
+- [ ] **更强的主体检测**：`haar` 漏检侧脸 / 戴口罩 / 小脸，后续可换 `mediapipe` 或 ONNX 化的 RetinaFace；多人脸场景目前只取最大框，可改为多框分别贴。
 - [ ] **平台二次压缩鲁棒性**：当前 `dwtDctSvd` 在 q≥75 单次压缩可还原；社交平台多重压缩 + 裁切场景需要更高强度或重复嵌入策略，是 AGENTS.md 第四节自己点出的固有边界。
 - [ ] 单元测试 / CI（含 `grep "pip install"` 合规检查）。
 

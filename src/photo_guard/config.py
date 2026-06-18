@@ -19,7 +19,10 @@ DEFAULT_PERTURBER = "noop"  # AGENTS.md 三②: 预留接入位
 NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 
 # Layer ③ visible watermark
-DEFAULT_VISIBLE_MODE = "tile"
+# AGENTS.md 三③ wants "压在主体关键纹理上" — `subject` mode binds the
+# watermark to a detected face/saliency box, which is the most faithful
+# realisation. `tile` and `center` are kept as fallbacks / stylistic choices.
+DEFAULT_VISIBLE_MODE = "subject"
 DEFAULT_VISIBLE_TEXT = "© photo-guard"
 DEFAULT_VISIBLE_ALPHA = 0.10  # AGENTS.md 三③: 5%–15% 平铺
 DEFAULT_VISIBLE_FONT_SIZE = 36
