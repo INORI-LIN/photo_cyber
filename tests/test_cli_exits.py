@@ -56,3 +56,50 @@ def test_verify_missing_file_exits_two(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "verify failed" in err
+
+
+def test_protect_with_layers_subset_succeeds(tmp_path: Path, capsys) -> None:
+    """--layers picks a subset; output names what ran."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--layers",
+            "invisible,visible",
+            "--payload",
+            "subset",
+            "--visible-mode",
+            "tile",
+        ]
+    )
+    assert code == 0
+    line = capsys.readouterr().out
+    assert "layers=invisible+visible" in line
+    assert "perturber=None" in line
+
+
+def test_protect_with_unknown_layer_exits_two(tmp_path: Path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--layers",
+            "invisible,bogus",
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "unknown name" in err
+

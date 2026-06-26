@@ -11,6 +11,14 @@ shape (四 节: 「自己先按平台规格压一遍再处理」).
 
 So the concrete order is:
     load → fit_long_edge → ① embed → ② perturb → ③ visible → save JPEG
+
+Layer selection
+---------------
+``ProtectOptions.layers`` lets the caller pick any non-empty subset of
+``{"invisible", "perturb", "visible"}``. The order in which selected
+layers run is **always** the canonical one above; the set only decides
+which layers are present, never the sequence. This matches AGENTS.md
+§二: 处理顺序固定，但用户可以主动放弃某一层（代价是降低整体防护）。
 """
 from __future__ import annotations
 
@@ -24,6 +32,14 @@ from PIL import Image
 from . import compress, config, perturb, watermark_invisible, watermark_visible
 
 
+LAYER_INVISIBLE = "invisible"
+LAYER_PERTURB = "perturb"
+LAYER_VISIBLE = "visible"
+ALL_LAYERS: frozenset[str] = frozenset(
+    {LAYER_INVISIBLE, LAYER_PERTURB, LAYER_VISIBLE}
+)
+
+
 @dataclass
 class ProtectOptions:
     payload: str = config.DEFAULT_PAYLOAD
@@ -34,6 +50,10 @@ class ProtectOptions:
     visible_alpha: float = config.DEFAULT_VISIBLE_ALPHA
     long_edge: int = config.DEFAULT_LONG_EDGE
     quality: int = config.DEFAULT_JPEG_QUALITY
+    # Which layers to apply. Order of execution is fixed (see module
+    # docstring); membership only controls presence. Default = all three,
+    # i.e. AGENTS.md baseline behaviour.
+    layers: frozenset[str] = ALL_LAYERS
 
 
 def _pil_rgb_to_bgr(image: Image.Image) -> np.ndarray:
@@ -46,7 +66,19 @@ def _bgr_to_pil_rgb(arr: np.ndarray) -> Image.Image:
 
 
 def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
-    """Run all three layers in the mandated order and write `output_path`."""
+    """Run the selected layers in the mandated order and write `output_path`."""
+    unknown = set(opts.layers) - ALL_LAYERS
+    if unknown:
+        raise ValueError(
+            f"unknown layer(s) {sorted(unknown)!r}; "
+            f"expected subset of {sorted(ALL_LAYERS)!r}"
+        )
+    if not opts.layers:
+        raise ValueError(
+            "at least one layer must be enabled "
+            f"(any non-empty subset of {sorted(ALL_LAYERS)!r})"
+        )
+
     src = Image.open(input_path)
     src.load()
     src = src.convert("RGB")
@@ -55,24 +87,32 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     #    is sensitive to resampling, so this must happen before embedding.
     src = compress.fit_long_edge(src, opts.long_edge)
 
-    # ① invisible watermark — embed into the cleanest available pixels.
     bgr = _pil_rgb_to_bgr(src)
-    bgr = watermark_invisible.embed(bgr, opts.payload)
+
+    # ① invisible watermark — embed into the cleanest available pixels.
+    if LAYER_INVISIBLE in opts.layers:
+        bgr = watermark_invisible.embed(bgr, opts.payload)
 
     # ② adversarial perturbation — PhotoGuard SD-encoder attack when
     #    perturber=='sd', else noop / noise placeholders.
-    perturber = perturb.get(opts.perturber, **opts.perturber_kwargs)
-    bgr = perturber.apply(bgr)
+    perturber_name: str | None = None
+    if LAYER_PERTURB in opts.layers:
+        perturber = perturb.get(opts.perturber, **opts.perturber_kwargs)
+        bgr = perturber.apply(bgr)
+        perturber_name = perturber.name
 
     rgb = _bgr_to_pil_rgb(bgr)
 
     # ③ visible watermark — last, on top of the protected pixels.
-    final = watermark_visible.apply(
-        rgb,
-        opts.visible_text,
-        mode=opts.visible_mode,
-        alpha=opts.visible_alpha,
-    )
+    if LAYER_VISIBLE in opts.layers:
+        final = watermark_visible.apply(
+            rgb,
+            opts.visible_text,
+            mode=opts.visible_mode,
+            alpha=opts.visible_alpha,
+        )
+    else:
+        final = rgb
 
     # Save as JPEG at the chosen quality — this is the post-platform shape.
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,8 +121,13 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     return {
         "output": str(output_path),
         "size": final.size,
-        "perturber": perturber.name,
-        "payload_bytes": len(opts.payload.encode("utf-8")),
+        "perturber": perturber_name,
+        "payload_bytes": (
+            len(opts.payload.encode("utf-8"))
+            if LAYER_INVISIBLE in opts.layers
+            else 0
+        ),
+        "layers": sorted(opts.layers),
     }
 
 

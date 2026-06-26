@@ -23,6 +23,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", type=Path, required=True)
     p.add_argument("--payload", default=config.DEFAULT_PAYLOAD)
     p.add_argument(
+        "--layers",
+        default=",".join(sorted(pipeline.ALL_LAYERS)),
+        help=(
+            "Comma-separated subset of {invisible,perturb,visible} to apply. "
+            "Order of execution is FIXED (invisible → perturb → visible) per "
+            "AGENTS.md §二 — this flag only controls which layers are present, "
+            "never the sequence. Default: all three. "
+            "Disabling any layer weakens overall protection."
+        ),
+    )
+    p.add_argument(
         "--perturber",
         default=config.DEFAULT_PERTURBER,
         choices=perturb.available(),
@@ -107,6 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     if args.cmd == "protect":
+        try:
+            layers = _parse_layers(args.layers)
+        except ValueError as exc:
+            print(f"protect failed: {exc}", file=sys.stderr)
+            return 2
+
         perturber_kwargs: dict[str, object] = {}
         if args.perturber == "sd":
             perturber_kwargs.update(
@@ -127,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             visible_alpha=args.visible_alpha,
             long_edge=args.long_edge,
             quality=args.quality,
+            layers=layers,
         )
         try:
             info = pipeline.protect(args.input, args.output, opts)
@@ -136,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"protected: {info['output']}  "
             f"size={info['size'][0]}x{info['size'][1]}  "
+            f"layers={'+'.join(info['layers'])}  "
             f"perturber={info['perturber']}  "
             f"payload_bytes={info['payload_bytes']}"
         )
@@ -189,3 +208,24 @@ def _looks_like_no_payload(payload: str) -> bool:
         if ch == "\x00" or ch == "�" or (ord(ch) < 0x20 and ch not in "\t\n\r")
     )
     return bad >= max(1, len(payload) // 2)
+
+
+def _parse_layers(spec: str) -> frozenset[str]:
+    """Parse `--layers` into a validated frozenset.
+
+    Accepts comma-separated subset of {invisible, perturb, visible},
+    whitespace-tolerant. Raises ValueError on unknown names or empty set
+    so the caller can map it to a clean exit code.
+    """
+    parts = [p.strip() for p in spec.split(",") if p.strip()]
+    if not parts:
+        raise ValueError(
+            f"--layers must name at least one of {sorted(pipeline.ALL_LAYERS)!r}"
+        )
+    unknown = [p for p in parts if p not in pipeline.ALL_LAYERS]
+    if unknown:
+        raise ValueError(
+            f"--layers got unknown name(s) {unknown!r}; "
+            f"expected subset of {sorted(pipeline.ALL_LAYERS)!r}"
+        )
+    return frozenset(parts)

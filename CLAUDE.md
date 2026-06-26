@@ -78,6 +78,8 @@ The whole package implements the AGENTS.md three-layer scheme. `pipeline.protect
 load → fit_long_edge(1080) → ① embed (DWT-DCT-SVD) → ② perturb → ③ visible WM → save JPEG
 ```
 
+`ProtectOptions.layers` (a `frozenset[str]` from `pipeline.ALL_LAYERS`) lets callers pick **which** of the three layers run. The order in the diagram above is fixed; the set only controls membership. Empty / unknown sets raise `ValueError` so the CLI can map them to exit code 2. The CLI exposes this as `--layers invisible,perturb,visible` (default = all three, comma-separated subset). When extending the pipeline, add new layers in canonical-order position with their own membership check — never make the set decide ordering.
+
 Two non-obvious things future instances must know:
 
 - **Resize happens BEFORE invisible-watermark embedding.** AGENTS.md §2 says "隐 → 扰 → 明" but §5 step 1 says resize first. They appear to conflict; the resolution (proven empirically and recorded in `pipeline.py`'s docstring) is that DWT-DCT is sensitive to geometric resampling, so embedding must happen on the post-resize pixels. Don't "fix" the order back to literal §2.

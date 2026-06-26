@@ -101,6 +101,32 @@ docker run --rm -v "$PWD:/work" photo-guard:dev \
 
 ---
 
+## 按需开关三层防护（`--layers`）
+
+默认三层全开（`invisible,perturb,visible`）。如果你只想要一部分，用 `--layers` 列出想保留的层（逗号分隔，任意非空子集都可以）：
+
+```bash
+# 只要隐水印 + 明水印（跳过 AI 干扰）
+docker run --rm -v "$PWD:/work" photo-guard:dev \
+    protect /work/in.jpg -o /work/out.jpg \
+    --layers invisible,visible
+
+# 只要隐水印（用于纯确权场景）
+... --layers invisible
+
+# 只要 PhotoGuard 干扰（不嵌水印、不打明水印）
+... --layers perturb --perturber sd
+
+# 隐水印 + AI 干扰，不打明水印（适合不希望主体上有可见文字的场景）
+... --layers invisible,perturb --perturber sd
+```
+
+> **执行顺序锁死**：无论你选哪几层，运行顺序永远是 `① invisible → ② perturb → ③ visible`（AGENTS.md §二，不可调）。`--layers` 只决定哪些层**出现**，不决定**先后**。
+>
+> **降级警告**：关掉任意一层都会削弱整体防护——隐水印挡确权、AI 干扰挡换脸/重绘、明水印挡随手搬运，三者本来是互补的。
+
+---
+
 ## 5 分钟上手（从零到出第一张保护图）
 
 > 不想用 Docker 才看这一节。Docker 路径见上。
@@ -261,6 +287,7 @@ photo_cyber/
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--payload` | `photo-guard` | 要嵌入的唯一 ID / 署名 |
+| `--layers` | `invisible,perturb,visible` | 逗号分隔的子集；任意非空组合都行（如 `invisible,visible` 跳过 AI 干扰）。**执行顺序固定**为 invisible → perturb → visible（AGENTS.md §二），本参数只控开关 |
 | `--perturber` | `noop` | `noop` / `noise`（占位）/ `sd`（真 PhotoGuard SD-encoder PGD，需要 `--extra photoguard`） |
 | `--visible-mode` | `subject` | `subject` 主体绑定 / `tile` 全图平铺 / `center` 画面中心 |
 | `--visible-text` | `© photo-guard` | 明水印文字 |
