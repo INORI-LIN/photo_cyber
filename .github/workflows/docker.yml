@@ -15,6 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # GitHub-hosted runners come with ~14GB free; our image exports torch
+      # + nvidia-cudnn/cublas + SD VAE which together unpack to ~6GB and
+      # that's before buildx's own cache. Free up the language toolchains
+      # we don't use (dotnet, android, ghc, hosted tool cache, swap) — gives
+      # ~30GB headroom and is the canonical fix for "no space left on device"
+      # in container builds on ubuntu-latest.
+      - name: Free up disk space on the runner
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
