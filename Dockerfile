@@ -31,14 +31,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Minimal native deps for the wheels we use.
 # - libgomp1: OpenMP runtime, linked by numpy/torch wheels.
-# - libglib2.0-0 + libxcb1: opencv-python-headless still soft-links against
-#   these two on debian:trixie. They're tiny (~1 MB combined) and cv2 fails
-#   to import without them ("ImportError: libxcb.so.1"). Despite the name,
-#   `headless` only drops the GUI/Qt deps — basic X protocol libs remain.
+# - libgl1 + libglib2.0-0 + libxcb1: opencv-python-headless 4.13.x still
+#   soft-links against these on debian:trixie. They're tiny (~12 MB combined).
+#   Despite the name, "headless" only drops the Qt/GTK GUI deps — the core
+#   GL stub and basic X protocol libs remain. Without them cv2 fails at
+#   `import cv2` time with "libGL.so.1 / libxcb.so.1: cannot open shared
+#   object file".
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         libgomp1 \
+        libgl1 \
         libglib2.0-0 \
         libxcb1 \
  && rm -rf /var/lib/apt/lists/*
@@ -59,6 +62,12 @@ RUN uv sync --frozen --extra photoguard --no-dev --no-install-project
 COPY src /app/src
 
 RUN uv sync --frozen --extra photoguard --no-dev
+
+# Sanity check: import every native-extension dep we rely on. If a future
+# cv2 / torch wheel adds a new shared-library dependency, this fails right
+# here with a clear message instead of poisoning the much slower
+# download-models step a few layers later.
+RUN uv run --no-sync python -c "import cv2, numpy, PIL, torch, diffusers, imwatermark"
 
 # Bake the SD VAE into the image. This is the only build step that
 # reaches the network; the result is a fully self-contained model dir at
