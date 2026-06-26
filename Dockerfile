@@ -29,12 +29,18 @@ FROM python:3.11-slim AS runtime
 # this is the recommended Astral pattern.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Minimal native deps for opencv-python-headless / Pillow / torch wheels.
-# `libgomp1` is what numpy/torch wheels link against.
+# Minimal native deps for the wheels we use.
+# - libgomp1: OpenMP runtime, linked by numpy/torch wheels.
+# - libglib2.0-0 + libxcb1: opencv-python-headless still soft-links against
+#   these two on debian:trixie. They're tiny (~1 MB combined) and cv2 fails
+#   to import without them ("ImportError: libxcb.so.1"). Despite the name,
+#   `headless` only drops the GUI/Qt deps — basic X protocol libs remain.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         libgomp1 \
+        libglib2.0-0 \
+        libxcb1 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
