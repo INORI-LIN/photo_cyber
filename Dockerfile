@@ -39,13 +39,20 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Two-stage COPY so changes to src/ don't bust the (huge) torch+diffusers
-# layer. Lock + manifest first → uv sync → then source.
+# Two-stage sync so changes to src/ don't bust the (huge) torch+diffusers
+# layer:
+#   1. COPY only the manifest/lock → `uv sync --no-install-project` installs
+#      *only* the dependency tree. The project itself isn't built yet, so
+#      src/ doesn't need to exist.
+#   2. COPY src → second `uv sync` adds the project (editable) on top. This
+#      layer is small and rebuilds on every code change.
 COPY pyproject.toml uv.lock .python-version README.md /app/
 
-RUN uv sync --frozen --extra photoguard --no-dev
+RUN uv sync --frozen --extra photoguard --no-dev --no-install-project
 
 COPY src /app/src
+
+RUN uv sync --frozen --extra photoguard --no-dev
 
 # Bake the SD VAE into the image. This is the only build step that
 # reaches the network; the result is a fully self-contained model dir at
