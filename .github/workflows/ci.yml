@@ -7,11 +7,21 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      # Don't kill the whole matrix if one OS fails — we want to see both
+      # results to know whether a regression is OS-specific.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Compliance grep (AGENTS.md 6.4)
+        # Linux-only because the AGENTS.md §6.4-style grep is shell-specific.
+        # tests/test_compliance.py reproduces the same check in pure Python
+        # and runs on every OS via pytest, so coverage is preserved on Windows.
+        if: runner.os == 'Linux'
         run: |
           set -e
           # Match the literal "pip<space>install" anywhere except docs / lock /

@@ -4,36 +4,49 @@ own grep (it is the watchdog — the rule references the string by name).
 """
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).name
 
+_FORBIDDEN = "pip" + " install"  # split so the literal isn't in this file's body
+_EXCLUDE_DIRS = {".venv", ".git", ".github", "__pycache__", ".pytest_cache"}
+_EXCLUDE_FILES = {"uv.lock", "AGENTS.md", "README.md", "CLAUDE.md", SELF}
+
+
+def _scan_repo_for_forbidden() -> list[tuple[Path, int, str]]:
+    """Pure-Python equivalent of the grep CI step.
+
+    Cross-platform (the shell-based grep step in ci.yml is Linux-only;
+    this test runs on every OS via pytest). Walks the repo, skips binary
+    files via UnicodeDecodeError, and reports every line that contains
+    the forbidden literal.
+    """
+    hits: list[tuple[Path, int, str]] = []
+    for path in REPO_ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in _EXCLUDE_DIRS for part in path.relative_to(REPO_ROOT).parts):
+            continue
+        if path.name in _EXCLUDE_FILES:
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                for lineno, line in enumerate(fh, start=1):
+                    if _FORBIDDEN in line:
+                        hits.append((path, lineno, line.rstrip()))
+        except (UnicodeDecodeError, OSError):
+            # Binary or unreadable — not a source/script file we care about.
+            continue
+    return hits
+
 
 def test_no_forbidden_install_in_code_or_scripts() -> None:
-    proc = subprocess.run(
-        [
-            "grep",
-            "-RIn",
-            "--exclude-dir=.venv",
-            "--exclude-dir=.git",
-            "--exclude-dir=.github",
-            "--exclude=uv.lock",
-            "--exclude=AGENTS.md",
-            "--exclude=README.md",
-            "--exclude=CLAUDE.md",
-            f"--exclude={SELF}",
-            "pip" + " install",  # split so the literal isn't in this file's body
-            str(REPO_ROOT),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    # grep returns 1 when no matches found — that's the success case.
-    assert proc.returncode == 1, (
+    hits = _scan_repo_for_forbidden()
+    assert not hits, (
         "forbidden install reference found in code/scripts "
-        "(AGENTS.md 6.4 forbids):\n" + proc.stdout
+        "(AGENTS.md 6.4 forbids):\n"
+        + "\n".join(f"{p}:{ln}: {text}" for p, ln, text in hits)
     )
 
 

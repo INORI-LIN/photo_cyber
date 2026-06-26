@@ -66,6 +66,38 @@
 
 > **说明**：模型默认从 HuggingFace（`stabilityai/sd-vae-ft-mse`）下载到 `~/.cache/huggingface/`。如果机器不能直连国外，可以提前自己设好镜像或代理。
 
+### Windows 系统支持
+
+代码本身没有 POSIX-only 假设，**两条路径都能跑**：
+
+| 路径 | 状态 | 说明 |
+|------|------|------|
+| 原生 uv | ✅ CI 已覆盖 `windows-latest`（fast tier） | torch 2.12.1 在 Windows 走单一 wheel，自带 CUDA runtime；不会触发 Linux 的"装一堆独立 nvidia 包"问题 |
+| Docker Desktop + WSL2 | ✅ 与 Linux 镜像完全一致 | PowerShell 里挂载工作目录用 `${PWD}` 而不是 `$PWD` |
+
+PowerShell 用法示例（核心模式）：
+
+```powershell
+# 装 uv（一次性）
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 跑（注意 ${PWD} 而不是 $PWD）
+git clone https://github.com/INORI-LIN/photo_cyber.git
+cd photo_cyber
+uv sync --frozen
+uv run python -m photo_guard protect C:\path\to\me.jpg `
+    -o C:\path\to\me_protected.jpg `
+    --visible-text "© me"
+
+# 或者走 Docker Desktop（要求开 WSL2 backend）
+docker run --rm -v "${PWD}:/work" photo-guard:dev `
+    protect /work/me.jpg -o /work/me_protected.jpg
+```
+
+GPU 支持需要 Windows + NVIDIA 驱动，`torch.cuda.is_available()` 会自动选 CUDA 路径，无需额外配置。
+
+> 说一句实话：Windows fast-tier CI 已绿（`uv sync` + `pytest -m 'not slow'`），但**完整模式（`--perturber sd` 真 PhotoGuard 攻击）** 在 Windows 上没专门测过。理论上能跑——torch wheel 在；如果你是第一个在 Windows 上跑完整模式的用户，欢迎提 issue。
+
 ---
 
 ## 最快路径：Docker 一键跑（推荐零配置首次使用）

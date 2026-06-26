@@ -22,11 +22,29 @@ from . import config, subject as subject_mod
 
 
 def _load_font(size: int) -> ImageFont.ImageFont:
-    # Pillow's default bitmap font ignores size; try a common TTF first.
-    for path in (
+    """Find a sized TTF on this system; fall back to Pillow's default bitmap.
+
+    Pillow's default font ignores the ``size`` argument, so on a system with
+    no usable TTF the watermark renders at ~10 px regardless of
+    ``--visible-alpha`` / ``--visible-text``. Try the conventional sans-serif
+    locations on each major OS before that fallback.
+    """
+    candidates = (
+        # Linux (Debian/Ubuntu — what Docker image and most distros ship)
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ):
+        # Linux (RHEL/Fedora/Alpine)
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        # macOS
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/Library/Fonts/Arial.ttf",
+        # Windows — both 32-bit and 64-bit installs put fonts here
+        r"C:\Windows\Fonts\arialbd.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",
+    )
+    for path in candidates:
         try:
             return ImageFont.truetype(path, size=size)
         except OSError:
