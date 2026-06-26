@@ -48,9 +48,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Generate a synthetic test image
+        # Use Pillow inside the just-built image rather than the runner's
+        # host Python (free-disk-space wiped the runner's tool cache, so
+        # Pillow may not be present; and we can't `pip install` per AGENTS.md
+        # §6.4). The container already has Pillow from the photoguard extra.
+        # Override the entrypoint so we can run python directly against the
+        # baked-in venv instead of the photo-guard CLI.
         run: |
           mkdir -p fixtures
-          python -c "from PIL import Image; Image.new('RGB', (640, 480), (200, 180, 160)).save('fixtures/in.jpg', quality=92)"
+          docker run --rm --entrypoint /app/.venv/bin/python \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              -c "from PIL import Image; Image.new('RGB', (640, 480), (200, 180, 160)).save('/work/in.jpg', quality=92)"
 
       - name: Smoke test — protect (noise perturber) + verify
         run: |
