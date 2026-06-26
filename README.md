@@ -293,18 +293,26 @@ load → fit_long_edge(1080) → ① 隐水印 embed → ② 扰动 → ③ 明�
 ```
 photo_cyber/
 ├── AGENTS.md                  # 方案与技术要求（不可改）
+├── CLAUDE.md                  # 给未来 Claude Code 实例的开发指引
 ├── README.md                  # 本文件
 ├── pyproject.toml             # uv 管理的依赖与入口
 ├── uv.lock                    # 锁定文件，跨机可复现
 ├── .python-version            # uv 锁定 Python 3.11
+├── Dockerfile                 # 单镜像 CPU+GPU；模型 build 时烘入
+├── .dockerignore              # 排除 .venv/ models/ tests/ 等
+├── .github/workflows/
+│   ├── ci.yml                 # ubuntu+windows matrix；fast pytest
+│   └── docker.yml             # build + 离线烟雾测试，不 push registry
+├── tests/                     # 38 用例 fast tier（约 20s）
 └── src/photo_guard/
     ├── __init__.py / __main__.py
-    ├── cli.py                 # argparse: protect / verify
-    ├── pipeline.py            # 顺序编排（① → ② → ③）
+    ├── cli.py                 # argparse: protect / verify / download-models
+    ├── pipeline.py            # 顺序编排（① → ② → ③）+ --layers 子集
     ├── config.py              # 集中默认参数
     ├── watermark_invisible.py # ① 隐水印（imwatermark, dwtDctSvd）
     ├── perturb.py             # ② Perturber 接口 + Noop / Noise / SDEncoder
-    ├── photoguard.py          # ② SD-VAE encoder PGD 攻击（懒加载）
+    ├── photoguard.py          # ② SD-VAE encoder PGD 攻击（懒加载，离线）
+    ├── download.py            # 一次性 SD VAE 下载（唯一允许联网的模块）
     ├── watermark_visible.py   # ③ 明水印（subject / tile / center 三模式）
     ├── subject.py             # ③ 主体检测（haar → Sobel 显著性 → 中心）
     └── compress.py            # 长边 resize 至平台规格
@@ -338,7 +346,16 @@ photo_cyber/
 | `suspect` | 是 | 可疑图路径 |
 | `--payload-bytes` | 是 | 原 payload 字节长度（不一致解不出） |
 
-退出码：`0` 成功；`1` 解码后判定无 payload；`2` 运行错误（缺少 extra、文件读不到等）。
+`download-models`（一次性，仅 `--perturber sd` 离线场景需要）：
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--repo` | `stabilityai/sd-vae-ft-mse` | HuggingFace repo id |
+| `--dest` | `<repo>/models/sd-vae-ft-mse` | 本地落盘目录；`config.PHOTOGUARD_MODEL_ID` 默认就指这里 |
+
+> Docker 镜像在 build 期已自动调用 `download-models`，运行容器时不需要再跑这个。仅当你走原生 uv 路径并且想要 `--perturber sd` 时才需要手动跑一次。
+
+退出码：`0` 成功；`1` 解码后判定无 payload；`2` 运行错误（缺少 extra、文件读不到、`--layers` 含未知名字等）。
 
 ---
 
@@ -393,12 +410,15 @@ photo_cyber/
 
 ```bash
 uv sync --group dev                  # 装 pytest
-uv run pytest -m 'not slow'          # 快速档（约 11s，26 用例）
+uv run pytest -m 'not slow'          # 快速档（约 20s，38 用例）
 # 跑完整档（含真 SD 攻击，需要先 uv sync --extra photoguard）
 uv run pytest
 ```
 
-CI 在 `.github/workflows/ci.yml` 里跑三步：AGENTS.md 6.4 grep 合规检查 → `uv sync --frozen --group dev` → `pytest -m 'not slow'`。
+CI 跑两个 workflow：
+
+- `.github/workflows/ci.yml`：matrix 覆盖 `ubuntu-latest` + `windows-latest`，跑 §6.4 grep（仅 Linux，POSIX 工具）+ `uv sync --frozen --group dev` + `pytest -m 'not slow'`。Windows 上 §6.4 由 `tests/test_compliance.py`（纯 Python）兜底。
+- `.github/workflows/docker.yml`：build 单镜像（含模型烘入）+ smoke（`protect` + `verify` + `--network none` 离线 SD 攻击），不 push。runner 用 `jlumbroso/free-disk-space@main` 释放 ~30GB（默认 14GB 装不下 torch + nvidia + SD VAE）。
 
 ### 合规检查（提交前）
 
@@ -434,6 +454,11 @@ grep -RIn --exclude-dir=.venv --exclude-dir=.git \
 - [x] **明水印「绑定主体」真实版**：`subject.py` 三级 fallback（haar → Sobel 显著性 → 几何中心），`watermark_visible.apply_subject` 接入；CLI 默认 `--visible-mode=subject`。
 - [x] **真 PhotoGuard `SDEncoderPerturber` 接入**：`photoguard.py` 用 PGD 攻击 SD VAE encoder；`[project.optional-dependencies].photoguard` 隔离重依赖；CLI 暴露 `--perturber sd` + `--perturber-eps/-steps/-step-size/-model`；端到端 protect→verify 在 SD 扰动 + JPEG q=85 之后隐水印仍能完整还原。
 - [x] **单元测试 + GitHub Actions CI**：`tests/` 7 文件 26 用例覆盖合规（AGENTS.md 6.4 grep）、注册表与 lazy-import 契约、隐水印往返（含 q=85 + 明水印后还原回归）、pipeline 顺序回归、subject 三级 fallback、可见水印三模式 smoke、CLI 退出码（0/1/2）。`.github/workflows/ci.yml` 跑 grep → `uv sync --frozen --group dev` → `pytest -m 'not slow'`。本地：`uv sync --group dev && uv run pytest -m 'not slow'`，全绿约 11s。slow 标记的 SD 攻击测试需 `uv sync --extra photoguard` 后手动跑。
+- [x] **离线模型加载**：`config.PHOTOGUARD_MODEL_ID` 切到 `<repo>/models/sd-vae-ft-mse`，`photoguard.py` 用 `local_files_only=True` + `HF_HUB_OFFLINE=1` 锁死运行时不联网；新增 `download.py` + `photo-guard download-models` 子命令做唯一一次性联网下载。
+- [x] **Docker 开箱即用镜像**：`Dockerfile` 单镜像同时支持 CPU/GPU（torch wheel 自带 CUDA runtime），build 期 `RUN download-models` 把 SD VAE 烘入 `/app/models/`，运行时 `HF_HUB_OFFLINE=1` 强制离线。`.github/workflows/docker.yml` build + 烟雾测试（含 `--network none` 验证模型真已烘入），不 push registry。镜像 ~5.5 GB。
+- [x] **三层防护可任意子集开关**：`pipeline.ProtectOptions.layers` (frozenset) + CLI `--layers invisible,perturb,visible` 接收任意非空子集；执行顺序按 AGENTS.md §二 锁死，`--layers` 只控开关不控顺序。空集合 / 未知层名 → exit 2。
+- [x] **Windows 系统支持**：`watermark_visible._load_font` 加上 macOS / Windows TTF 路径回退（之前只查 Debian/Ubuntu 路径，Windows 上落到 Pillow 默认位图字体导致 `--visible-text` 渲染成 ~10px）；`tests/test_compliance.py` 改为纯 Python `Path.rglob` 实现替代 `subprocess[grep]`，跨平台；CI matrix 加 `windows-latest`。Windows fast tier 38/38 通过。
+- [x] **测试规模升到 38 用例**：新增 `tests/test_pipeline_layers.py` 覆盖 7 个非空子集 + 空 + 未知层名共 10 用例；`tests/test_cli_exits.py` 新增 2 用例覆盖 `--layers` CLI 路径。本地 fast tier 约 20s 全绿。
 
 ## 待办 / 已知边界
 

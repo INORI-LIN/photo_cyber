@@ -23,6 +23,7 @@ uv sync --extra photoguard --frozen    # + torch/diffusers for the SD perturber
 uv run python -m photo_guard protect IN.jpg -o OUT.jpg [...]
 uv run python -m photo_guard verify  SUSPECT.jpg --payload-bytes N
 uv run photo-guard protect ...         # via [project.scripts]
+uv run photo-guard download-models     # one-off: fetch SD VAE into models/ for fully offline runs
 
 # After editing dependencies
 uv add <pkg>                           # main deps
@@ -63,12 +64,14 @@ Build-step rules to preserve:
 
 ## Tests and CI
 
-- `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈26 cases, ~11s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a HuggingFace download; do not run them unless explicitly asked.
-- `.github/workflows/ci.yml` runs three steps: AGENTS.md 6.4 grep, `uv sync --frozen --group dev`, then the fast pytest tier. The grep step exists both in CI and as `tests/test_compliance.py` (belt and braces).
-- Two pytest files act as fail-loud regression locks for the non-obvious decisions documented elsewhere here:
+- `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈38 cases, ~20s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a HuggingFace download; do not run them unless explicitly asked.
+- `.github/workflows/ci.yml` runs a matrix over `ubuntu-latest` + `windows-latest`. The shell-based `pip install` grep step is Linux-only (POSIX `grep`); on Windows the same check is enforced by `tests/test_compliance.py`, which is a pure-Python `Path.rglob` walk that runs on every OS via pytest. Belt and braces — do not delete either.
+- `.github/workflows/docker.yml` builds the all-in-one image, smoke-tests it (protect+verify with `--perturber noise`, then a `--network none` run with `--perturber sd` to prove the SD VAE is really baked in), and does not push. The runner uses `jlumbroso/free-disk-space@main` because GitHub-hosted ubuntu has only ~14 GB free and torch + nvidia wheels + SD VAE export to ~6 GB.
+- Pytest files that act as fail-loud regression locks for non-obvious decisions documented elsewhere here:
   - `tests/test_invisible_watermark_roundtrip.py::test_embed_survives_jpeg85_and_visible_watermark` pins `dwtDctSvd`. Reverting `config.WATERMARK_METHOD` to `dwtDct` reds it instantly.
   - `tests/test_pipeline_order.py::test_protect_then_verify_round_trip` is end-to-end and breaks if anyone "fixes" the resize-before-embed ordering.
-- `tests/test_perturb_registry.py::test_importing_perturb_does_not_import_torch` guards the lazy-import contract for `SDEncoderPerturber`. Do not move `import torch` / `import diffusers` into `perturb.py` or any module loaded eagerly from `__init__.py` — the test will fail.
+  - `tests/test_pipeline_layers.py` parametrises every non-empty subset of `{invisible, perturb, visible}` plus the empty/unknown cases — locks the "membership-only, never reorder" contract on `--layers`.
+  - `tests/test_perturb_registry.py::test_importing_perturb_does_not_import_torch` guards the lazy-import contract for `SDEncoderPerturber`. Do not move `import torch` / `import diffusers` into `perturb.py` or any module loaded eagerly from `__init__.py` — the test will fail.
 
 ## Architecture: the three-layer pipeline
 
@@ -94,9 +97,10 @@ Two non-obvious things future instances must know:
 | `config.py` | Single source of defaults for all layers. New tunables go here, not buried in modules. | Yes |
 | `watermark_invisible.py` | Layer ① — `embed` / `extract`, thin wrapper over `imwatermark`. | Yes (whole-file) |
 | `perturb.py` | Layer ② — `Perturber` ABC + name registry `_REGISTRY`. `get(name, **kwargs)` is the factory. | Yes — add a class, register, done |
-| `photoguard.py` | The real PhotoGuard PGD attack on a SD VAE encoder. **Imports torch / diffusers and is loaded lazily by `perturb.SDEncoderPerturber.apply()` — never at import time.** | Yes |
+| `photoguard.py` | The real PhotoGuard PGD attack on a SD VAE encoder. **Imports torch / diffusers and is loaded lazily by `perturb.SDEncoderPerturber.apply()` — never at import time.** Loads weights with `local_files_only=True` from `<repo>/models/sd-vae-ft-mse` only — runtime never touches HuggingFace. | Yes |
+| `download.py` | One-off model fetcher (`photo-guard download-models`). The **only** module allowed to talk to HuggingFace; called once at install/build time, never at runtime. Docker `RUN` invokes it during build to bake the SD VAE into the image. | No (intentionally minimal — don't broaden the network surface) |
 | `subject.py` | Three-tier subject detection: haar face → Sobel-saliency window → geometric centre. Used only by visible-WM `subject` mode. Pure cv2, no extra deps (haar XML ships with `opencv-python-headless`). | Yes |
-| `watermark_visible.py` | Layer ③ — `apply()` dispatches to `apply_subject` / `apply_tile` / `apply_center`. | Yes |
+| `watermark_visible.py` | Layer ③ — `apply()` dispatches to `apply_subject` / `apply_tile` / `apply_center`. `_load_font` walks a list of conventional TTF paths (Linux Debian/RHEL, macOS, Windows) before falling back to Pillow's bitmap default. Don't shrink that list — Pillow's bitmap default ignores `size`, which silently breaks `--visible-text` on systems with no matching TTF. | Yes |
 | `compress.py` | One function: `fit_long_edge`. | Yes |
 
 When extending Layer ②, follow the existing pattern: subclass `Perturber`, accept tunables as kwargs with defaults from `config.py`, register in `_REGISTRY`, then add the matching CLI flags in `cli.py`. The pipeline doesn't need to change.
