@@ -10,7 +10,11 @@ loading the UNet / text encoder.
 
 Implementation notes
 --------------------
-- Loads `stabilityai/sd-vae-ft-mse` lazily on first `apply()` call.
+- Loads the SD VAE **offline** from a local directory (default
+  ``<repo>/models/sd-vae-ft-mse``). No HuggingFace request at runtime — users
+  populate the directory once with ``photo-guard download-models`` (or by
+  unpacking a pre-shipped archive). Loading uses ``local_files_only=True``;
+  if the directory is missing, a clear RuntimeError tells the user how to fix it.
 - PGD with sign-of-gradient steps + L∞ projection (eps in 0..1 image space).
 - Loss: ‖encode(x_adv).mean - target_latent‖₂². `target_latent` is a fixed
   zero tensor — the simplest "send everything to a bad latent" objective.
@@ -22,12 +26,13 @@ Implementation notes
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
-
-_DEFAULT_MODEL_ID = "stabilityai/sd-vae-ft-mse"
+from . import config
 
 
 @dataclass
@@ -35,7 +40,7 @@ class PGDConfig:
     epsilon: float = 8.0 / 255.0  # max L∞ pixel perturbation
     step_size: float = 2.0 / 255.0
     steps: int = 10
-    model_id: str = _DEFAULT_MODEL_ID
+    model_id: str = config.PHOTOGUARD_MODEL_ID  # local directory by default
 
 
 class _SDEncoderAttack:
@@ -58,6 +63,19 @@ class _SDEncoderAttack:
                 "`uv sync --extra photoguard`"
             ) from exc
 
+        model_path = Path(self.cfg.model_id)
+        if not model_path.is_dir():
+            raise RuntimeError(
+                f"local SD VAE directory not found at {model_path}. "
+                "Download it once (offline-cached) with: "
+                "`uv run photo-guard download-models` "
+                f"(or set --perturber-model to an existing local path)."
+            )
+
+        # Force fully offline load — no HuggingFace request at runtime.
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
         self._torch = torch
         self._device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
@@ -67,7 +85,9 @@ class _SDEncoderAttack:
             torch.float16 if self._device.type == "cuda" else torch.float32
         )
         self._vae = AutoencoderKL.from_pretrained(
-            self.cfg.model_id, torch_dtype=self._dtype
+            str(model_path),
+            torch_dtype=self._dtype,
+            local_files_only=True,
         ).to(self._device)
         self._vae.eval()
         for p in self._vae.parameters():

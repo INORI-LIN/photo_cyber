@@ -1,0 +1,43 @@
+# Keep Docker build context small — Dockerfile only needs pyproject.toml,
+# uv.lock, .python-version, README.md (referenced by pyproject.toml), and src/.
+# Everything below is either redundant or actively harmful in the context.
+
+# Local virtualenv — multi-GB, would dominate the build context
+.venv/
+
+# Local model weights — the image generates a fresh copy via
+# `RUN uv run photo-guard download-models`. If the user has a local
+# models/ from prior runs, including it would bloat the context AND mask
+# bugs in the in-image download step.
+models/
+
+# Git metadata
+.git/
+.gitignore
+.github/
+
+# Tests and their fixtures — the runtime image doesn't need them.
+tests/
+.pytest_cache/
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+wheels/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Local plans / docs that aren't needed at runtime
+.claude/
+.claude-internal/
+
+# The Dockerfile itself doesn't need to be in the image
+Dockerfile
+.dockerignore

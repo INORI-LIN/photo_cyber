@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Locally-downloaded model weights (populate with `photo-guard download-models`)
+models/

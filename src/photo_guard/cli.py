@@ -78,6 +78,28 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Byte length of the original payload (must match embed time).",
     )
 
+    d = sub.add_parser(
+        "download-models",
+        help=(
+            "One-off: fetch the SD VAE used by --perturber sd into "
+            "models/sd-vae-ft-mse/ for fully offline runs."
+        ),
+    )
+    d.add_argument(
+        "--repo",
+        default=config.PHOTOGUARD_REMOTE_REPO,
+        help="HuggingFace repo id (default %(default)s).",
+    )
+    d.add_argument(
+        "--dest",
+        type=Path,
+        default=None,
+        help=(
+            "Destination directory; defaults to "
+            f"{config.PHOTOGUARD_MODELS_DIR / config.PHOTOGUARD_MODEL_NAME}"
+        ),
+    )
+
     return parser
 
 
@@ -133,6 +155,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(payload)
+        return 0
+
+    if args.cmd == "download-models":
+        from . import download
+
+        try:
+            path = download.download_sd_vae(repo=args.repo, dest=args.dest)
+        except RuntimeError as exc:
+            print(f"download failed: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # network / hub errors
+            print(f"download failed: {exc}", file=sys.stderr)
+            return 2
+        print(f"downloaded {args.repo} → {path}")
         return 0
 
     return 2

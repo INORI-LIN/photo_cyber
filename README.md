@@ -7,6 +7,211 @@
 
 ---
 
+## 这是什么？(给非技术读者)
+
+简单讲，你拍了一张照片，发到社交平台之前，先用本工具「过」一遍，输出一张肉眼看上去几乎一样的图。这张图相比原图多了三件事：
+
+1. **看得见的水印**：半透明文字直接压在照片主体（比如人脸）上，搬运的人想抠掉就得把脸重画一遍；
+2. **看不见的水印**：藏在图像频域里的一段唯一署名（比如 `owner:你的名字#日期`），平台压缩、轻度裁剪后还能用 `verify` 命令解出来，证明图是你的；
+3. **AI 看不懂的「噪声」**：肉眼几乎察觉不到的微小扰动，但会让任何 AI 改图、换脸、去水印工具拿到这张图时输出崩坏画面。
+
+### 它能做什么 / 不能做什么
+
+| 能做 | 不能做 |
+|------|--------|
+| 让随手搬运你照片的人留下痕迹（明水印） | 物理上阻止任何人保存你的图 |
+| 万一被盗，事后从可疑图里提取唯一署名做证据（隐水印） | 100% 抗住所有平台多次重压缩 + 大幅裁切 |
+| 让对方用 AI 一键去水印 / 换脸时大概率失败（PhotoGuard 扰动） | 抗住未来还没出现的新一代 AI 模型 |
+
+一句话：**这是「锁」不是「保险柜」**——抬高成本、留下证据，不保证绝对。
+
+---
+
+## 硬件与系统要求
+
+工具分两档，按你打算用不用「真 PhotoGuard 对抗扰动」走不同路线。
+
+### 档位 A：核心模式（推荐先跑通这一档）
+
+只跑 隐水印 + 明水印 + 占位扰动（轻量噪声），不需要任何 AI 模型。
+
+| 项 | 最低 | 推荐 |
+|----|------|------|
+| 操作系统 | Linux / macOS / Windows（任意 64 位） | Linux 或 macOS |
+| CPU | 任何 x86_64 / Apple Silicon | 4 核以上 |
+| 内存 (RAM) | 2 GB | 4 GB |
+| 硬盘空间 | 1 GB（含 Python + 依赖 + .venv） | 2 GB |
+| GPU | **不需要** | — |
+| 网络 | 一次性下载依赖时联网即可 | — |
+| Python | 由 `uv` 自动安装 3.11，**无需自己装** | — |
+
+处理一张 1080p 图片：常规笔记本上 1–3 秒。
+
+### 档位 B：完整模式（开启真 PhotoGuard SD-encoder 攻击）
+
+启用 `--perturber sd` 时会加载 Stable Diffusion VAE 模型（~335 MB），CPU 也能跑但会明显变慢。
+
+| 项 | 最低 | 推荐 |
+|----|------|------|
+| 操作系统 | Linux / macOS / Windows 64 位 | Linux + NVIDIA 驱动 |
+| 内存 (RAM) | 8 GB | 16 GB |
+| 硬盘空间 | 6 GB（torch + diffusers + 模型缓存约 4–5 GB） | 10 GB |
+| GPU（可选） | 无（落到 CPU，慢但能跑） | NVIDIA 显卡，显存 ≥ 4 GB（fp16） |
+| 网络 | 首次运行需下载 ~335 MB 模型 + ~3 GB torch 系包 | — |
+| Docker 替代路径 | 镜像 ~5.5 GB（已烘入模型 + torch + uv），运行时 0 网络请求 | `docker run --gpus all ...` 一键 |
+
+处理一张 1080p 图片：
+- **CPU**：10 步 PGD 大约 30 秒～1 分钟（图越大越慢）
+- **GPU**：10 步 PGD 通常 1–3 秒
+
+> **说明**：模型默认从 HuggingFace（`stabilityai/sd-vae-ft-mse`）下载到 `~/.cache/huggingface/`。如果机器不能直连国外，可以提前自己设好镜像或代理。
+
+---
+
+## 最快路径：Docker 一键跑（推荐零配置首次使用）
+
+如果你只想拿来用、不想折腾 Python / uv / 模型下载，用 Docker 最快：
+
+```bash
+# 用本仓库自己 build 一份镜像（首次约 5–10 分钟，之后走缓存）
+git clone https://github.com/INORI-LIN/photo_cyber.git
+cd photo_cyber
+docker build -t photo-guard:dev .
+
+# 保护一张图（CPU）：把图所在目录挂到 /work
+docker run --rm -v "$PWD:/work" photo-guard:dev \
+    protect /work/me.jpg -o /work/me_protected.jpg \
+    --payload "owner:me#2026" \
+    --visible-text "© me"
+
+# 启用真 PhotoGuard SD-encoder 攻击（CPU 慢，GPU 加 --gpus all 即可）
+docker run --rm --gpus all -v "$PWD:/work" photo-guard:dev \
+    protect /work/me.jpg -o /work/me_protected.jpg --perturber sd
+
+# 验证（确权）
+docker run --rm -v "$PWD:/work" photo-guard:dev \
+    verify /work/me_protected.jpg --payload-bytes 14
+```
+
+镜像里**已烘入** SD VAE（`stabilityai/sd-vae-ft-mse`，~335 MB）+ Python 3.11 + uv + torch/diffusers，运行时 `HF_HUB_OFFLINE=1` 强制离线，再没有任何外网请求。GPU 主机加 `--gpus all` 自动走 CUDA；不加就老实跑 CPU。
+
+镜像大小约 **5.5–6 GB**（torch + nvidia 运行时 wheel 占大头）。
+
+> 想把镜像 push 到 ghcr.io / Docker Hub？看 `.github/workflows/docker.yml`，本仓库默认只 build + 烟雾测试，不 push，发包逻辑由你自己决定。
+
+---
+
+## 5 分钟上手（从零到出第一张保护图）
+
+> 不想用 Docker 才看这一节。Docker 路径见上。
+
+### 第 1 步：装 `uv`
+
+`uv` 是一个新的 Python 包管理器，替代 `pip`。本项目**强制用 uv**，不用自己折腾 Python 版本。
+
+Linux / macOS：
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+装完后关掉终端再开一个，输入 `uv --version` 能看到版本号即成功。
+
+### 第 2 步：拿到代码 + 装依赖
+
+```bash
+git clone https://github.com/INORI-LIN/photo_cyber.git
+cd photo_cyber
+
+# uv 会自动下载 Python 3.11 并建立 .venv，不会污染系统 Python
+uv python install 3.11
+uv python pin 3.11
+uv sync --frozen          # 装核心依赖（档位 A 够用）
+```
+
+完成后项目目录下会多出一个 `.venv/`，里面是隔离好的 Python 环境，你不需要手动激活它。
+
+### 第 3 步：保护一张照片
+
+把要保护的图放到任意位置（比如 `~/Pictures/me.jpg`），然后：
+
+```bash
+uv run python -m photo_guard protect ~/Pictures/me.jpg \
+  -o ~/Pictures/me_protected.jpg \
+  --payload "owner:你的名字#2026-06-25" \
+  --visible-text "© 你的名字"
+```
+
+跑完会输出类似：
+
+```
+protected: /home/you/Pictures/me_protected.jpg  size=1080x810  perturber=noop  payload_bytes=27
+```
+
+打开 `me_protected.jpg`，会看到照片主体（一般是脸）上有半透明文字水印。
+
+> **重要**：`--payload` 是嵌入到隐水印里的内容，**它的字节数你必须自己记住**（上面例子是 27 字节，UTF-8 中文一字 3 字节）。验证时要传同样的字节数才能解出。
+
+### 第 4 步：验证一张可疑图（确权）
+
+某天你看到平台上有人盗了你的图，把那张图存下来，跑：
+
+```bash
+uv run python -m photo_guard verify suspect.jpg --payload-bytes 27
+```
+
+如果还能解出来，会打印出原 payload，说明确实是你的图。如果对方做了大幅二次重绘 / 平台多次重压缩，可能解不出，会提示 `no payload recovered`。
+
+### 第 5 步（可选）：开启真 PhotoGuard 扰动
+
+如果你担心对方用 AI 换脸 / 去水印，加一档防御：
+
+```bash
+# 一次性多装 ~3 GB 的 torch + diffusers
+uv sync --extra photoguard
+
+# 第一次跑会下载 ~335 MB 的 SD VAE 模型
+uv run python -m photo_guard protect ~/Pictures/me.jpg \
+  -o ~/Pictures/me_protected.jpg \
+  --payload "owner:你的名字#sd" \
+  --perturber sd
+```
+
+CPU 上慢一点（30 秒～1 分钟），GPU 上几秒。
+
+---
+
+## 常见问题 FAQ
+
+**Q: 可以不用 `uv`，直接 `pip install` 吗？**
+A: 不可以。项目硬性规定（见 [`AGENTS.md`](./AGENTS.md) §6），CI 会扫描代码里有没有 `pip install` 字样直接判失败。`uv` 用法和 `pip` 几乎一样，但能锁定 Python 版本和依赖。
+
+**Q: `--payload-bytes` 是什么？为什么我必须记住？**
+A: 隐水印解码时算法需要事先知道 payload 长度（位数）才能正确切片。它不是密码，写错只会解不出来不会损坏图。建议 payload 用纯 ASCII（每字符 1 字节）+ 一个固定模板，比如 `owner:xxx#YYYY-MM-DD`，方便记忆。
+
+**Q: 为什么我的输出图分辨率被改成 1080×xxx 了？**
+A: 这是设计行为。社交平台普遍会再压一遍图，工具先把长边压到 1080 让最终画面就是「压缩后的形态」，可以减少平台二次压缩对水印的破坏。想保留原分辨率加 `--long-edge 0`（不推荐，会降低水印鲁棒性）。
+
+**Q: 输出文件为什么是 JPEG，不能存 PNG 吗？**
+A: 同上，JPEG 是社交平台最终格式，工具直接以平台规格输出，让水印对压缩免疫。强行存 PNG 不在当前 CLI 支持范围内（可改源码）。
+
+**Q: `--perturber sd` 跑得太慢怎么办？**
+A: 三个办法：① 减少迭代步数 `--perturber-steps 5`；② 调小 `--long-edge 720` 缩小图；③ 找台带 NVIDIA 显卡的机器跑。CPU 上 1080p × 10 步是基线 30–60 秒。
+
+**Q: 明水印挡住主体太碍眼？**
+A: 用 `--visible-mode tile` 切换为全图低透明度网格模式，或 `--visible-mode center` 只压在画面正中。透明度调低用 `--visible-alpha 0.05`。
+
+**Q: 工具支持视频吗？**
+A: 不支持，本版本只处理静态图（JPG / PNG / WebP 等 Pillow 能读的）。
+
+---
+
 ## 方案概览
 
 | 防护层 | 作用 | 主要针对 |
@@ -49,39 +254,7 @@ photo_cyber/
 
 ---
 
-## 环境与运行
-
-严格遵循 AGENTS.md 第六节：**全程使用 `uv`，禁止裸用 `pip`**。
-
-```bash
-# 一次性环境准备
-uv python install 3.11
-uv python pin 3.11
-uv sync --frozen          # 按 uv.lock 精确还原核心依赖（不含 PhotoGuard）
-
-# 想用真 PhotoGuard SD-encoder 攻击时再加可选 extra（拉取 torch 系生态 + diffusers + accelerate，约几 GB）
-uv sync --extra photoguard
-
-# 保护一张图（三层全跑，默认占位扰动）
-uv run python -m photo_guard protect input.jpg -o out.jpg \
-  --payload "owner:inori-lin#2026-06-18" \
-  --perturber noise \
-  --visible-mode subject \
-  --visible-text "© inori-lin"
-
-# 用真 PhotoGuard 扰动（首次会下载 sd-vae-ft-mse ≈335MB；CPU 也能跑，慢）
-uv run python -m photo_guard protect input.jpg -o out.jpg \
-  --payload "owner:inori-lin#sd" \
-  --perturber sd --perturber-steps 10 --perturber-eps 0.0314
-
-# 从可疑图中提取隐水印做确权
-uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
-# payload-bytes 必须等于 protect 时 payload 的 utf-8 字节数
-```
-
-`uv run photo-guard ...` 也等价（通过 `[project.scripts]` 暴露）。
-
-### CLI 参数
+## 全部 CLI 参数
 
 `protect`：
 
@@ -105,6 +278,8 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 |------|------|------|
 | `suspect` | 是 | 可疑图路径 |
 | `--payload-bytes` | 是 | 原 payload 字节长度（不一致解不出） |
+
+退出码：`0` 成功；`1` 解码后判定无 payload；`2` 运行错误（缺少 extra、文件读不到等）。
 
 ---
 
@@ -150,6 +325,40 @@ uv run python -m photo_guard verify suspect.jpg --payload-bytes 26
 
 - 单函数 `fit_long_edge`，LANCZOS 重采样到目标长边。
 - 调用位置在 embed 之前（见上文「执行顺序」）。
+
+---
+
+## 开发者指南
+
+### 测试
+
+```bash
+uv sync --group dev                  # 装 pytest
+uv run pytest -m 'not slow'          # 快速档（约 11s，26 用例）
+# 跑完整档（含真 SD 攻击，需要先 uv sync --extra photoguard）
+uv run pytest
+```
+
+CI 在 `.github/workflows/ci.yml` 里跑三步：AGENTS.md 6.4 grep 合规检查 → `uv sync --frozen --group dev` → `pytest -m 'not slow'`。
+
+### 合规检查（提交前）
+
+```bash
+grep -RIn --exclude-dir=.venv --exclude-dir=.git \
+     --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
+     "pip install" .
+# 必须无任何输出
+```
+
+### 加新的扰动算法
+
+按 `perturb.py` 现有套路：
+1. 写一个继承 `Perturber` 的类，实现 `apply(bgr) -> bgr`；
+2. 注册到 `_REGISTRY`；
+3. 在 `cli.py` 加对应 CLI flag；
+4. 默认参数收敛到 `config.py`。
+
+如果新算法依赖重型框架（如 torch），按 `SDEncoderPerturber` 的懒加载模式：`__init__` 只存配置，import 只在 `apply()` 内部触发，依赖挂到 `[project.optional-dependencies]` 下面。
 
 ---
 

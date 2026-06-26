@@ -1,0 +1,74 @@
+name: docker
+
+# Build the all-in-one Docker image (Python 3.11 + uv + photoguard extra +
+# baked-in SD VAE) and smoke-test it. Image is NOT pushed — that step is
+# left to a manual release workflow once the user opts in.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: photo-guard:ci
+          push: false
+          load: true
+          # Cache the torch+diffusers+model layers across runs — without
+          # this, every CI run re-downloads ~5 GB of wheels and the SD
+          # VAE.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate a synthetic test image
+        run: |
+          mkdir -p fixtures
+          python -c "from PIL import Image; Image.new('RGB', (640, 480), (200, 180, 160)).save('fixtures/in.jpg', quality=92)"
+
+      - name: Smoke test — protect (noise perturber) + verify
+        run: |
+          docker run --rm \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              protect /work/in.jpg -o /work/out.jpg \
+              --payload "ci-test" \
+              --perturber noise
+
+          test -s fixtures/out.jpg
+
+          recovered=$(docker run --rm \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              verify /work/out.jpg --payload-bytes 7)
+
+          echo "recovered: $recovered"
+          [ "$recovered" = "ci-test" ]
+
+      # Strongest evidence the SD VAE is actually baked in: run with
+      # --network none so any HuggingFace request would fail. PGD on CPU
+      # is slow but bounded (~30s for 5 steps on 640x480). Keep step count
+      # low to keep CI under a minute.
+      - name: Smoke test — offline SD perturber
+        run: |
+          docker run --rm \
+              --network none \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              protect /work/in.jpg -o /work/out_sd.jpg \
+              --payload "ci-test" \
+              --perturber sd \
+              --perturber-steps 2 \
+              --long-edge 384
+
+          test -s fixtures/out_sd.jpg

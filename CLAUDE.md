@@ -34,6 +34,33 @@ grep -RIn --exclude-dir=.venv --exclude-dir=.git \
      "pip install" .   # must return nothing
 ```
 
+## Docker (开箱即用镜像)
+
+`Dockerfile` builds a single image that works on both CPU and GPU hosts (torch's CUDA runtime ships inside the wheels — no `nvidia/cuda` base needed). The SD VAE is **baked into the image** via `RUN uv run --no-sync photo-guard download-models` during build, so the runtime container is fully offline (`HF_HUB_OFFLINE=1` is set).
+
+```bash
+# Local build (≈5–10 min first time; subsequent rebuilds reuse the
+# torch/diffusers layer if pyproject.toml + uv.lock unchanged)
+docker build -t photo-guard:dev .
+
+# Smoke (mirrors .github/workflows/docker.yml)
+mkdir -p /tmp/pg && cp some.jpg /tmp/pg/in.jpg
+docker run --rm -v /tmp/pg:/work photo-guard:dev \
+    protect /work/in.jpg -o /work/out.jpg --perturber noise --payload ci-test
+docker run --rm -v /tmp/pg:/work photo-guard:dev \
+    verify /work/out.jpg --payload-bytes 7   # → "ci-test"
+
+# Strongest "model is really baked in" assertion
+docker run --rm --network none -v /tmp/pg:/work photo-guard:dev \
+    protect /work/in.jpg -o /work/out_sd.jpg --perturber sd --perturber-steps 2 --long-edge 384
+```
+
+Build-step rules to preserve:
+
+- **Only `RUN ... download-models` may touch the network at build time.** Everything else stays inside the wheels and the lockfile. Don't add `RUN curl …`, `RUN pip …`, etc. — see AGENTS.md §6.4.
+- **`uv` binary comes from `COPY --from=ghcr.io/astral-sh/uv:latest /uv …`**, never `pip install uv` or a `curl | sh` install script.
+- **`.dockerignore` must exclude `models/` and `.venv/`.** A user's local model copy or virtualenv would otherwise dominate build context (~5 GB) and would mask bugs in the in-image download step.
+
 ## Tests and CI
 
 - `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈26 cases, ~11s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a HuggingFace download; do not run them unless explicitly asked.
