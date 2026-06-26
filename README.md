@@ -64,6 +64,16 @@
 - **CPU**：10 步 PGD 大约 30 秒～1 分钟（图越大越慢）
 - **GPU**：10 步 PGD 通常 1–3 秒
 
+实测数据（RTX 5070 Ti / torch 2.11.0+cu128 / Windows 11）：
+
+| 分辨率 | 10 步 PGD | 20 步 PGD | 含模型加载 |
+|--------|-----------|-----------|------------|
+| 256×256 | 0.30s | — | +1.48s |
+| 512×512 | 0.74s | 1.40s | +1.48s |
+| 1024×1024 | 3.58s | — | +1.48s |
+
+模型加载为一次性开销（~335MB SD VAE），后续复用。
+
 > **说明**：模型默认从 HuggingFace（`stabilityai/sd-vae-ft-mse`）下载到 `~/.cache/huggingface/`。如果机器不能直连国外，可以提前自己设好镜像或代理。
 
 ### Windows 系统支持
@@ -96,7 +106,15 @@ docker run --rm -v "${PWD}:/work" photo-guard:dev `
 
 GPU 支持需要 Windows + NVIDIA 驱动，`torch.cuda.is_available()` 会自动选 CUDA 路径，无需额外配置。
 
-> 说一句实话：Windows fast-tier CI 已绿（`uv sync` + `pytest -m 'not slow'`），但**完整模式（`--perturber sd` 真 PhotoGuard 攻击）** 在 Windows 上没专门测过。理论上能跑——torch wheel 在；如果你是第一个在 Windows 上跑完整模式的用户，欢迎提 issue。
+已在 Windows 上实测通过（RTX 5070 Ti / torch 2.11.0+cu128）：
+
+| 分辨率 | 10 步 PGD | 20 步 PGD | 首次调用（含模型加载） |
+|--------|-----------|------------|----------------------|
+| 256×256 | 0.30s | — | +1.48s |
+| 512×512 | 0.74s | 1.40s | +1.48s |
+| 1024×1024 | 3.58s | — | +1.48s |
+
+> 模型加载（sd-vae-ft-mse, ~335MB）为一次性开销，后续复用不会触发网络请求。无需额外配置。详见上方性能数据。
 
 ---
 
@@ -459,6 +477,7 @@ grep -RIn --exclude-dir=.venv --exclude-dir=.git \
 - [x] **三层防护可任意子集开关**：`pipeline.ProtectOptions.layers` (frozenset) + CLI `--layers invisible,perturb,visible` 接收任意非空子集；执行顺序按 AGENTS.md §二 锁死，`--layers` 只控开关不控顺序。空集合 / 未知层名 → exit 2。
 - [x] **Windows 系统支持**：`watermark_visible._load_font` 加上 macOS / Windows TTF 路径回退（之前只查 Debian/Ubuntu 路径，Windows 上落到 Pillow 默认位图字体导致 `--visible-text` 渲染成 ~10px）；`tests/test_compliance.py` 改为纯 Python `Path.rglob` 实现替代 `subprocess[grep]`，跨平台；CI matrix 加 `windows-latest`。Windows fast tier 38/38 通过。
 - [x] **测试规模升到 38 用例**：新增 `tests/test_pipeline_layers.py` 覆盖 7 个非空子集 + 空 + 未知层名共 10 用例；`tests/test_cli_exits.py` 新增 2 用例覆盖 `--layers` CLI 路径。本地 fast tier 约 20s 全绿。
+- [x] **Windows GPU 完整模式验证**：RTX 5070 Ti / torch 2.11.0+cu128 / Windows 11 实测通过——SD 10 步 PGD 为 0.74s@512px、3.58s@1024px；首次加载含 ~335MB VAE 模型约 1.48s 一次性开销；38 fast 用例全绿。见 README 性能表格。
 
 ## 待办 / 已知边界
 
