@@ -11,3 +11,9 @@ wheels/
 
 # Locally-downloaded model weights (populate with `photo-guard download-models`)
 models/
+
+# Desktop packaging artifacts
+release/
+*.build/
+*.dist/
+*.app/

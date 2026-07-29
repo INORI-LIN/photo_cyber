@@ -140,9 +140,9 @@ def apply(
     if mode == "tile":
         return apply_tile(image_rgb, text, alpha=alpha)
     if mode == "center":
-        return apply_center(image_rgb, text, alpha=max(alpha, 0.25))
+        return apply_center(image_rgb, text, alpha=alpha)
     if mode == "subject":
-        return apply_subject(image_rgb, text, alpha=max(alpha, 0.30))
+        return apply_subject(image_rgb, text, alpha=alpha)
     raise ValueError(
         f"unknown visible-mode {mode!r}; expected subject|tile|center"
     )

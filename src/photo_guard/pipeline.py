@@ -1,25 +1,4 @@
-"""Pipeline: enforces AGENTS.md ordering.
-
-二 节 — among the three protection layers, order is fixed: ① invisible →
-② perturb → ③ visible.
-
-五 节 checklist — resize to platform spec is step 1, BEFORE embedding the
-invisible watermark, because DWT-DCT survives JPEG re-compression but is
-sensitive to geometric resampling (the DCT block grid moves). Final JPEG
-encoding happens at save time so the artifact is already in its post-platform
-shape (四 节: 「自己先按平台规格压一遍再处理」).
-
-So the concrete order is:
-    load → fit_long_edge → ① embed → ② perturb → ③ visible → save JPEG
-
-Layer selection
----------------
-``ProtectOptions.layers`` lets the caller pick any non-empty subset of
-``{"invisible", "perturb", "visible"}``. The order in which selected
-layers run is **always** the canonical one above; the set only decides
-which layers are present, never the sequence. This matches AGENTS.md
-§二: 处理顺序固定，但用户可以主动放弃某一层（代价是降低整体防护）。
-"""
+"""Canonical pipeline: resize → invisible → perturb → visible → JPEG."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -31,13 +10,11 @@ from PIL import Image
 
 from . import compress, config, perturb, watermark_invisible, watermark_visible
 
-
 LAYER_INVISIBLE = "invisible"
 LAYER_PERTURB = "perturb"
 LAYER_VISIBLE = "visible"
-ALL_LAYERS: frozenset[str] = frozenset(
-    {LAYER_INVISIBLE, LAYER_PERTURB, LAYER_VISIBLE}
-)
+ALL_LAYERS = frozenset({LAYER_INVISIBLE, LAYER_PERTURB, LAYER_VISIBLE})
+DEFAULT_LAYERS = frozenset({LAYER_INVISIBLE, LAYER_VISIBLE})
 
 
 @dataclass
@@ -50,90 +27,92 @@ class ProtectOptions:
     visible_alpha: float = config.DEFAULT_VISIBLE_ALPHA
     long_edge: int = config.DEFAULT_LONG_EDGE
     quality: int = config.DEFAULT_JPEG_QUALITY
-    # Which layers to apply. Order of execution is fixed (see module
-    # docstring); membership only controls presence. Default = all three,
-    # i.e. AGENTS.md baseline behaviour.
-    layers: frozenset[str] = ALL_LAYERS
+    layers: frozenset[str] = DEFAULT_LAYERS
+    payload_envelope: bool = False
+    perturber_instance: Any | None = None
 
 
 def _pil_rgb_to_bgr(image: Image.Image) -> np.ndarray:
-    arr = np.array(image.convert("RGB"))
-    return arr[:, :, ::-1].copy()  # RGB -> BGR for invisible-watermark / OpenCV
+    return np.array(image.convert("RGB"))[:, :, ::-1].copy()
 
 
 def _bgr_to_pil_rgb(arr: np.ndarray) -> Image.Image:
     return Image.fromarray(arr[:, :, ::-1].copy(), mode="RGB")
 
 
-def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
-    """Run the selected layers in the mandated order and write `output_path`."""
+def validate_options(opts: ProtectOptions) -> None:
     unknown = set(opts.layers) - ALL_LAYERS
     if unknown:
-        raise ValueError(
-            f"unknown layer(s) {sorted(unknown)!r}; "
-            f"expected subset of {sorted(ALL_LAYERS)!r}"
-        )
+        raise ValueError(f"unknown layer(s) {sorted(unknown)!r}")
     if not opts.layers:
-        raise ValueError(
-            "at least one layer must be enabled "
-            f"(any non-empty subset of {sorted(ALL_LAYERS)!r})"
-        )
+        raise ValueError("at least one layer must be enabled")
+    if opts.long_edge < 0:
+        raise ValueError("long_edge must be zero or positive")
+    if not 1 <= opts.quality <= 100:
+        raise ValueError("JPEG quality must be between 1 and 100")
+    if not 0.0 <= opts.visible_alpha <= 1.0:
+        raise ValueError("visible watermark alpha must be between 0 and 1")
+    if LAYER_INVISIBLE in opts.layers and not opts.payload:
+        raise ValueError("invisible watermark payload must not be empty")
+    if LAYER_VISIBLE in opts.layers and not opts.visible_text:
+        raise ValueError("visible watermark text must not be empty")
+    if LAYER_PERTURB in opts.layers and opts.perturber == "noop":
+        raise ValueError("perturb layer uses noop; choose noise or sd, or disable the layer")
 
-    src = Image.open(input_path)
-    src.load()
-    src = src.convert("RGB")
 
-    # 0. Resize to the platform spec FIRST (AGENTS.md 五 step 1) — DWT-DCT
-    #    is sensitive to resampling, so this must happen before embedding.
+def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
+    validate_options(opts)
+    with Image.open(input_path) as opened:
+        opened.load()
+        src = opened.convert("RGB")
     src = compress.fit_long_edge(src, opts.long_edge)
-
     bgr = _pil_rgb_to_bgr(src)
 
-    # ① invisible watermark — embed into the cleanest available pixels.
+    stored_payload = opts.payload
     if LAYER_INVISIBLE in opts.layers:
-        bgr = watermark_invisible.embed(bgr, opts.payload)
+        if opts.payload_envelope:
+            stored_payload = watermark_invisible.pack_payload(opts.payload)
+        bgr = watermark_invisible.embed(bgr, stored_payload)
 
-    # ② adversarial perturbation — PhotoGuard SD-encoder attack when
-    #    perturber=='sd', else noop / noise placeholders.
-    perturber_name: str | None = None
+    perturber_name = None
     if LAYER_PERTURB in opts.layers:
-        perturber = perturb.get(opts.perturber, **opts.perturber_kwargs)
-        bgr = perturber.apply(bgr)
-        perturber_name = perturber.name
+        selected = opts.perturber_instance or perturb.get(
+            opts.perturber, **opts.perturber_kwargs
+        )
+        bgr = selected.apply(bgr)
+        perturber_name = selected.name
 
     rgb = _bgr_to_pil_rgb(bgr)
-
-    # ③ visible watermark — last, on top of the protected pixels.
-    if LAYER_VISIBLE in opts.layers:
-        final = watermark_visible.apply(
-            rgb,
-            opts.visible_text,
-            mode=opts.visible_mode,
-            alpha=opts.visible_alpha,
+    final = (
+        watermark_visible.apply(
+            rgb, opts.visible_text, mode=opts.visible_mode, alpha=opts.visible_alpha
         )
-    else:
-        final = rgb
-
-    # Save as JPEG at the chosen quality — this is the post-platform shape.
+        if LAYER_VISIBLE in opts.layers
+        else rgb
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     final.save(output_path, format="JPEG", quality=opts.quality, optimize=True)
-
     return {
         "output": str(output_path),
         "size": final.size,
         "perturber": perturber_name,
-        "payload_bytes": (
-            len(opts.payload.encode("utf-8"))
-            if LAYER_INVISIBLE in opts.layers
-            else 0
-        ),
+        "payload_bytes": len(stored_payload.encode("utf-8")) if LAYER_INVISIBLE in opts.layers else 0,
+        "payload_envelope": bool(opts.payload_envelope and LAYER_INVISIBLE in opts.layers),
         "layers": sorted(opts.layers),
     }
 
 
 def verify(suspect_path: Path, payload_bytes: int) -> str:
-    """Extract the embedded payload from a suspect image."""
-    img = Image.open(suspect_path)
-    img.load()
-    bgr = _pil_rgb_to_bgr(img)
+    with Image.open(suspect_path) as image:
+        image.load()
+        bgr = _pil_rgb_to_bgr(image)
     return watermark_invisible.extract(bgr, payload_bytes)
+
+
+def verify_expected(suspect_path: Path, expected_payload: str) -> dict:
+    size = watermark_invisible.packed_size(expected_payload)
+    stored = verify(suspect_path, size)
+    payload, verified = watermark_invisible.unpack_payload(stored)
+    if not verified or payload != expected_payload:
+        raise ValueError("watermark payload does not match or failed integrity check")
+    return {"payload": payload, "verified": True, "payload_bytes": size}

@@ -45,6 +45,7 @@ def test_protect_with_noise_perturber_still_round_trips(textured_jpg, tmp_path) 
             visible_text="© test",
             long_edge=1080,
             quality=85,
+            layers=pipeline.ALL_LAYERS,
         ),
     )
     recovered = pipeline.verify(out_path, len(payload.encode()))

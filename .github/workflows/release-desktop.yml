@@ -1,0 +1,60 @@
+name: release-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --frozen --extra photoguard --extra desktop --group package
+      - run: uv run photo-guard download-models
+      - run: uv run python packaging/build_desktop.py
+      - name: Smoke test standalone application
+        shell: powershell
+        run: .\dist\desktop_entry.dist\PhotoGuard.exe --smoke-test
+      - name: Build installer
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\windows-installer.iss
+      - name: Checksums
+        shell: powershell
+        run: Get-FileHash release\* -Algorithm SHA256 | Format-Table | Out-File release\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoGuard-Windows-x64
+          path: release/*
+
+  macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --frozen --extra photoguard --extra desktop --group package
+      - run: uv run photo-guard download-models
+      - run: uv run python packaging/build_desktop.py
+      - name: Smoke test app bundle
+        run: |
+          APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
+          BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 -print -quit)
+          "$BIN" --smoke-test
+      - run: packaging/create_dmg.sh
+      - run: shasum -a 256 release/* > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoGuard-macOS-arm64
+          path: release/*

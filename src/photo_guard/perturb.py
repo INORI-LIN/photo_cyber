@@ -72,12 +72,20 @@ class SDEncoderPerturber(Perturber):
         steps: int = config.PHOTOGUARD_STEPS,
         step_size: float = config.PHOTOGUARD_STEP_SIZE,
         model_id: str = config.PHOTOGUARD_MODEL_ID,
+        device: str = "auto",
+        device_index: int | None = None,
+        progress_callback=None,
+        cancel_check=None,
         **_: Any,
     ) -> None:
         self.epsilon = epsilon
         self.steps = steps
         self.step_size = step_size
         self.model_id = model_id
+        self.device = device
+        self.device_index = device_index
+        self.progress_callback = progress_callback
+        self.cancel_check = cancel_check
         self._attack = None  # lazy
 
     def _ensure(self):
@@ -90,6 +98,10 @@ class SDEncoderPerturber(Perturber):
                     step_size=self.step_size,
                     steps=self.steps,
                     model_id=self.model_id,
+                    device=self.device,
+                    device_index=self.device_index,
+                    progress_callback=self.progress_callback,
+                    cancel_check=self.cancel_check,
                 )
             )
 

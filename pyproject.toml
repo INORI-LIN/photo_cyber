@@ -1,7 +1,7 @@
 [project]
 name = "photo-guard"
 version = "0.1.0"
-description = "Add your description here"
+description = "Offline three-layer photo anti-theft protection with desktop GUI"
 readme = "README.md"
 authors = [
     { name = "inori-lin", email = "inori-lin@outlook.com" }
@@ -16,12 +16,16 @@ dependencies = [
 
 [project.scripts]
 photo-guard = "photo_guard:main"
+photo-guard-gui = "photo_guard.gui:main"
 
 [project.optional-dependencies]
 photoguard = [
     "accelerate>=1.14.0",
     "diffusers>=0.38.0",
     "safetensors>=0.8.0",
+]
+desktop = [
+    "pyside6>=6.11.1",
 ]
 
 [build-system]
@@ -31,6 +35,9 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.0",
+]
+package = [
+    "nuitka>=4.1.3",
 ]
 
 [tool.pytest.ini_options]

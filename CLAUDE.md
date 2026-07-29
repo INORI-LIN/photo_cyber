@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **No `pip` ever.** All dependency work goes through `uv` (`uv add`, `uv remove`, `uv sync`). Do not introduce a `requirements.txt`, do not run `pip install`, and do not suggest those to the user. CI / review will fail on `grep -RIn "pip install"` hits in code or scripts (the string is allowed inside `AGENTS.md` and `README.md` because they document the rule itself).
 2. **Use `uv run`** for every Python invocation; never `source .venv/bin/activate` and run python directly.
 
-The Python version is pinned to 3.11 via `.python-version`. Heavy ML deps (torch / diffusers / accelerate) are isolated in the `photoguard` optional extra — core users do `uv sync`, opt-in users do `uv sync --extra photoguard`.
+The Python version is pinned to 3.11 via `.python-version`. Heavy ML deps (torch / diffusers / accelerate) are isolated in the `photoguard` optional extra. PySide6 is isolated in the `desktop` extra, and Nuitka lives in the `package` dependency group.
 
 ## Common commands
 
@@ -18,12 +18,16 @@ The Python version is pinned to 3.11 via `.python-version`. Heavy ML deps (torch
 uv python install 3.11 && uv python pin 3.11
 uv sync --frozen                       # core deps only
 uv sync --extra photoguard --frozen    # + torch/diffusers for the SD perturber
+uv sync --extra desktop --frozen       # + PySide6 desktop GUI
+uv sync --extra desktop --extra photoguard --group package --frozen  # release build
 
 # Run the CLI (both forms work)
 uv run python -m photo_guard protect IN.jpg -o OUT.jpg [...]
 uv run python -m photo_guard verify  SUSPECT.jpg --payload-bytes N
 uv run photo-guard protect ...         # via [project.scripts]
 uv run photo-guard download-models     # one-off: fetch SD VAE into models/ for fully offline runs
+uv run photo-guard devices             # list CPU/CUDA/MPS and unsupported adapters
+uv run photo-guard-gui                  # launch the PySide6 desktop app
 
 # After editing dependencies
 uv add <pkg>                           # main deps
@@ -47,13 +51,13 @@ docker build -t photo-guard:dev .
 # Smoke (mirrors .github/workflows/docker.yml)
 mkdir -p /tmp/pg && cp some.jpg /tmp/pg/in.jpg
 docker run --rm -v /tmp/pg:/work photo-guard:dev \
-    protect /work/in.jpg -o /work/out.jpg --perturber noise --payload ci-test
+    protect /work/in.jpg -o /work/out.jpg --layers invisible,perturb,visible --perturber noise --payload ci-test
 docker run --rm -v /tmp/pg:/work photo-guard:dev \
     verify /work/out.jpg --payload-bytes 7   # → "ci-test"
 
 # Strongest "model is really baked in" assertion
 docker run --rm --network none -v /tmp/pg:/work photo-guard:dev \
-    protect /work/in.jpg -o /work/out_sd.jpg --perturber sd --perturber-steps 2 --long-edge 384
+    protect /work/in.jpg -o /work/out_sd.jpg --layers invisible,perturb,visible --perturber sd --perturber-steps 2 --long-edge 384
 ```
 
 Build-step rules to preserve:
@@ -64,7 +68,7 @@ Build-step rules to preserve:
 
 ## Tests and CI
 
-- `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈38 cases, ~20s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a HuggingFace download; do not run them unless explicitly asked.
+- `uv sync --group dev` brings in pytest. Then `uv run pytest -m 'not slow'` is the canonical fast-tier run (≈55 cases, ~20s). `slow`-marked tests exercise the real SD VAE attack and need `uv sync --extra photoguard` plus a local model prepared by `photo-guard download-models`; do not run them unless explicitly asked.
 - `.github/workflows/ci.yml` runs a matrix over `ubuntu-latest` + `windows-latest`. The shell-based `pip install` grep step is Linux-only (POSIX `grep`); on Windows the same check is enforced by `tests/test_compliance.py`, which is a pure-Python `Path.rglob` walk that runs on every OS via pytest. Belt and braces — do not delete either.
 - `.github/workflows/docker.yml` builds the all-in-one image, smoke-tests it (protect+verify with `--perturber noise`, then a `--network none` run with `--perturber sd` to prove the SD VAE is really baked in), and does not push. The runner uses `jlumbroso/free-disk-space@main` because GitHub-hosted ubuntu has only ~14 GB free and torch + nvidia wheels + SD VAE export to ~6 GB.
 - Pytest files that act as fail-loud regression locks for non-obvious decisions documented elsewhere here:
@@ -81,7 +85,7 @@ The whole package implements the AGENTS.md three-layer scheme. `pipeline.protect
 load → fit_long_edge(1080) → ① embed (DWT-DCT-SVD) → ② perturb → ③ visible WM → save JPEG
 ```
 
-`ProtectOptions.layers` (a `frozenset[str]` from `pipeline.ALL_LAYERS`) lets callers pick **which** of the three layers run. The order in the diagram above is fixed; the set only controls membership. Empty / unknown sets raise `ValueError` so the CLI can map them to exit code 2. The CLI exposes this as `--layers invisible,perturb,visible` (default = all three, comma-separated subset). When extending the pipeline, add new layers in canonical-order position with their own membership check — never make the set decide ordering.
+`ProtectOptions.layers` (a `frozenset[str]` from `pipeline.ALL_LAYERS`) lets callers pick **which** of the three layers run. The order in the diagram above is fixed; the set only controls membership. Empty / unknown sets raise `ValueError` so the CLI can map them to exit code 2. The CLI exposes this as a comma-separated subset. The safe default is `--layers invisible,visible`; PhotoGuard must be explicitly enabled with the `perturb` layer and a non-noop perturber. When extending the pipeline, add new layers in canonical-order position with their own membership check — never make the set decide ordering.
 
 Two non-obvious things future instances must know:
 
@@ -95,13 +99,16 @@ Two non-obvious things future instances must know:
 | `pipeline.py` | The only orchestrator. Read its docstring before reordering anything. | No |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect`. | Add new flags here. |
 | `config.py` | Single source of defaults for all layers. New tunables go here, not buried in modules. | Yes |
-| `watermark_invisible.py` | Layer ① — `embed` / `extract`, thin wrapper over `imwatermark`. | Yes (whole-file) |
+| `watermark_invisible.py` | Layer ① — raw embed/extract plus optional versioned CRC payload envelope. | Yes (whole-file) |
 | `perturb.py` | Layer ② — `Perturber` ABC + name registry `_REGISTRY`. `get(name, **kwargs)` is the factory. | Yes — add a class, register, done |
 | `photoguard.py` | The real PhotoGuard PGD attack on a SD VAE encoder. **Imports torch / diffusers and is loaded lazily by `perturb.SDEncoderPerturber.apply()` — never at import time.** Loads weights with `local_files_only=True` from `<repo>/models/sd-vae-ft-mse` only — runtime never touches HuggingFace. | Yes |
 | `download.py` | One-off model fetcher (`photo-guard download-models`). The **only** module allowed to talk to HuggingFace; called once at install/build time, never at runtime. Docker `RUN` invokes it during build to bake the SD VAE into the image. | No (intentionally minimal — don't broaden the network surface) |
 | `subject.py` | Three-tier subject detection: haar face → Sobel-saliency window → geometric centre. Used only by visible-WM `subject` mode. Pure cv2, no extra deps (haar XML ships with `opencv-python-headless`). | Yes |
 | `watermark_visible.py` | Layer ③ — `apply()` dispatches to `apply_subject` / `apply_tile` / `apply_center`. `_load_font` walks a list of conventional TTF paths (Linux Debian/RHEL, macOS, Windows) before falling back to Pillow's bitmap default. Don't shrink that list — Pillow's bitmap default ignores `size`, which silently breaks `--visible-text` on systems with no matching TTF. | Yes |
-| `compress.py` | One function: `fit_long_edge`. | Yes |
+| `compress.py` | `fit_long_edge`; zero preserves original size and negative values are invalid. | Yes |
+| `device.py` | Lazy CPU/CUDA/MPS discovery and explicit backend selection. | Yes |
+| `gui.py` | PySide6 batch protect/verify UI; work runs outside the Qt main thread. | Yes |
+| `resources.py` | Resolves models/resources in source and frozen app layouts. | No |
 
 When extending Layer ②, follow the existing pattern: subclass `Perturber`, accept tunables as kwargs with defaults from `config.py`, register in `_REGISTRY`, then add the matching CLI flags in `cli.py`. The pipeline doesn't need to change.
 
@@ -117,3 +124,11 @@ If diffusers is missing, `photoguard._SDEncoderAttack._load` raises a `RuntimeEr
 - **Branch is `main` (renamed from the default `master` at init).** Remote is `origin → https://github.com/INORI-LIN/photo_cyber.git`.
 - Commit messages so far follow `type(scope): 中文摘要` then a body in Chinese describing rationale. Match that style and add the existing `Co-Authored-By` trailer when committing.
 - Do not push without explicit user confirmation — prior turns have established that `git push` is treated as a remote-effecting action requiring an OK.
+
+## Desktop application and release packaging
+
+- `src/photo_guard/gui.py` is the PySide6 desktop UI. Keep image processing in workers; never run the pipeline on the Qt main thread.
+- GUI defaults to invisible + visible watermark and uses the CRC payload envelope. The CLI remains raw-payload compatible unless `--payload-envelope` is passed.
+- Supported accelerated devices are CUDA and MPS. Unsupported adapters are display-only and use CPU.
+- Desktop dependencies are in the `desktop` optional extra; Nuitka is in the `package` dependency group.
+- `packaging/build_desktop.py` must run on the target OS. Release CI produces Windows x64 and Apple Silicon macOS artifacts; Intel macOS is intentionally unsupported.

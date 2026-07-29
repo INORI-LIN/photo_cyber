@@ -15,7 +15,7 @@ WATERMARK_METHOD = "dwtDctSvd"
 DEFAULT_PAYLOAD = "photo-guard"
 
 # Layer ② perturbation
-DEFAULT_PERTURBER = "noop"  # AGENTS.md 三②: 预留接入位
+DEFAULT_PERTURBER = "noop"  # explicit wiring/test mode; not AI protection
 NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 
 # PhotoGuard SD-encoder attack (AGENTS.md 三② 真实实现).
@@ -24,11 +24,10 @@ NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 # Model is loaded **offline-only** from `models/sd-vae-ft-mse/` under the repo
 # root — no HuggingFace request at runtime. Use `photo-guard download-models`
 # (one-off) to populate that directory.
-import pathlib as _pathlib
+from . import resources as _resources
 
-_REPO_ROOT = _pathlib.Path(__file__).resolve().parents[2]
-PHOTOGUARD_MODELS_DIR = _REPO_ROOT / "models"
 PHOTOGUARD_MODEL_NAME = "sd-vae-ft-mse"
+PHOTOGUARD_MODELS_DIR = _resources.application_root() / "models"
 PHOTOGUARD_REMOTE_REPO = "stabilityai/sd-vae-ft-mse"
 PHOTOGUARD_MODEL_ID = str(PHOTOGUARD_MODELS_DIR / PHOTOGUARD_MODEL_NAME)
 PHOTOGUARD_EPSILON = 8.0 / 255.0
