@@ -18,7 +18,8 @@ def _build_parser() -> argparse.ArgumentParser:
     protect.add_argument("--payload", default=config.DEFAULT_PAYLOAD)
     protect.add_argument(
         "--layers", default=",".join(sorted(pipeline.DEFAULT_LAYERS)),
-        help="Comma-separated subset of invisible,perturb,visible; order stays fixed",
+        help=("Comma-separated subset of invisible,perturb,visible; order stays fixed. "
+              "Choosing noise or sd automatically enables perturb"),
     )
     protect.add_argument("--perturber", default=config.DEFAULT_PERTURBER, choices=perturb.available())
     protect.add_argument("--visible-mode", default=config.DEFAULT_VISIBLE_MODE, choices=["subject", "tile", "center"])
@@ -72,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "protect":
             layers = _parse_layers(args.layers)
+            if args.perturber != "noop":
+                layers = frozenset({*layers, pipeline.LAYER_PERTURB})
             if args.perturber_steps <= 0:
                 raise ValueError("perturber steps must be positive")
             if args.perturber_eps < 0 or args.perturber_step_size <= 0:

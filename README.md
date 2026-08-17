@@ -141,10 +141,10 @@ uv run photo-guard devices
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--layers` | `invisible,visible` | 非空子集；只控制开关，不改变顺序 |
+| `--layers` | `invisible,visible` | 非空子集；不改变顺序；选择 `noise` / `sd` 时自动加入 `perturb` |
 | `--payload` | `photo-guard` | 隐水印内容 |
 | `--payload-envelope` | 关闭 | 启用版本头和 CRC 校验 |
-| `--perturber` | `noop` | `noise` / `noop` / `sd`；启用 perturb 层时不能使用 noop |
+| `--perturber` | `noop` | `noise` / `sd` 会自动启用 perturb 层；显式启用该层时不能使用 noop |
 | `--device` | `auto` | `auto` / `cpu` / `cuda` / `mps` |
 | `--device-index` | `None` | 多 CUDA 显卡时指定索引 |
 | `--visible-mode` | `subject` | `subject` / `tile` / `center` |
@@ -155,6 +155,8 @@ uv run photo-guard devices
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
 | `--perturber-model` | 本地模型目录 | 不接受运行时远程加载 |
+
+`--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
 退出码：`0` 成功，`1` 未恢复出有效旧版 payload，`2` 参数或运行错误。
 

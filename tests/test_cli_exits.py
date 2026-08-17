@@ -84,6 +84,77 @@ def test_protect_with_layers_subset_succeeds(tmp_path: Path, capsys) -> None:
     assert "perturber=None" in line
 
 
+def test_non_noop_perturber_enables_perturb_layer(tmp_path: Path, capsys) -> None:
+    """Selecting a real perturber is an explicit request to run that layer."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--perturber",
+            "noise",
+            "--visible-mode",
+            "tile",
+        ]
+    )
+
+    assert code == 0
+    line = capsys.readouterr().out
+    assert "layers=invisible+perturb+visible" in line
+    assert "perturber=noise" in line
+
+
+def test_non_noop_perturber_augments_explicit_layer_subset(tmp_path: Path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--layers",
+            "visible",
+            "--perturber",
+            "noise",
+            "--visible-mode",
+            "tile",
+        ]
+    )
+
+    assert code == 0
+    line = capsys.readouterr().out
+    assert "layers=perturb+visible" in line
+    assert "perturber=noise" in line
+
+
+def test_explicit_perturb_layer_rejects_noop(tmp_path: Path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--layers",
+            "perturb",
+        ]
+    )
+
+    assert code == 2
+    assert "perturb layer uses noop" in capsys.readouterr().err
+
+
 def test_protect_with_unknown_layer_exits_two(tmp_path: Path, capsys) -> None:
     src = tmp_path / "in.jpg"
     out = tmp_path / "out.jpg"

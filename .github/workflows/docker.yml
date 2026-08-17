@@ -63,13 +63,17 @@ jobs:
 
       - name: Smoke test — protect (noise perturber) + verify
         run: |
-          docker run --rm \
+          noise_output=$(docker run --rm \
               -v "$PWD/fixtures:/work" \
               photo-guard:ci \
               protect /work/in.jpg -o /work/out.jpg \
+              --layers invisible,perturb,visible \
               --payload "ci-test" \
-              --perturber noise
+              --perturber noise)
 
+          echo "$noise_output"
+          echo "$noise_output" | grep -F "layers=invisible+perturb+visible"
+          echo "$noise_output" | grep -F "perturber=noise"
           test -s fixtures/out.jpg
 
           recovered=$(docker run --rm \
@@ -86,14 +90,18 @@ jobs:
       # low to keep CI under a minute.
       - name: Smoke test — offline SD perturber
         run: |
-          docker run --rm \
+          sd_output=$(docker run --rm \
               --network none \
               -v "$PWD/fixtures:/work" \
               photo-guard:ci \
               protect /work/in.jpg -o /work/out_sd.jpg \
+              --layers invisible,perturb,visible \
               --payload "ci-test" \
               --perturber sd \
               --perturber-steps 2 \
-              --long-edge 384
+              --long-edge 384)
 
+          echo "$sd_output"
+          echo "$sd_output" | grep -F "layers=invisible+perturb+visible"
+          echo "$sd_output" | grep -F "perturber=sd"
           test -s fixtures/out_sd.jpg

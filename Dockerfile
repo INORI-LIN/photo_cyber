@@ -15,7 +15,8 @@
 #
 # Run (GPU):
 #   docker run --rm --gpus all -v "$PWD:/work" photo-guard:dev \
-#     protect /work/in.jpg -o /work/out.jpg --perturber sd
+#     protect /work/in.jpg -o /work/out.jpg \
+#     --layers invisible,perturb,visible --perturber sd
 #
 # The image is fully offline at runtime: HF_HUB_OFFLINE=1 is set and the
 # SD VAE weights are baked in at /app/models/sd-vae-ft-mse via the
