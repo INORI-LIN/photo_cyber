@@ -22,7 +22,7 @@
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [ ] 未开始 |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [ ] 未开始 |
-| G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成 |
+| G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环（2026-09-23），余 GUI 手工项归 P2 |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
 | G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [ ] 未开始 |
 
@@ -982,6 +982,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 ### G3 — 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越）
 
 **严重度**：P0-blocker
+**状态**：**已落地（2026-09-23，批次 1 提交 `5ad59ea`）；Windows 平台风险已闭环（`f5dcb3b` + `5d057c9` + `3578cd2`）** —— fast 档 142 例全绿，CI 的 windows / ubuntu / docker 三腿全绿；验收 5 条中 4 条已勾，GUI 手工项按批量移交 P2
 **工作量**：M（≈120 行 + 15 条 fast 用例）
 **批次**：1（只做 fast 档门禁；Qt 档用例归 P2）
 **依赖**：P2(3) 消费 `outputs`；P9 改两处计数锚点；G4 正交
@@ -1026,10 +1027,11 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 | outputs_module_import_does_not_pull_qt_or_torch / gui_delegates_output_naming_to_outputs_module（源码） | fast | 无 torch/PySide6 入 `sys.modules`；源码无 `"_unique_output"` 且有 `outputs.plan_batch` 调用 |
 
 **验收标准**
-- [ ] `test_atomic_write_keeps_previous_output_when_save_fails` 与 `test_plan_batch_gives_same_stem_inputs_distinct_paths` 在旧代码上必红。
-- [ ] `uv run pytest tests/test_output_integrity.py -q`、`uv run pytest -m 'not slow' -q` 全绿；收集数以 `--collect-only -q` 实测（HEAD 2810e31 = 58），不写推算数字。
-- [ ] `protect in.jpg -o in.jpg` → 2 且 sha256 不变；`protect in.jpg -o out.jpg` → 0、`verify out.jpg --payload-bytes N` → 0，无 `.photoguard-*.tmp`。
-- [ ] 两条 grep 零命中（`candidate.exists()`、`_unique_output`）；compliance 与 perturb_registry 用例全绿；AGENTS.md/pyproject/uv.lock 无 diff；Docker 冒烟通过；GUI 手工：`../x` 弹框且文件数不变，两张同 stem 批量得两个不同文件。
+- [x] `test_atomic_write_keeps_previous_output_when_save_fails` 与 `test_plan_batch_gives_same_stem_inputs_distinct_paths` 在旧代码上必红。 —— 批次 1 已在父提交 `2810e31` 上以等价探针取证：`-o` 同路径退 0 且原图被销毁、保存失败留下 `b'PARTIAL-TRUNCATED'`、同 stem 两次命名相撞（见实施记录）。
+- [x] `uv run pytest tests/test_output_integrity.py -q`、`uv run pytest -m 'not slow' -q` 全绿；收集数以 `--collect-only -q` 实测（HEAD 2810e31 = 58），不写推算数字。 —— 2026-09-23 实测：`test_output_integrity.py` **39 passed**；fast 档 **142 passed**，`--collect-only -q` = **142 tests collected**（批次 1 落地时为 129）。
+- [x] `protect in.jpg -o in.jpg` → 2 且 sha256 不变；`protect in.jpg -o out.jpg` → 0、`verify out.jpg --payload-bytes N` → 0，无 `.photoguard-*.tmp`。 —— 2026-09-23 复跑通过（640×480 纹理图、payload `sync-g3`）：退 2 且 stderr 含 `refusing to overwrite the input`、原图 sha256 不变；protect 退 0、verify 退 0 且 stdout 恰为 `线索（未验证）: sync-g3`；输出目录无 `.photoguard-*.tmp`。
+- [x] 两条 grep 零命中（`candidate.exists()`、`_unique_output`）；compliance 与 perturb_registry 用例全绿；AGENTS.md/pyproject/uv.lock 无 diff；Docker 冒烟通过。 —— 两条 grep 的作用域是 **`gui.py`**（`outputs.py` 是本 issue 指定的唯一实现，保留这两处正是目标）：`src/photo_guard/gui.py` 零命中，由 `test_gui_delegates_output_naming_to_outputs_module` 钉住；compliance + perturb_registry 8 passed；本批三次提交只触及 `src/photo_guard/outputs.py`、`tests/test_output_integrity.py`、`docs/fix-plan.md`；Docker 冒烟通过（run 35829859087 / 35830040382）。
+- [ ] GUI 手工：`../x` 弹框且文件数不变，两张同 stem 批量得两个不同文件。 —— **未做**：本项只做 fast 档门禁、Qt 档按批量归 P2（R13），勾选框保持未勾，由 P2 落地后回写。
 
 **风险与未知**
 - **Windows 证据（2026-09-23 更新）**：
