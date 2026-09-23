@@ -1,10 +1,13 @@
 """CLI exit-code coverage.
 
-Covers the three branches in cli.py:
+Covers the branches in cli.py:
 - protect → 0 on success
-- verify  → 0 when payload recovered
-- verify  → 1 when output is empty / all-NUL ("no payload recovered")
-- verify  → 2 when extraction itself raises (e.g. missing file)
+- verify  → 0 when payload recovered (envelope, clue, or blind discovery)
+- verify  → 1 when nothing is recoverable ("no payload recovered")
+- verify  → 2 when extraction itself raises (e.g. missing file, bad argument)
+
+The blind-discovery and clue branches were added by P3; the legacy branch now labels its
+output as a clue, which is why the payload only has to appear in stdout there.
 """
 from __future__ import annotations
 
@@ -173,4 +176,62 @@ def test_protect_with_unknown_layer_exits_two(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "unknown name" in err
+
+
+# --- P3: blind discovery and the clue-labelled legacy path --------------------------
+#
+# Every payload length used here is one that this fixture was measured to survive
+# end-to-end (see docs/fix-plan.md P10 — the envelope round trip is NOT reliable for
+# every length on this noise fixture, so a test must not pick a length at random).
+
+
+def test_verify_without_flags_discovers_the_envelope(tmp_path: Path, capsys) -> None:
+    """No length, no expected payload — the CRC envelope is enough."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    payload = "test#cli"  # 8 bytes: measured to survive protect -> verify on this fixture
+    assert main(
+        ["protect", str(src), "-o", str(out), "--payload", payload, "--payload-envelope"]
+    ) == 0
+    capsys.readouterr()
+
+    code = main(["verify", str(out)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == payload
+
+
+def test_verify_without_flags_on_an_unmarked_image_exits_one(tmp_path: Path, capsys) -> None:
+    src = tmp_path / "clean.jpg"
+    Image.new("RGB", (800, 600), (200, 220, 240)).save(src, quality=92)
+
+    assert main(["verify", str(src)]) == 1
+    assert "no payload recovered" in capsys.readouterr().err
+
+
+def test_legacy_verify_labels_its_output_as_a_clue(tmp_path: Path, capsys) -> None:
+    """A checksum-less payload is a clue: stdout says so and stderr carries the metrics."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    payload = "test#cli"
+    assert main(["protect", str(src), "-o", str(out), "--payload", payload]) == 0
+    capsys.readouterr()
+
+    code = main(["verify", str(out), "--payload-bytes", str(len(payload.encode()))])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "线索" in captured.out and "未验证" in captured.out
+    assert payload in captured.out
+    assert "clue, not proof" in captured.err
+
+
+def test_verify_with_a_zero_payload_bytes_exits_two(tmp_path: Path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    _seed_textured(src)
+    assert main(["verify", str(src), "--payload-bytes", "0"]) == 2
+    assert "positive" in capsys.readouterr().err
 

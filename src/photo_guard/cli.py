@@ -5,7 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import config, device, perturb, pipeline
+from . import config, device, perturb, pipeline, watermark_invisible
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -39,9 +39,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     verify = sub.add_parser("verify", help="Verify an invisible watermark")
     verify.add_argument("suspect", type=Path)
-    mode = verify.add_mutually_exclusive_group(required=True)
+    # Neither flag => blind discovery of the CRC envelope, which is the recommended mode.
+    mode = verify.add_mutually_exclusive_group()
     mode.add_argument("--expected-payload", help="Verify a new CRC-protected payload")
-    mode.add_argument("--payload-bytes", type=int, help="Legacy/raw stored payload byte length")
+    mode.add_argument(
+        "--payload-bytes",
+        type=int,
+        help="Legacy/raw stored payload byte length; reported as a clue, never as proof",
+    )
+    verify.add_argument(
+        "--max-payload-bytes",
+        type=int,
+        default=config.DEFAULT_MAX_PAYLOAD_BYTES,
+        help="Ceiling for the blind envelope search",
+    )
 
     sub.add_parser("devices", help="List detected compute devices")
 
@@ -59,13 +70,6 @@ def _parse_layers(spec: str) -> frozenset[str]:
     if unknown:
         raise ValueError(f"--layers got unknown name(s) {unknown!r}")
     return frozenset(parts)
-
-
-def _looks_like_no_payload(payload: str) -> bool:
-    if not payload:
-        return True
-    bad = sum(1 for ch in payload if ch in {"\x00", "�"} or (ord(ch) < 0x20 and ch not in "\t\n\r"))
-    return bad >= max(1, len(payload) // 2)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -110,9 +114,27 @@ def main(argv: list[str] | None = None) -> int:
                 result = pipeline.verify_expected(args.suspect, args.expected_payload)
                 print(result["payload"])
                 return 0
-            payload = pipeline.verify(args.suspect, args.payload_bytes)
-            if _looks_like_no_payload(payload):
-                print("no payload recovered", file=sys.stderr)
+            if args.payload_bytes is not None:
+                try:
+                    clue = pipeline.verify_legacy(args.suspect, args.payload_bytes)
+                except watermark_invisible.NoPayloadError as exc:
+                    print(f"no payload recovered: {exc}", file=sys.stderr)
+                    return 1
+                # No checksum exists on this path, so it is reported as a clue in stdout
+                # and the advisory metrics go to stderr where they cannot be mistaken for
+                # a verification result.
+                print(f"\u7ebf\u7d22\uff08\u672a\u9a8c\u8bc1\uff09: {clue.text}")
+                print(
+                    f"advisory gates: blocks/bit={clue.blocks_per_bit} "
+                    f"mean_margin={clue.mean_margin:.4f} pass={clue.advisory_pass} "
+                    f"-- {clue.notes}",
+                    file=sys.stderr,
+                )
+                return 0
+            try:
+                payload = pipeline.discover_payload(args.suspect, args.max_payload_bytes)
+            except watermark_invisible.NoPayloadError as exc:
+                print(f"no payload recovered: {exc}", file=sys.stderr)
                 return 1
             print(payload)
             return 0

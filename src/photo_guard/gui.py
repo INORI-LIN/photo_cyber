@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import config, device, perturb, pipeline
+from . import config, device, outputs, perturb, pipeline
 
 _IMAGE_FILTER = "Images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
 
@@ -106,9 +106,11 @@ class VerifyWorker(QObject):
     item_done = Signal(str, str, str)
     finished = Signal(bool)
 
-    def __init__(self, paths: list[Path], expected: str, legacy_bytes: int | None) -> None:
+    def __init__(self, paths: list[Path], expected: str, legacy_bytes: int | None,
+                 auto_discover: bool = False) -> None:
         super().__init__()
         self.paths, self.expected, self.legacy_bytes = paths, expected, legacy_bytes
+        self.auto_discover = auto_discover
         self.cancelled = False
 
     @Slot()
@@ -118,17 +120,21 @@ class VerifyWorker(QObject):
                 break
             self.progress.emit(position - 1, len(self.paths), path.name)
             try:
-                if self.expected:
-                    result = pipeline.verify_expected(path, self.expected)
-                    value = result["payload"]
+                if self.auto_discover:
+                    value = pipeline.discover_payload(path)
+                    status = "通过（自动发现）"
+                elif self.expected:
+                    value = pipeline.verify_expected(path, self.expected)["payload"]
+                    status = "通过"
                 else:
-                    value = pipeline.verify(path, int(self.legacy_bytes or 0))
-                    if not value or "�" in value:
-                        raise ValueError("未恢复出可信 payload")
+                    # No checksum on this path: report a clue and label the row as such.
+                    clue = pipeline.verify_legacy(path, int(self.legacy_bytes or 0))
+                    value = f"{clue.text}  [{clue.notes}]"
+                    status = "线索（未验证）"
             except Exception as exc:
                 self.item_done.emit(str(path), "未通过", str(exc))
             else:
-                self.item_done.emit(str(path), "通过", value)
+                self.item_done.emit(str(path), status, value)
             self.progress.emit(position, len(self.paths), path.name)
         self.finished.emit(self.cancelled)
 
@@ -204,7 +210,7 @@ class MainWindow(QMainWindow):
         output_row = QWidget(); output_layout = QHBoxLayout(output_row); output_layout.setContentsMargins(0,0,0,0)
         self.output_dir = QLineEdit(str(Path.home() / "Pictures" / "PhotoGuard")); browse = QPushButton("选择")
         browse.clicked.connect(self._choose_output_dir); output_layout.addWidget(self.output_dir); output_layout.addWidget(browse)
-        self.suffix = QLineEdit("_protected")
+        self.suffix = QLineEdit(outputs.DEFAULT_SUFFIX)
         form.addRow("隐水印内容", self.payload); form.addRow("明水印文字", self.visible_text)
         form.addRow("明水印模式", self.visible_mode); form.addRow("透明度", self.alpha)
         form.addRow("输出长边", self.long_edge); form.addRow("JPEG 质量", self.quality)
@@ -237,7 +243,9 @@ class MainWindow(QMainWindow):
         mode = QGroupBox("验证方式"); form = QFormLayout(mode)
         self.expected_payload = QLineEdit(); self.expected_payload.setPlaceholderText("新版本推荐：输入期望 payload")
         self.legacy_bytes = QSpinBox(); self.legacy_bytes.setRange(0, 10000); self.legacy_bytes.setSpecialValueText("不使用旧版模式")
+        self.verify_auto = QCheckBox("自动发现 payload（推荐：无需填写，按 CRC 信封盲检）")
         form.addRow("期望 payload", self.expected_payload); form.addRow("旧版 payload 字节数", self.legacy_bytes)
+        form.addRow("自动发现", self.verify_auto)
         layout.addWidget(mode)
         self.verify_table = QTableWidget(0, 3); self.verify_table.setHorizontalHeaderLabels(["文件", "结果", "详情"]); self.verify_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.verify_table, 1)
@@ -308,10 +316,8 @@ class MainWindow(QMainWindow):
         if not paths: return self._error("请先添加图片")
         try:
             options = self._build_options(); pipeline.validate_options(options)
+            items = self._plan_items(paths)
         except ValueError as exc: return self._error(str(exc))
-        output_dir = Path(self.output_dir.text()).expanduser()
-        suffix = self.suffix.text() or "_protected"
-        items = [BatchItem(path, self._unique_output(output_dir, path.stem + suffix, ".jpg")) for path in paths]
         self.protect_results.clear(); self.protect_log.clear(); self._save_settings()
         worker = ProtectWorker(items, options)
         worker.item_done.connect(self._protect_item_done)
@@ -322,11 +328,13 @@ class MainWindow(QMainWindow):
     @Slot()
     def start_verify(self) -> None:
         paths = self.verify_files.paths(); expected = self.expected_payload.text()
+        auto = self.verify_auto.isChecked()
         legacy = self.legacy_bytes.value() or None
         if not paths: return self._error("请先添加图片")
-        if not expected and legacy is None: return self._error("请输入期望 payload，或填写旧版字节数")
+        if not auto and not expected and legacy is None:
+            return self._error("请勾选自动发现，或输入期望 payload / 旧版字节数")
         self.verify_results.clear(); self.verify_table.setRowCount(0)
-        worker = VerifyWorker(paths, expected, legacy)
+        worker = VerifyWorker(paths, expected, legacy, auto)
         worker.item_done.connect(self._verify_item_done)
         worker.progress.connect(lambda done, total, name: self._set_progress(self.verify_progress, done, total, name))
         self._start_worker(worker, lambda _: self.statusBar().showMessage("验证完成"))
@@ -371,11 +379,17 @@ class MainWindow(QMainWindow):
         with open(path, "w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle); writer.writerow(["文件", "结果", "详情"]); writer.writerows(self.verify_results)
 
-    def _unique_output(self, directory: Path, stem: str, extension: str) -> Path:
-        candidate = directory / f"{stem}{extension}"; number = 2
-        while candidate.exists():
-            candidate = directory / f"{stem}_{number}{extension}"; number += 1
-        return candidate
+    def _plan_items(self, paths: list[Path]) -> list[BatchItem]:
+        """Resolve the whole batch's output paths up front, with in-batch uniqueness.
+
+        Naming lives in ``outputs`` so the CLI, the GUI and the tests share one
+        implementation; ``zip(strict=True)`` keeps the pairing honest if either side
+        ever changes length.
+        """
+        planned = outputs.plan_batch(
+            Path(self.output_dir.text()).expanduser(), paths, self.suffix.text()
+        )
+        return [BatchItem(source, target) for source, target in zip(paths, planned, strict=True)]
 
     def _error(self, message: str):
         QMessageBox.warning(self, "Photo Guard", message)

@@ -105,17 +105,25 @@ uv run photo-guard protect input.jpg \
   --payload "owner:alice#2026" \
   --payload-envelope
 
+# 推荐：不告知长度，直接盲检 CRC 信封
+uv run photo-guard verify output.jpg
+
+# 也可以核对指定的 payload
 uv run photo-guard verify output.jpg \
   --expected-payload "owner:alice#2026"
 ```
 
-### 验证旧版图片
+不传任何 flag 时，`verify` 会在候选长度上搜索 `PG1:` 信封，并**只用 CRC32 判定**，因此不需要记住 payload 长度，也不会把随机噪声当成 payload；`--max-payload-bytes` 可调整搜索上界。找到则打印 payload 并退出 0，未找到退出 1。
+
+### 验证旧版图片（仅线索）
 
 ```bash
 uv run photo-guard verify suspect.jpg --payload-bytes 16
 ```
 
 `--payload-bytes` 必须等于嵌入内容的 UTF-8 字节数，不一定等于字符数。
+
+旧版 payload 没有校验和，因此这条路径**只给线索、不给结论**：stdout 形如 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin` 两个辅助指标。实测（见 `docs/fix-plan.md` §6 P3）：真实产物的 `mean_margin` 落在 0.2567–0.3247，而可打印垃圾可达 0.2005–0.5000，两者完全重叠——**没有任何阈值能区分真伪**，故该路径的结论不可作为确权证据。需要能举证的结论时，请用 `--payload-envelope` 重新保护。
 
 ### 启用 PhotoGuard
 
@@ -158,7 +166,9 @@ uv run photo-guard devices
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
-退出码：`0` 成功，`1` 未恢复出有效旧版 payload，`2` 参数或运行错误。
+退出码：`0` 成功，`1` 未恢复出 payload（含盲检未找到信封），`2` 参数或运行错误。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+
+`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，替换的是链接本身、它指向的文件不受影响。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖。
 
 ## 固定处理顺序
 
@@ -200,8 +210,9 @@ src/photo_guard/
 ├── cli.py                   # protect / verify / devices / download-models
 ├── gui.py                   # PySide6 桌面界面与后台批处理
 ├── pipeline.py              # 固定顺序编排和参数校验
+├── outputs.py               # 原子写盘与批量命名（绝不写输入文件）
 ├── device.py                # CPU / CUDA / MPS 检测与选择
-├── watermark_invisible.py   # DWT-DCT-SVD + CRC envelope
+├── watermark_invisible.py   # DWT-DCT-SVD + CRC 信封盲检 + 旧版线索路径
 ├── watermark_visible.py     # subject / tile / center
 ├── subject.py               # Haar → Sobel 显著性 → 中心降级
 ├── perturb.py               # 扰动注册表和重依赖懒加载
@@ -266,6 +277,7 @@ uv run python packaging/build_desktop.py
 ## 已知边界
 
 - 隐水印可能在大幅裁剪、多轮强压缩或全图重绘后丢失；
+- **信封回环受 payload 长度与图像内容影响**：实测在噪声型测试图上，payload 超过约 18 字节后验真可能失败（纹理型测试图约 33 字节起），短 payload 亦有个别长度失败（见 `docs/fix-plan.md` P10）。请优先使用较短的 payload，并在发布前用 `verify` 自检一次；
 - Haar 人脸检测对侧脸、遮挡和多人场景能力有限；
 - PhotoGuard 效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
 - 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；

@@ -14,6 +14,16 @@ from __future__ import annotations
 WATERMARK_METHOD = "dwtDctSvd"
 DEFAULT_PAYLOAD = "photo-guard"
 
+# Legacy (raw, checksum-less) verification. These two are ADVISORY garbage filters
+# only — they must never be presented as proof. Spike P3-A (2026-09-23, 335 rows over
+# this repo's own fixtures) measured real products at mean_margin 0.2567-0.3247 and
+# printable garbage at 0.2005-0.5000: the bands overlap completely, and a corrupted
+# real product sits inside the true band at 0.2567. No threshold can separate them,
+# which is why the raw path reports a clue and only the CRC envelope is evidence.
+DEFAULT_MAX_PAYLOAD_BYTES = 128  # stored bytes; ceiling for the blind envelope search
+LEGACY_MIN_MEAN_MARGIN = 0.20    # kills q50/q70/clean-texture/non-multiple-length garbage
+LEGACY_MIN_BLOCKS_PER_BIT = 16   # advisory; unsatisfiable at the 320x320 floor for K >= 14
+
 # Layer ② perturbation
 DEFAULT_PERTURBER = "noop"  # explicit wiring/test mode; not AI protection
 NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动

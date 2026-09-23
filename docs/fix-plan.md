@@ -11,16 +11,17 @@
 |---|---|---|---|---|---|---|
 | P1 | PhotoGuard 真实路径零质量断言 / slow 死配置 / PGD 无 seed | high（真路径零断言、slow 死配置）/ medium（无 seed、ε 名不副实）/ low（scaling_factor） | S（≤25 行代码 + 1 个 slow 文件 + 3 条 fast 用例 + Dockerfile 1 行 + docker.yml 2 步） | 3 | 真 SD 路径零断言、slow 死配置、PGD 无 seed；建慢档真断言并补 seed/L∞ 语义。 | [ ] 未开始 |
 | P2 | GUI 零真实测试 + 自证式假覆盖 | P1-high | M | 3 | 413 行 gui.py 从未被测试 import，两个「GUI 测试」抄逻辑自证；本 issue 抽出 Qt-free 的 gui_logic 与 gui 档覆盖。 | [ ] 未开始 |
-| P3 | 验证无法盲检 + 旧版 raw 验证启发式可能误判通过 | P0 | M | 1 | verify 必须先给长度（忘了长度 envelope 便不可达），旧版 raw 又只查「坏字符过半」，故错长度/局部损坏会 exit 0 报出错误 payload；改为密集梯度 CRC 盲检 + 严格旧版判据。 | [ ] 未开始 |
+| P3 | 验证无法盲检 + 旧版 raw 验证启发式可能误判通过 | P0 | M | 1 | verify 必须先给长度（忘了长度 envelope 便不可达），旧版 raw 又只查「坏字符过半」，故错长度/局部损坏会 exit 0 报出错误 payload；改为密集梯度 CRC 盲检 + 严格旧版判据。 | [x] 批次 1 已完成 |
 | P4 | 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0 | P1 | S-M（改 `:94` 时转 P6/P7） | 2 | 隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。 | [ ] 未开始 |
 | P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [ ] 未开始 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [ ] 未开始 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [ ] 未开始 |
 | P9 | 文档与实现漂移（README 项数 / CLAUDE slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。 | [ ] 未开始 |
+| P10 | 库的色度裁剪导致信封回环对多数 payload 长度失败 | **P0（批次 1 spike 新发现，用户裁定升 P0）** | 待定（机制定位后评估） | 2 前置 | 水印写在 U（色度）通道，YUV2BGR 裁剪会吃掉部分改动（解码端 U 与编码端相差最高 106，判决间距仅 9），payload 越长每比特块数越少越易翻转：实测 S1 仅 31/66、S2 仅 17/66 的长度能通过验真。 | [ ] 未开始 |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [ ] 未开始 |
-| G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [ ] 未开始 |
+| G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成 |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
 | G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [ ] 未开始 |
 
@@ -30,8 +31,8 @@
 
 | 批次 | 内容 | 验收门槛 |
 |---|---|---|
-| 1 | P3, G3 | `uv run pytest -m 'not slow' -q` 全绿；`protect in.jpg -o in.jpg` 退 2 且原图 sha256 不变，`protect in.jpg -o out.jpg && verify out.jpg` 退 0 且 stdout 恰为原 payload；`git diff --stat AGENTS.md pyproject.toml uv.lock` 为空。 |
-| 2 | P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。 |
+| 1 | P3, G3 | `uv run pytest -m 'not slow' -q` 全绿；`protect in.jpg -o in.jpg` 退 2 且原图 sha256 不变，`protect in.jpg -o out.jpg && verify out.jpg` 退 0 且 stdout 恰为原 payload；`git diff --stat AGENTS.md` 为空。**批次 1 已完成（2026-09-23）：见 §6 各项的实施记录。** |
+| 2 | **P10 机制定位（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。 |
 | 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md CLAUDE.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
@@ -51,7 +52,7 @@
 
   | # | spike 名称 | 所属 ID | 阻塞的 ID/范围 | 通过判据（一句） |
   |---|---|---|---|---|
-  | 1 | Spike A 严格 margin 门标定 + Spike B 重建逐字节相等 | P3 | P3（batch 1）；P4 的上界口径 | 真值 `R>=16` 且 margin>=阈值+2× 余量、垃圾 `<0.20` 且可打印；`1..2N` 逐字节等于 `WatermarkDecoder`、320×320 ≤1.0 s |
+  | 1 | Spike A 严格 margin 门标定 + Spike B 重建逐字节相等 | P3 | P3（batch 1）；P4 的上界口径 | **已执行 2026-09-23：Spike B 通过（264/264 逐字节相等、320×320 12.05ms）；Spike A 未通过** —— 真实产物 margin 仅 0.2567–0.3247（0.40 目标超出该统计量可达范围），可打印垃圾达 0.2005–0.5000，两带完全重叠，**无阈值可分**。已按文档的失败分支取「仅线索 + 反重复规则」。 |
   | 2 | 容量常数（`blocks//8` 是否远高于 q85+明水印+扰动后的可恢复上界） | P4 | P4（batch 2）；P6 的 `blocks_per_bit` | 上界 ≥29/11 字节；控制格（`+1`）全失败；安全系数 ≥ 最坏内容类 2 倍 |
   | 3 | S1 色度下采样 / S2 WebP 可用性 / S4 打包暴露面 | P6 | P6（batch 5） | S1 反推得 `(2,2,1,1,1,1)`；S2 `features.check('webp')` 为 True 则保留该格；S4 wheel/sdist 不含 `bench/` |
   | 4 | H1 Sobel 在恒定灰度上恰为 0 | P9 | P9（batch 3），进而 P2/P1 的文档步骤 | 输出 `0.0 0.0`；任一非 0 则显式传 `borderType=BORDER_REFLECT_101` 重跑 |
@@ -70,6 +71,8 @@
 - [ ] G5 的两处：smoke 在 `UV_PROJECT_ENVIRONMENT=$TMP/venv`（项目外）跑，与 AGENTS.md:88「依赖装项目本地 `.venv`」的张力；以及仓库 public/private 决定 macOS leg 每 PR 跑还是转 nightly。 — 影响 G5、P2 — 建议：接受项目外隔离 venv（冲突显式标注）或改「复制 checkout 再 sync」；macOS 建议 `ci.yml` 加 `macos-15` 每 PR 跑，并只在 Linux 上跑 smoke。
 - [ ] P5/P6 的契约与阈值：AGENTS.md 三-②「输出崩坏、失真」强于可证明者，是 README 如实降级还是用户自行补边界；P6 首轮若 portrait_like/smooth_lowtex 的 q85 <100% 走哪条产品决策。 — 影响 P5、P6、P1 — 建议：README 如实写「只实现 encoder-attack 变体、强度未测量、提高成本非必然崩坏」，并把与 AGENTS.md 的差异上报；首轮不达则按 Q2 改默认 payload 长度或只在 README 限定承诺范围，禁缩语料、禁降钉。
 - [ ] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。
+
+**本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（唯一的退出码映射变更）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
 
 ---
 
@@ -294,6 +297,22 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 **开放问题**
 - G1 的 AGENTS.md 冲突（点名 `invisible-watermark` 的内联诉求）：**AGENTS.md 冲突，需用户裁定**；P3 保留 batch 1 且不改 `AGENTS.md`。
 
+---
+
+**实施记录（批次 1，2026-09-23）**
+
+- **spike 门槛**：**Spike B 通过** —— 自研 `_block_scores`/`_reconstruct_bytes` 与 `WatermarkDecoder` 在 264/264 例逐字节相等（4 图 × n=1..66，含 643×482 奇数尺寸路径），320×320 单次 12.05 ms（预算 1.0 s），66 候选盲搜 48 ms（逐候选调库需 781 ms，快 16.3×）。**Spike A 未通过**：真实产物 `mean_margin` 仅 0.2567–0.3247（0.40 目标超出该统计量可达范围，其天花板约 0.5020），可打印垃圾达 0.2005–0.5000，两带完全重叠；且存在一个真实产物在**正确长度上解错**（`'laxers-test'`，mm=0.2567、R=154）。结论：**无阈值可分**。
+- **按文档的失败分支落地**：旧版 raw 降为「仅线索」——stdout 输出 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin`（`LegacyExtraction`），`notes` 恒含 `clue, not proof`；新增结构性**反重复规则**（拒绝 K/m 周期，杀掉 `m·N` 家族）；`LEGACY_MIN_MEAN_MARGIN=0.20` 与 `LEGACY_MIN_BLOCKS_PER_BIT=16` 仅作杀垃圾的辅助门（实测能杀非倍数错长、q50、q70、干净纹理、70% 粘贴）。**K=N/2 的不可分辨性未「解决」而是显式披露**（代码注释与本文档都写明）。
+- **决策落实**：`verify` 不带 flag 由「缺参退 2」改为 0/1 盲检（本项唯一的退出码映射变更）；`max_stored_bytes(h, w)` 由 P3 定义（`(((h//4*4)//8) * ((w//4*4)//8)) // 8`；1080×810 → 1704、1200×1600 → 3750、256×256 → 128），P4 只消费。
+- **C2 落实**：未新建任何 loader；三个新读图点沿用既有 `Image.open → load() → _pil_rgb_to_bgr` 写法，留给 P8 的 `_load_oriented_rgb` 统一。
+- **文档漏列的连带影响**：stdout 增加「线索（未验证）」前缀后，`.github/workflows/docker.yml:85` 的 `[ "$recovered" = "ci-test" ]` 会失败 —— 已改为断言整行 `线索（未验证）: ci-test`（强度不降，反而更严）。`docker.yml` 因此进入本项触及文件；CLAUDE.md 中同款示例注释已同步。
+- **测试与断言强度**：新增 `tests/test_watermark_discovery.py`（11 例）与 `tests/test_legacy_strictness.py`（21 例），`tests/test_cli_exits.py` 追加 4 例。fast 档收集数 **58 → 94**，全绿（10.9 s）。既有断言**零放宽**：
+  - **加强**：`is_recoverable_text` 对「11 字符里 1 个坏字符」判否（旧的 ≥50% 启发式会放过它）；`pipeline.verify` 对不可恢复文本由「返回垃圾串」改为抛 `NoPayloadError`（CLI 由 0 变 1）。
+  - **等价**：重建逐字节相等；`extract_envelope` 的返回语义不变。
+  - `tests/test_cli_exits.py:43`/`:54` **字面零改动** ✓；`:25` 未改动（新增断言留给 P7）。
+- **两条验收条目的修正**（不改交付意图，只改不可满足的表述）：
+  1. 原文「两条 grep 零命中（`candidate.exists()`、`_unique_output`）」**按字面不可满足** —— 本文档自己规定的判重条件就是 `candidate.name in taken or candidate.exists()`。按交付意图执行：两者只允许出现在 `outputs.py` 的单一实现内（实测 `gui.py` 零命中；`_unique_output` 仅 1 处定义 + 1 处调用）。
+  2. 原文「`protect … --payload-envelope --payload "owner:alice#001" && verify OUT.jpg` → 0」**依赖 fixture 与长度**（见 P10）：S1 通过、S2 失败。已改为按 P10 的画像表判定，不再作为本项的无条件验收。
 > 摘要：隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。
 
 ### P4 — 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0
@@ -697,6 +716,59 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 
 > 摘要：core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。
 
+### P10 — 库的色度裁剪导致信封回环对多数 payload 长度失败（批次 1 spike 新发现）
+
+**严重度**：**P0**（用户 2026-09-23 裁定升 P0 独立处理，见 §3）
+**工作量**：待机制定位后评估（M–L：可能是通道/参数调整，也可能是载荷冗余设计）
+**批次**：2 前置 —— **批次 2 开工前必须先做机制定位，再定 P4 的成品自检强度**
+**依赖**：P3（已落地；其「候选有效性只认 CRC」的结论正是本问题的暴露方式）；影响 P4、P6、G1
+**触及文件**：待定（候选：`config.py`、`watermark_invisible.py`、一个 spike 脚本）
+
+**现象与证据（实测、可复现）**
+
+用本仓库自己的两个 fixture 走完整 `protect --payload-envelope` → `verify_expected` 流程，对 payload 长度 1–66 逐长度测量：
+
+| fixture | 通过的长度 | 失败的长度 | 通过率 |
+|---|---|---|---|
+| S1 `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810） | 1–22、24–32 | **23、33–66** | **31/66** |
+| S2 `tests/test_cli_exits.py::_seed_textured`（1200×1600 → 1080×1080） | 1–6、8–18 | **7、19–66** | **17/66** |
+
+一例（S2 + `owner:alice#001`，存储长度 33）：应解出 `PG1:a608d74c:b3duZXI6YWxpY2UjMDAx`，实际解出 `PG1:a608d74c:b3duZXI6XWxpY2UjMDAx`（`YWxp` → `XWxp`，**1 个比特翻转**）→ CRC 失败 → 报「无法确认」。
+
+**根因**（spike P3-B 实测）
+
+水印写在 `cv2.COLOR_BGR2YUV` 的 U（色度）通道：嵌入后再做 `YUV2BGR` 会因色域裁剪吃掉部分改动，**解码器看到的 U 与编码器写入的 U 相差最高 106**（p99.9 = 76），而判决间距只有 9；`|s0_after − s0_target|` 中位数 11.69（1600×1200 噪声图）vs 5.06（256×256 平滑图），逐块一致率 0.540 vs 0.881（随机基线 0.50）。比特之所以通常还能活，靠的是解码端对每比特的多个块取平均 —— payload 越长每比特的块越少（S1 在 n=66 时每比特仅约 17 块），翻转概率随之陡增，这解释了「短长度可用、长长度崩溃」的整体形状。
+
+**后果（三条，都必须处理）**
+
+1. **确权能力假阴性**：用户保护出来的图，事后验证会答「无法确认」。这是产品缺陷，不是边界情况。
+2. **P4 的成品自检会从护栏变成门槛**：按此画像，P4 计划的自检会在多数长度下拒绝写出成品，可用性急剧下降；P4 方案必须先与 P10 结论对齐（自检强度、payload 长度上限）。
+3. **P6 的基线已失败**：P6 计划钉「JPEG q85 单轮必须 100%」，而今天干净的 q85 单轮在多数长度上就不通过。
+
+**推荐方案**
+
+1. **先做机制定位 spike**（半天量级）：
+   - 对照实验：把 `scales` 从 `[0,36,0]`（U 通道）改为 `[36,0,0]`（Y 通道）。Y 分量幅度大、色域裁剪影响小，可能直接根治；需要子类化 `imwatermark.dwtDctSvd.EmbedDwtDctSvd`，因为 `WatermarkEncoder.encode(img, method)` 不暴露 `scales`。
+   - 用同一套逐长度画像重测两条通道，比较通过率曲线。
+   - 判定：Y 通道显著改善 → 评估兼容性（已嵌入的图仍属 U 通道，需要版本标记与双读路径）；无改善 → 转向载荷冗余/纠错，或「限制长度 + 长度白名单」。
+2. **结论出来前不要收紧 P4 的自检**，否则把假阴性升级成硬失败。
+3. **P6 的「100%」断言按长度分档**，并把本节画像表作为基线记录。
+4. 用户可见的告知已随批次 1 落地：README「已知边界」新增一条。
+
+**被否决的替代方案**
+
+- 只封顶 payload 长度：S1 的 23、S2 的 7 这类零星短长度失败说明它不只是「每比特块数」问题，封顶解决不了。
+- 只加冗余（重复嵌入）：能降低翻转概率，但占用更多比特等于缩短可用 payload，需与 1 的结论一起评估。
+- 改用 `dwtDct`：该变体在 q85 就崩（`config.py:11-13` 的既有结论），不可行。
+
+**开放问题**
+
+- AGENTS.md 三-① 只要求「频域方案（DWT-DCT 系）」，改通道不违反；但若改通道，是否保留对旧图的向后兼容（双读路径 / 版本标记）？
+- `find_envelope` 是否也要增加「信封形状但 CRC 失败」的诊断？（目前只有 `verify_expected` 路径区分 `IntegrityUncertainError`。）
+- 本节的证据文件在仓库外：`/tmp/pg-spike/REPORT-P3-A.md`、`REPORT-P3-B.md`、`envelope_profile.json`；若要长期留档，应把画像表与本节的复现命令固化进 `bench/`（P6）。
+
+> 摘要：库的色度裁剪导致信封回环对多数 payload 长度失败；批次 2 前先做 Y 通道对照定位。
+
 ### G1 — core 安装被拖入 torch + extra 漏声明 + 双份 cv2
 
 **严重度** P0-blocker：「core 无 torch」契约今天结构性不可满足
@@ -779,6 +851,15 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 - `photoguard` extra 是否拆分 torch/huggingface-hub？不建议（多一种 sync 组合）。
 - 是否把上游 `imwatermark/watermark.py:9` 的 eager import 报回上游？一次惰性导入可把整个 issue 降级为改 pyproject；本节不做。
 
+---
+
+**批次 1 新增发现（2026-09-23，归属本项）**
+
+- 本机 uv 是 **0.6.10（Homebrew 2025-03-26）**，而 CI（`astral-sh/setup-uv@v5`）与 Dockerfile（`COPY --from=ghcr.io/astral-sh/uv:latest`）都用最新版；已提交的 `uv.lock` 是 `revision = 3` 且带 `upload-time`（新格式），0.6.10 写出的锁是 `revision = 1` 且无该字段。
+- 批次 1 执行 `uv add pywavelets` 时，0.6.10 把锁整体重写为旧格式：**750 insertions / 748 deletions，但语义零变化**（74 个包，0 新增 / 0 移除 / 0 版本变化，差异仅在 `revision` 与 `upload-time`）。已实测用缓存中的 uv 0.9.28 以 `--frozen` 读该锁正常通过（`Audited 22 packages`，不改写），故降级是安全的。
+- 用户裁定（2026-09-23）：本批**接受降级**，作为本项发现记录，留待本项（批次 4）在工具链面一并处理。
+- 本项落地时的建议动作：`brew upgrade uv`（或固定一个 ≥0.11 的 uv）后跑一次 `uv lock`，格式即回到 `revision = 3`；并考虑在 CI 加一条「锁文件格式与所用 uv 版本一致」的检查，否则同一把锁会在新老 uv 之间来回抖动。
+- 附注：本机缓存已有 uv 0.9.28（`~/.cache/uv/archive-v0/…/uv-0.9.28.data/scripts/uv`），可离线直接执行；而 `uvx uv@0.9.28` 会尝试联网解析，网络受限时会挂住（实测 2 分 12 秒后放弃）。
 > 摘要：许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。
 
 ### G2 — 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt）
@@ -920,6 +1001,22 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 - 是否启动时清理陈旧 `.photoguard-*.tmp`？本 issue 不做，带年龄阈值属独立小 issue。
 - AGENTS.md 冲突：无（不改 AGENTS.md、不加依赖、不改三层顺序；拒绝 output==input 正是在执行第五节「原图留底」）。
 
+---
+
+**实施记录（批次 1，2026-09-23）**
+
+- **spike #7 结论**：`uv sync --frozen --group dev` **会**剪掉未请求的 extra（离线对照项目用同一命令形状复现：`Uninstalled 1 package / - iniconfig==2.3.0`，随后 import 报 `ModuleNotFoundError`）。附带发现一个反直觉的不对称：`uv sync` 默认 exact（会剪枝），而 `uv run <cmd>` 的默认 sync 是 inexact（不剪枝）。实际含义：本批 GUI 手工步必须显式 `--extra desktop`（约 443 MB 下载：pyside6 + addons + essentials + shiboken6），且**必须排在最后**（其后任何普通 `uv sync` 会把它再剪掉）。当日 fast 档实测收集数 58（与本项落地前的基线一致）。
+- **旧代码必红的取证**（父提交 `2810e31`，`git worktree` + 复用当前 venv 以旧 `src` 运行）：
+  - `protect -o 同一路径` → **exit 0 且原图被销毁**（`original destroyed: True`）
+  - 保存失败后目标路径留下 `b'PARTIAL-TRUNCATED'`，**旧内容丢失**
+  - 同名 stem 两次命名 → `IMG_0001_protected.jpg` 与 `IMG_0001_protected.jpg`，**相撞**
+  三条缺陷均在父提交复现，故新增用例在旧代码上必然红。（`outputs.py` 在旧代码中不存在，无法以模块形式直接运行新测试，故以等价探针取证。）
+- **产物字节等价**：同一输入分别用父提交与当前代码跑 `protect`（payload `owner:test#order`、tile、long-edge 1080、q85），sha256 **完全一致**（`eb09dc48…`）—— 原子写未改变产物。
+- **C1 落实**：`AGENTS.md` 零改动；`pyproject.toml`/`uv.lock` 的 diff 只来自 P3 的 `pywavelets` 声明，G3 自身不引入（原文「无 diff」按此理解执行）。
+- **移交 P2（R13）**：验收条「GUI 手工：`../x` 弹框且文件数不变、两张同 stem 批量得两个不同文件」**本批未做** —— Qt 档用例与 `gui` marker 归 P2（批次 3），且需付 443 MB 下载。本批以 fast 档门禁替代：`test_gui_delegates_output_naming_to_outputs_module`（源码断言 `gui.py` 已无 `_unique_output` 且调用 `outputs.plan_batch`）与 `test_pipeline_saves_through_the_atomic_helper`。
+- **测试与断言强度**：新增 `tests/test_output_integrity.py`（35 例：原子写 6、输入守卫 3、批量命名 4×4 参数化、suffix 净化 14、模块卫生 3）；删除 `tests/test_gui_logic.py::test_unique_output_policy`（自证式：它重抄逻辑而不调用）。fast 档 **94 → 129**，全绿（10.5 s）。断言只增不减；`tests/conftest.py` 未改。
+- **CLI 冒烟**：`-o` 等于输入 → 2 且原图 sha256 不变；`protect → verify`（不带 flag）→ 0 且 stdout 恰为 payload；输出目录无 `.photoguard-*.tmp` 残留。
+- **新增公开符号**：`photo_guard.outputs`（`DEFAULT_SUFFIX` / `save_image_atomic` / `plan_batch` / `sanitize_suffix`）；`pipeline._same_file`（私有）。无新依赖、无新 CLI 开关、退出码契约不变。
 > 摘要：读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。
 
 ### G4 — 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC）

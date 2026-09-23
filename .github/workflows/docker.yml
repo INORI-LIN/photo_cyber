@@ -82,7 +82,9 @@ jobs:
               verify /work/out.jpg --payload-bytes 7)
 
           echo "recovered: $recovered"
-          [ "$recovered" = "ci-test" ]
+          # P3: the checksum-less path labels its output as a clue, so the exact line is
+          # asserted rather than a substring match — a bare "ci-test" is no longer printed.
+          [ "$recovered" = "线索（未验证）: ci-test" ]
 
       # Strongest evidence the SD VAE is actually baked in: run with
       # --network none so any HuggingFace request would fail. PGD on CPU

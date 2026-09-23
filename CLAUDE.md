@@ -53,7 +53,9 @@ mkdir -p /tmp/pg && cp some.jpg /tmp/pg/in.jpg
 docker run --rm -v /tmp/pg:/work photo-guard:dev \
     protect /work/in.jpg -o /work/out.jpg --layers invisible,perturb,visible --perturber noise --payload ci-test
 docker run --rm -v /tmp/pg:/work photo-guard:dev \
-    verify /work/out.jpg --payload-bytes 7   # → "ci-test"
+    verify /work/out.jpg --payload-bytes 7   # → 线索（未验证）: ci-test
+docker run --rm -v /tmp/pg:/work photo-guard:dev \
+    verify /work/out_sd.jpg                  # → ci-test（盲检信封，无需长度）
 
 # Strongest "model is really baked in" assertion
 docker run --rm --network none -v /tmp/pg:/work photo-guard:dev \
@@ -96,10 +98,11 @@ Two non-obvious things future instances must know:
 
 | File | Role | Plug-replaceable? |
 |------|------|-------------------|
-| `pipeline.py` | The only orchestrator. Read its docstring before reordering anything. | No |
+| `pipeline.py` | The only orchestrator. Read its docstring before reordering anything. Refuses an output path that is the input file (`_same_file`, AGENTS.md 五). | No |
+| `outputs.py` | Atomic write + batch naming (`save_image_atomic`, `plan_batch`, `sanitize_suffix`). stdlib + Pillow only — never add Qt or torch here. Output naming has exactly ONE implementation and the GUI/CLI both consume it; do not reintroduce a second one (a tautological test once hid that duplication). | Yes |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect`. | Add new flags here. |
 | `config.py` | Single source of defaults for all layers. New tunables go here, not buried in modules. | Yes |
-| `watermark_invisible.py` | Layer ① — raw embed/extract plus optional versioned CRC payload envelope. | Yes (whole-file) |
+| `watermark_invisible.py` | Layer ① — `embed`, plus **two read paths with different authority**: the CRC envelope (integrity-checked, supports blind discovery) and the checksum-less raw path (a *clue* only). Contains a transcription of `imwatermark.dwtDctSvd`'s block scan, proven byte-exact against the library (spike P3-B) — keep it in sync if the library's `scales`/`block` defaults change. | Yes (whole-file) |
 | `perturb.py` | Layer ② — `Perturber` ABC + name registry `_REGISTRY`. `get(name, **kwargs)` is the factory. | Yes — add a class, register, done |
 | `photoguard.py` | The real PhotoGuard PGD attack on a SD VAE encoder. **Imports torch / diffusers and is loaded lazily by `perturb.SDEncoderPerturber.apply()` — never at import time.** Loads weights with `local_files_only=True` from `<repo>/models/sd-vae-ft-mse` only — runtime never touches HuggingFace. | Yes |
 | `download.py` | One-off model fetcher (`photo-guard download-models`). The **only** module allowed to talk to HuggingFace; called once at install/build time, never at runtime. Docker `RUN` invokes it during build to bake the SD VAE into the image. | No (intentionally minimal — don't broaden the network surface) |
@@ -128,7 +131,7 @@ If diffusers is missing, `photoguard._SDEncoderAttack._load` raises a `RuntimeEr
 ## Desktop application and release packaging
 
 - `src/photo_guard/gui.py` is the PySide6 desktop UI. Keep image processing in workers; never run the pipeline on the Qt main thread.
-- GUI defaults to invisible + visible watermark and uses the CRC payload envelope. The CLI remains raw-payload compatible unless `--payload-envelope` is passed.
+- GUI defaults to invisible + visible watermark and uses the CRC payload envelope; its verify tab can **blind-discover** the envelope instead of being told the payload length. The CLI stays raw-payload compatible, but that path is now reported as a **clue, never a proof** (spike P3-A proved no threshold separates real products from printable garbage) — see `docs/fix-plan.md` §6 P3.
 - Supported accelerated devices are CUDA and MPS. Unsupported adapters are display-only and use CPU.
 - Desktop dependencies are in the `desktop` optional extra; Nuitka is in the `package` dependency group.
 - `packaging/build_desktop.py` must run on the target OS. Release CI produces Windows x64 and Apple Silicon macOS artifacts; Intel macOS is intentionally unsupported.
