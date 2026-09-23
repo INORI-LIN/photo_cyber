@@ -69,7 +69,11 @@ def save_image_atomic(
         if icc_profile is not None:
             save_kwargs["icc_profile"] = icc_profile
         image.save(temp, **save_kwargs)
-        handle = os.open(temp, os.O_RDONLY)
+        # Read-write, not read-only: on Windows `os.fsync` reaches FlushFileBuffers, whose
+        # contract requires the handle to carry GENERIC_WRITE — a read-only handle raises
+        # OSError(EBADF) and would fail every save. On POSIX the two are equivalent for
+        # flushing, so this costs nothing and removes the platform split entirely.
+        handle = os.open(temp, os.O_RDWR)
         try:
             os.fsync(handle)
         finally:

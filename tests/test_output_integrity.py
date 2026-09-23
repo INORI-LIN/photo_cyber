@@ -96,13 +96,26 @@ def test_atomic_write_output_is_decodable_at_the_final_path(tmp_path) -> None:
 
 
 def test_atomic_write_preserves_existing_file_permissions(tmp_path) -> None:
+    """A pre-existing mode must survive the atomic write.
+
+    Windows has no rwx bits: `st_mode & 0o777` can only be 0o666 (writable) or 0o444
+    (read-only), so `0o604` is not a representable state there. The branch below asserts the
+    one permission state Windows *can* observe — which is exactly the property
+    `outputs.save_image_atomic` implements when it re-applies the previous mode.
+    """
     destination = tmp_path / "out.jpg"
     destination.write_bytes(b"x")
-    os.chmod(destination, 0o604)
-
-    outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
-
-    assert destination.stat().st_mode & 0o777 == 0o604
+    if sys.platform == "win32":
+        os.chmod(destination, 0o444)
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+        assert destination.stat().st_mode & 0o200 == 0  # still read-only
+        with Image.open(destination) as image:  # and the content is the new image
+            image.load()
+            assert image.format == "JPEG"
+    else:
+        os.chmod(destination, 0o604)
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+        assert destination.stat().st_mode & 0o777 == 0o604
 
 
 def test_atomic_write_new_file_follows_umask(tmp_path) -> None:
