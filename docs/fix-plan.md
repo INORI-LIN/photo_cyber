@@ -1032,7 +1032,11 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - [ ] 两条 grep 零命中（`candidate.exists()`、`_unique_output`）；compliance 与 perturb_registry 用例全绿；AGENTS.md/pyproject/uv.lock 无 diff；Docker 冒烟通过；GUI 手工：`../x` 弹框且文件数不变，两张同 stem 批量得两个不同文件。
 
 **风险与未知**
-- Windows 的 `fsync`/`os.replace`/`os.link`/`os.symlink` 只能由 ci.yml:15 的 matrix 给证据；`fsync` 退路为 `close()` 后 `"r+b"` 再 fsync；`PermissionError` 须响亮失败，**不得**降级为非原子写。
+- **Windows 证据（2026-09-23 更新）**：
+  - **`fsync`：已结案**。ci.yml:15 的 matrix 给出了证据 —— windows 腿在 `os.open(temp, os.O_RDONLY)` + `os.fsync` 上 **25 failed / 114 passed**，全部同一指纹 `[Errno 9] Bad file descriptor`。处置：改 `O_RDWR`（`f5dcb3b`）＋ 跨平台回归锁，取证细节见下方「CI 取证（2026-09-23）」。
+  - **`os.replace` 覆盖只读目的地：设计上已消除，未在 Windows 实测**。`DeleteFile` 文档明写只读文件删除失败 `ERROR_ACCESS_DENIED`，而 `MoveFileEx(REPLACE_EXISTING)` 只提 ACL、未提只读，故无法本地定论。处置：把 mode 直贴从 `os.replace` 之前挪到之后（POSIX 等价），从设计上不再出现「替换只读目的地」这条路径；由 windows 腿复跑确认。
+  - **`os.link` / `os.symlink`：仍待 matrix 给证据**（两处用例都带平台能力守卫，skip 不计失败）。
+- `PermissionError` 须响亮失败，**不得**降级为非原子写。
 - `.photoguard-*.tmp`：断电残骸、写入窗口内目录短暂多出该条目；不做启动清理；TOCTOU 与 `ENAMETOOLONG` 不处理；别名用例可能 skip。
 
 **spike（如需）**
@@ -1061,6 +1065,18 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **测试与断言强度**：新增 `tests/test_output_integrity.py`（35 例：原子写 6、输入守卫 3、批量命名 4×4 参数化、suffix 净化 14、模块卫生 3）；删除 `tests/test_gui_logic.py::test_unique_output_policy`（自证式：它重抄逻辑而不调用）。fast 档 **94 → 129**，全绿（10.5 s）。断言只增不减；`tests/conftest.py` 未改。
 - **CLI 冒烟**：`-o` 等于输入 → 2 且原图 sha256 不变；`protect → verify`（不带 flag）→ 0 且 stdout 恰为 payload；输出目录无 `.photoguard-*.tmp` 残留。
 - **新增公开符号**：`photo_guard.outputs`（`DEFAULT_SUFFIX` / `save_image_atomic` / `plan_batch` / `sanitize_suffix`）；`pipeline._same_file`（私有）。无新依赖、无新 CLI 开关、退出码契约不变。
+
+**CI 取证（2026-09-23，批次 2 收尾）** —— 上一轮的静态审计结论由真日志闭环
+
+- **取数方式**：本机无 `gh`；`git credential fill`（osxkeychain）取 token 走 GitHub REST 拉 run/job/日志。仓库为 public，未认证也能读 run/job 列表但会撞 60 req/h 限流；原始日志端点 `GET /repos/{owner}/{repo}/actions/jobs/{id}/logs` 未认证会被拒。
+- **失败对象**：`ci` run **35826312721** @ `b0e0ef1`，job `test (windows-latest)` = **107068703338**，第 7 步 `Run pytest (fast tier only)` 红；同 run 的 `test (ubuntu-latest)` 绿，`docker` run 35826312707 绿。
+- **规模与指纹**：**25 failed / 114 passed**；25 例**全部**是 `OSError: failed to write <path>: [Errno 9] Bad file descriptor`，抛出点 `outputs.py:74`（`os.fsync`）、包装点 `:86`。按文件分布 `test_pipeline_layers` 8、`test_cli_exits` 6、`test_output_integrity` 4、`test_pipeline_order` 2、`test_watermark_discovery` 2、`test_legacy_strictness` 2、`test_core_improvements` 1。
+- **机制（文档级）**：Windows 的 `os.fsync` → `_commit` → `FlushFileBuffers` 要求句柄带 `GENERIC_WRITE`，而 `os.O_RDONLY` 只给 `GENERIC_READ`；POSIX 对只读句柄 fsync 合法 —— 这就是本地 139 例全绿、windows 腿 25 例全红的全部原因。
+- **时间线**：ci **首次变红是 `5ad59ea`**（批次 1，首次引入 `outputs.py` 及其 fsync），其前一个提交 `2c2ae1f` 的 ci 是绿的；此后 `632dcbb`/`24394ea`/`4c64d46`/`25fb1fe`/`b0e0ef1` 的 ci 每次都红。与该写路径首次上 Windows 完全吻合。
+- **审计预言的命中情况**：本地强制模拟（把 `os.fsync` 换成 `OSError(EBADF)`，`-p fsync_raise`）给出**同样的 25 failed / 114 passed 与同一 fingerprint**，与真日志逐条吻合 → 不存在第四条机制。A1（`preserves_existing_file_permissions`）确实先在 `:103` 的保存调用上炸、而不是在 `:105` 的 `0o604` 断言上，符合决策表「B1 确认」那一行；A2（`new_file_follows_umask`）与 C2（symlink 例）**也是** EBADF 连带，不是各自的假设失效，故 A2「空洞通过」与 C2「应真跑通过」两个判定都保留。
+- **本轮处置**：① `os.open(temp, O_RDWR)`（`f5dcb3b`）；② A1 断言平台分支 —— Windows 上断言「只读属性沿用 + 内容是新的」（`f5dcb3b`）；③ mode 直贴挪到 `os.replace` 之后（`5d057c9`）；④ 新增跨平台回归锁 `test_atomic_write_fsyncs_a_write_capable_handle`（`5d057c9`，破坏验证：改回 `O_RDONLY` → 该用例红、`flags=0`）。
+- **本地验收**：fast 档 **140 passed**（基线 139 ＋ 新锁 1，实测非推算）；`tests/test_output_integrity.py` 37 passed；AGENTS.md §6.4 合规 grep 零命中。断言只加强：无 skip、无 fsync 兜底、未放宽任何比对。
+- **待复跑确认**：推送后的 windows 腿新 run。判据按审计 §5 —— 若残留「载荷 ≠ 期望且**无异常**」则 B2（跨架构 DCT/SVD 位一致性）候选，**不许预先放宽断言**；若在 `os.replace`/chmod 上出现 `ACCESS_DENIED`，说明 ③ 的预处置不足，须贴完整 traceback 再定。
 > 摘要：读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。
 
 ### G4 — 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC）
