@@ -78,10 +78,17 @@ def save_image_atomic(
             os.fsync(handle)
         finally:
             os.close(handle)
-        if previous_mode is not None:
-            os.chmod(temp, previous_mode)
         os.replace(temp, destination)
         temp = None  # ownership handed to the destination; nothing left to clean up
+        # Re-applying the mode only *after* the replace is load-bearing on Windows: a
+        # read-only destination cannot be replaced at all (DeleteFile fails with
+        # ERROR_ACCESS_DENIED on read-only files), so chmod'ing the temp file first would
+        # turn "preserve the previous mode" into "refuse to write" exactly when the user had
+        # made the output read-only. POSIX is indifferent — `os.replace` depends on the
+        # directory's permissions, not the file's. Cost: the mode lags the content by the
+        # chmod in between; the content swap itself stays atomic.
+        if previous_mode is not None:
+            os.chmod(destination, previous_mode)
     except OSError as exc:
         raise OSError(f"failed to write {destination}: {exc}") from exc
     finally:

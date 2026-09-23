@@ -128,6 +128,40 @@ def test_atomic_write_new_file_follows_umask(tmp_path) -> None:
     assert destination.stat().st_mode & 0o777 == 0o666 & ~current
 
 
+def test_atomic_write_fsyncs_a_write_capable_handle(tmp_path, monkeypatch) -> None:
+    """The flush must go through a handle opened for writing.
+
+    On Windows `os.fsync` reaches FlushFileBuffers, whose contract requires the handle to
+    carry GENERIC_WRITE, so `os.open(temp, os.O_RDONLY)` made **every** save fail with
+    `OSError: failed to write … [Errno 9] Bad file descriptor` (windows-latest: 25 failed /
+    114 passed). POSIX flushes a read-only handle happily, so no run on macOS or Linux can
+    tell the two implementations apart — pinning the flag is the only cross-platform lock
+    that reds if someone reverts it.
+    """
+    real_open = os.open
+    real_fsync = os.fsync
+    flags_by_fd: dict[int, int] = {}
+    flushed: list[int] = []
+
+    def spy_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        flags_by_fd[fd] = flags
+        return fd
+
+    def spy_fsync(fd):
+        flushed.append(fd)
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "open", spy_open)
+    monkeypatch.setattr(os, "fsync", spy_fsync)
+
+    outputs.save_image_atomic(Image.new("RGB", (8, 8)), tmp_path / "out.jpg")
+
+    assert flushed, "the atomic write must flush its temp file"
+    flags = flags_by_fd[flushed[0]]
+    assert flags & (os.O_WRONLY | os.O_RDWR), f"fsync'd handle is not writable: flags={flags!r}"
+
+
 # --- never write the input ----------------------------------------------------------
 def test_protect_refuses_output_equal_to_input(tmp_path, capsys) -> None:
     source = _textured(tmp_path / "in.jpg")
