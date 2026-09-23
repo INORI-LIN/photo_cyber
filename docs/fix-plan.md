@@ -18,8 +18,8 @@
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [ ] 未开始 |
 | P9 | 文档与实现漂移（README 项数 / CLAUDE slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。 | [ ] 未开始 |
-| P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [ ] 未开始 |
-| P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [ ] 未开始 |
+| P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
+| P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [ ] 未开始 |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环（2026-09-23），余 GUI 手工项归 P2 |
@@ -33,7 +33,7 @@
 | 批次 | 内容 | 验收门槛 |
 |---|---|---|
 | 1 | P3, G3 | `uv run pytest -m 'not slow' -q` 全绿；`protect in.jpg -o in.jpg` 退 2 且原图 sha256 不变，`protect in.jpg -o out.jpg && verify out.jpg` 退 0 且 stdout 恰为原 payload；`git diff --stat AGENTS.md` 为空。**批次 1 已完成（2026-09-23）：见 §6 各项的实施记录。** |
-| 2 | **P10 修复 + P11（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。 |
+| 2 | **P10 修复 + P11（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。**批次 2 部分完成（2026-09-23）：P10 与 P11 已落地（`910a298`）；P8、P4 尚未开工，本节验收门槛中的 EXIF 与容量两条仍待落地后回写。** |
 | 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md CLAUDE.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
@@ -41,7 +41,7 @@
 三条硬定序，实施时不得调换：
 
 1. **batch 3 内 P9 先于 P2/P1。** P9 撤销 `README.md:238` 与 `CLAUDE.md:71` 的聚合数字，并把「不写死用例数」定为唯一政策；若 P2/P1 先落地，两者会各自往文档里塞新数字，P9 再改即第二次返工，且 G1/G2/G5 的文档步骤都引用这条政策。
-2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P4 的 `watermark_invisible.max_stored_bytes(h, w)`（batch 2 已落地）。
+2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P3 于批次 1 定义的 `watermark_invisible.max_stored_bytes(h, w)`（P4 只消费该函数；P4 本体属批次 2，尚未落地）。
 3. **G1 的 spike 必须在 batch 4 开工前完成，并按结论分支。** G1 的 spike A/B/C（`_dwt_dct_svd` 与 `invisible-watermark` 0.2.0 逐位等价）不通过就走兜底分支（core 继续声明 torch、撤回 `CLAUDE.md:12`），此时 G1/G5/G2 依赖的 core-only 闭包、extra 声明与 lock 差异面全部改写；G1 也是唯一能改变「fast 档仍经 `imwatermark` → `rivaGan.py:2` 引 torch」这一现状的条目——今天 P3 的 `'torch' in sys.modules` 断言仍为 `True`，只有 G1 落地后才应为 `False`。
 
 ---
@@ -243,6 +243,7 @@
 ### P3 — 验证无法盲检 + 旧版 raw 验证启发式可能误判通过
 
 **严重度** — P0
+**状态**：**已落地（2026-09-23，批次 1 提交 `5ad59ea`）** —— 盲检 CRC 信封取代「必须先给长度」，旧版 raw 降为「仅线索 + 反重复规则」；fast 档 58 → 94（本项自身增量），现 142 全绿；CI 的 windows / ubuntu 两腿全绿；验收 3 条已全部勾（第 2 条依赖 P10，P10 落地后复测通过）
 **工作量** — M
 **批次** — 1（不后置）
 **依赖** — P4（上界口径、`_verify_output`）、P8（loader）
@@ -284,9 +285,9 @@ decode 的长度只能由调用方给定，而它无法从图像推断；旧版 
 | test_watermark_discovery.py 等 4 文件 | `reconstruction_matches_authoritative_decoder` 等 20 例 | fast | `n=1..66` 逐字节等于 `WatermarkDecoder`；盲检 stdout 恰为 payload；未加水印→1；错长度与贴 55%→非 0、真值→0 |
 
 **验收标准**
-- [ ] `uv run pytest -m 'not slow' -q` 全绿；collected 数与落地前实测值一致；`:43`/`:54` 字面零改动（`:25` 仅可加 P7 断言、`:87` 仅可加 P4 断言）；`git diff --stat AGENTS.md` 为空。
-- [ ] `protect IN.jpg -o OUT.jpg --payload-envelope --payload "owner:alice#001" && verify OUT.jpg` → 0，stdout 恰为原 payload。
-- [ ] 假通过消失且不退化为「一律判失败」；边界 `--max-payload-bytes 0`/`--payload-bytes 0`/`--expected-payload ""`/<256×256 全 2；`tests/test_compliance.py` 绿。
+- [x] `uv run pytest -m 'not slow' -q` 全绿；collected 数以 `--collect-only -q` 实测回写；`:43`/`:54` 字面零改动（`:25` 仅可加 P7 断言、`:87` 仅可加 P4 断言）；`git diff --stat AGENTS.md` 为空。 —— 2026-09-23 实测：fast 档 **142 passed**（本项落地时 58 → 94，`--collect-only -q` 同为 142）；`git log --oneline -- AGENTS.md` 只有 init 一条，故相对基线无 diff；`:43`/`:54` 的用例内容逐字未改，但该文件顶部 docstring 在本项落地时增行，**行号已漂到 `:46`/`:57`**（`test_verify_no_payload_exits_one` / `test_verify_missing_file_exits_two`）—— 原门槛文字里的 `:43`/`:54` 应读作这两个用例，不是两个行号。
+- [x] `protect IN.jpg -o OUT.jpg --payload-envelope --payload "owner:alice#001" && verify OUT.jpg` → 0，stdout 恰为原 payload。 —— 2026-09-23 复跑通过（1600×1200 纹理图、默认 long-edge 1080）：protect 退 0；`verify` 不带 flag 退 0，stdout 恰为 `owner:alice#001`。**本条在 P10 落地前不成立**（见下方「验收条目的修正」第 2 条），P10 把载体换成 (通道 0 = Y, step 72) 后恢复可满足。
+- [x] 假通过消失且不退化为「一律判失败」；边界 `--max-payload-bytes 0`/`--payload-bytes 0`/`--expected-payload ""`/<256×256 全 2；`tests/test_compliance.py` 绿。 —— 2026-09-23 复跑：四条边界**全部退 2**（200×200 的 protect 退 2、stderr 含 `too small` 与 `256`、且**不落文件**）；compliance 2 passed；「假通过消失但不退化为一律判失败」由 `tests/test_legacy_strictness.py`（21 例：真值→0、垃圾→非 0）与 `tests/test_watermark_discovery.py`（11 例）覆盖，均全绿。
 
 **风险与未知**
 - `LEGACY_MIN_MEAN_MARGIN` 只由合成图标定；`docker.yml:57-62` 的纯色 640×480 是本仓唯一挡住阈值假阴性的 CI，判假阴性只能改 `:62` 生图，**不得放宽门**。
@@ -1037,7 +1038,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **Windows 证据（2026-09-23 更新）**：
   - **`fsync`：已结案**。ci.yml:15 的 matrix 给出了证据 —— windows 腿在 `os.open(temp, os.O_RDONLY)` + `os.fsync` 上 **25 failed / 114 passed**，全部同一指纹 `[Errno 9] Bad file descriptor`。处置：改 `O_RDWR`（`f5dcb3b`）＋ 跨平台回归锁，取证细节见下方「CI 取证（2026-09-23）」。
   - **`os.replace` 覆盖只读目的地：已实测并结案**。windows 腿复跑实测 `os.replace` → `[WinError 5] Access is denied`，与 `DeleteFile` 文档「只读文件删除失败 `ERROR_ACCESS_DENIED`」一致（`MoveFileEx(REPLACE_EXISTING)` 文档只提 ACL，故此前无法定论）。处置：交换前 best-effort 解除写保护、交换后回贴 `previous_mode`、交换失败则在 `finally` 里恢复（`3578cd2`）；取证见下方「CI 取证」的复跑第一轮。
-  - **`os.link` / `os.symlink`：仍待 matrix 给证据**（两处用例都带平台能力守卫，skip 不计失败）。
+  - **`os.link` / `os.symlink`：已由 matrix 实测通过**。最终绿跑（run 35829859007）是 `142 passed` 且**全文零 skip**，两条带平台能力守卫的用例都记 `PASSED`（`test_protect_refuses_an_aliased_input`、`test_protect_replaces_a_symlink_without_touching_its_target`）—— 守卫一次都没被触发，说明 windows-latest 上硬链接与符号链接是真的跑到了，不是靠 skip 换绿。
 - `PermissionError` 须响亮失败，**不得**降级为非原子写。
 - `.photoguard-*.tmp`：断电残骸、写入窗口内目录短暂多出该条目；不做启动清理；TOCTOU 与 `ENAMETOOLONG` 不处理；别名用例可能 skip。
 
