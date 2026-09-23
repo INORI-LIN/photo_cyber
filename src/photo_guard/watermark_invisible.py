@@ -27,7 +27,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 import pywt
-from imwatermark import WatermarkDecoder, WatermarkEncoder
+from imwatermark import WatermarkDecoder
+from imwatermark.dwtDctSvd import EmbedDwtDctSvd
 
 from . import config
 
@@ -39,6 +40,55 @@ _SCALE = 36
 _BLOCK = 4
 _DWT_CROP = 4
 _DECISION = 127.0 / 255.0  # the library tests `avg * 255 > 127`
+
+
+def _scales_for(channel: int, scale: int) -> list[int]:
+    """The library's ``scales`` vector for a single carrier channel."""
+    return [scale if index == channel else 0 for index in range(3)]
+
+
+def carrier_candidates() -> tuple[tuple[int, int], ...]:
+    """Carriers to try on read, current first.
+
+    A ``(channel, scale)`` mismatch scrambles the reading rather than degrading it (measured
+    131 / 117 bit errors either way round), so already-released images only stay readable if
+    the legacy carrier is still tried.
+    """
+    current = (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
+    ordered: list[tuple[int, int]] = []
+    for candidate in (current, *config.LEGACY_CARRIERS):
+        if candidate not in ordered:
+            ordered.append(candidate)
+    return tuple(ordered)
+
+
+class _CarrierEmbed(EmbedDwtDctSvd):
+    """Embedder that fixes the library's H/V detail-band swap (P11).
+
+    ``imwatermark`` 0.2.0 unpacks ``dwt2`` as ``(h1, v1, d1)`` but hands ``idwt2``
+    ``(v1, h1, d1)`` (``dwtDctSvd.py:27`` vs ``:30``), swapping the horizontal and vertical
+    detail bands on the way back. Extraction only reads ``cA``, so the swap is invisible to
+    decoding — but it injects an unintended image distortion: negligible while the carrier was
+    chroma (mean 0.50 / max 19 of 255) and clearly visible once the carrier moved to luma
+    (mean 10.3–12.8 / max 106). AGENTS.md forbids editing the dependency, hence a subclass.
+    ``cA`` itself is bit-identical to the library's, so images stay mutually readable.
+    """
+
+    def encode(self, bgr: np.ndarray) -> np.ndarray:
+        row, col = bgr.shape[:2]
+        yuv = cv2.cvtColor(bgr, cv2.COLOR_BGR2YUV)
+        for channel in range(2):
+            if self._scales[channel] <= 0:
+                continue
+            ca1, (h1, v1, d1) = pywt.dwt2(
+                yuv[: row // _DWT_CROP * _DWT_CROP, : col // _DWT_CROP * _DWT_CROP, channel],
+                "haar",
+            )
+            self.encode_frame(ca1, self._scales[channel])
+            yuv[: row // _DWT_CROP * _DWT_CROP, : col // _DWT_CROP * _DWT_CROP, channel] = (
+                pywt.idwt2((ca1, (h1, v1, d1)), "haar")  # original order, not (v1, h1, d1)
+            )
+        return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
 
 
 class NoPayloadError(ValueError):
@@ -72,16 +122,26 @@ def max_stored_bytes(height: int, width: int) -> int:
     return total_blocks(height, width) // 8
 
 
-def _block_scores(image_bgr: np.ndarray) -> np.ndarray:
+def _block_scores(
+    image_bgr: np.ndarray, *, channel: int | None = None, scale: int | None = None
+) -> np.ndarray:
     """Per-block votes in scan order (row-major over the 4x4 blocks of ``ca1``).
+
+    ``channel``/``scale`` must match the embed-time carrier: the vote is
+    ``(s[0] % scale) > scale * 0.5``, so a mismatch scrambles the reading instead of
+    degrading it. Defaults come from ``config`` (the current carrier).
 
     Deliberately vectorisation-free: this is a faithful transcription of the library's
     loop, and the measurement that proved equivalence (P3-B) ran on exactly this shape.
     """
+    if channel is None:
+        channel = config.CARRIER_CHANNEL
+    if scale is None:
+        scale = config.CARRIER_SCALE
     row, col = image_bgr.shape[:2]
     yuv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2YUV)
     ca1, _ = pywt.dwt2(
-        yuv[: row // _DWT_CROP * _DWT_CROP, : col // _DWT_CROP * _DWT_CROP, 1], "haar"
+        yuv[: row // _DWT_CROP * _DWT_CROP, : col // _DWT_CROP * _DWT_CROP, channel], "haar"
     )
     fr, fc = ca1.shape
     scores = np.empty((fr // _BLOCK) * (fc // _BLOCK), dtype=np.int64)
@@ -90,7 +150,7 @@ def _block_scores(image_bgr: np.ndarray) -> np.ndarray:
         for j in range(fc // _BLOCK):
             block = ca1[i * _BLOCK : i * _BLOCK + _BLOCK, j * _BLOCK : j * _BLOCK + _BLOCK]
             _, singular, _ = np.linalg.svd(cv2.dct(block))
-            scores[position] = int((singular[0] % _SCALE) > _SCALE * 0.5)
+            scores[position] = int((singular[0] % scale) > scale * 0.5)
             position += 1
     return scores
 
@@ -128,17 +188,30 @@ def boundary_margin(scores: np.ndarray, nbytes: int) -> float:
 
 # ------------------------------------------------------------------ layer ① ---
 def embed(image_bgr: np.ndarray, payload: str) -> np.ndarray:
-    encoder = WatermarkEncoder()
-    encoder.set_watermark("bytes", payload.encode("utf-8"))
-    return encoder.encode(image_bgr, config.WATERMARK_METHOD)
+    """Embed ``payload`` in the carrier named by ``config.CARRIER_*``."""
+    if image_bgr.shape[0] * image_bgr.shape[1] < 256 * 256:
+        raise RuntimeError("image too small, should be larger than 256x256")
+    bits = list(np.unpackbits(np.frombuffer(payload.encode("utf-8"), dtype=np.uint8)))
+    encoder = _CarrierEmbed(
+        watermarks=bits,
+        wmLen=len(bits),
+        scales=_scales_for(config.CARRIER_CHANNEL, config.CARRIER_SCALE),
+        block=_BLOCK,
+    )
+    return encoder.encode(image_bgr)
 
 
-def extract(image_bgr: np.ndarray, payload_bytes: int) -> str:
+def extract(
+    image_bgr: np.ndarray, payload_bytes: int, carrier: tuple[int, int] | None = None
+) -> str:
     """Low-level raw decode, permissive by design. Prefer :func:`extract_legacy`."""
     if payload_bytes <= 0:
         raise ValueError("payload_bytes must be positive")
+    channel, scale = carrier or (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
     decoder = WatermarkDecoder("bytes", payload_bytes * 8)
-    raw = decoder.decode(image_bgr, config.WATERMARK_METHOD)
+    raw = decoder.decode(
+        image_bgr, config.WATERMARK_METHOD, scales=_scales_for(channel, scale)
+    )
     return raw.decode("utf-8", errors="replace")
 
 
@@ -196,19 +269,20 @@ def find_envelope(
     lengths = envelope_lengths(ceiling)
     if not lengths:
         return None
-    # One extraction pass, then one cheap reconstruction per candidate: the score array
-    # does not depend on the payload length.
-    scores = _block_scores(image_bgr)
-    for length in lengths:
-        raw = _reconstruct_bytes(scores, length)
-        if not raw.startswith(_MAGIC.encode("ascii") + b":"):
-            continue
-        try:
-            payload, verified = unpack_payload(raw.decode("ascii"))
-        except (UnicodeDecodeError, ValueError):
-            continue
-        if verified:
-            return payload, length
+    # One extraction pass per carrier, then one cheap reconstruction per candidate length:
+    # the score array depends on the carrier but not on the length.
+    for channel, scale in carrier_candidates():
+        scores = _block_scores(image_bgr, channel=channel, scale=scale)
+        for length in lengths:
+            raw = _reconstruct_bytes(scores, length)
+            if not raw.startswith(_MAGIC.encode("ascii") + b":"):
+                continue
+            try:
+                payload, verified = unpack_payload(raw.decode("ascii"))
+            except (UnicodeDecodeError, ValueError):
+                continue
+            if verified:
+                return payload, length
     return None
 
 
@@ -216,23 +290,30 @@ def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
     """Decode an envelope at a known stored length. CRC is the only authority."""
     if payload_bytes <= 0:
         raise ValueError("payload_bytes must be positive")
-    raw = _reconstruct_bytes(_block_scores(image_bgr), payload_bytes)
-    try:
-        text = raw.decode("ascii")
-    except UnicodeDecodeError as exc:
-        raise NoPayloadError("no photo-guard envelope at that length") from exc
-    if not text.startswith(f"{_MAGIC}:"):
-        raise NoPayloadError("no photo-guard envelope at that length")
-    try:
-        payload, verified = unpack_payload(text)
-    except ValueError as exc:
+    saw_envelope = False
+    for channel, scale in carrier_candidates():
+        raw = _reconstruct_bytes(
+            _block_scores(image_bgr, channel=channel, scale=scale), payload_bytes
+        )
+        try:
+            text = raw.decode("ascii")
+        except UnicodeDecodeError:
+            continue
+        if not text.startswith(f"{_MAGIC}:"):
+            continue
+        saw_envelope = True
+        try:
+            payload, verified = unpack_payload(text)
+        except ValueError:
+            continue
+        if verified:
+            return payload
+    if saw_envelope:
         raise IntegrityUncertainError(
-            "envelope decoded but its CRC32 failed — the payload may differ, or "
-            "chroma-clipping rounding may have flipped bits (see spike P3-B)"
-        ) from exc
-    if not verified:
-        raise NoPayloadError("no photo-guard envelope at that length")
-    return payload
+            "envelope decoded but its CRC32 failed — the payload may differ, or the "
+            "carrier may have lost bits (see P10/P11)"
+        )
+    raise NoPayloadError("no photo-guard envelope at that length")
 
 
 # --------------------------------------------------------------- legacy raw ---
@@ -285,19 +366,28 @@ class LegacyExtraction:
     mean_margin: float
     advisory_pass: bool
     notes: str
+    carrier: tuple[int, int]
 
 
 def extract_legacy(image_bgr: np.ndarray, payload_bytes: int) -> LegacyExtraction:
     """Decode a raw (checksum-less) payload as a *clue*, with its advisory metrics."""
     if payload_bytes <= 0:
         raise ValueError("payload_bytes must be positive")
-    scores = _block_scores(image_bgr)
-    raw = _reconstruct_bytes(scores, payload_bytes)
-    if not is_recoverable_text(raw):
+    # Without a checksum the carrier cannot be confirmed, so each candidate is tried and the
+    # first that yields recoverable text wins; the result records which one it was.
+    found: tuple[int, int] | None = None
+    for channel, scale in carrier_candidates():
+        scores = _block_scores(image_bgr, channel=channel, scale=scale)
+        raw = _reconstruct_bytes(scores, payload_bytes)
+        if is_recoverable_text(raw):
+            found = (channel, scale)
+            break
+    if found is None:
         raise NoPayloadError(
             "decoded bytes are not recoverable text "
             "(strict UTF-8, printable, non-repetitive)"
         )
+    channel, scale = found
     bits = payload_bytes * 8
     blocks_per_bit = len(scores) // bits
     margin = boundary_margin(scores, payload_bytes)
@@ -323,4 +413,5 @@ def extract_legacy(image_bgr: np.ndarray, payload_bytes: int) -> LegacyExtractio
         mean_margin=margin,
         advisory_pass=advisory,
         notes=notes + "; raw payloads carry no checksum, so this is a clue, not proof",
+        carrier=(channel, scale),
     )

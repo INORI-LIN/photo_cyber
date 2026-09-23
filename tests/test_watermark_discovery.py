@@ -31,23 +31,42 @@ def probe_bgr() -> np.ndarray:
     return arr[:, :, ::-1].copy()
 
 
-def _embed(bgr: np.ndarray, payload: bytes) -> np.ndarray:
+# The legacy carrier and the P10 carrier. The transcription is carrier-parameterised, so
+# both are pinned: a (channel, scale) mismatch scrambles the reading rather than degrading it.
+CARRIERS = ((1, 36), (0, 72))
+
+
+def _embed(bgr: np.ndarray, payload: bytes, carrier: tuple[int, int] = (1, 36)) -> np.ndarray:
     encoder = WatermarkEncoder()
     encoder.set_watermark("bytes", payload)
-    return encoder.encode(bgr, "dwtDctSvd")
+    return encoder.encode(bgr, "dwtDctSvd", scales=wi._scales_for(*carrier))
 
 
-def test_reconstruction_is_byte_exact_for_every_length(probe_bgr: np.ndarray) -> None:
-    """n = 1..66 must equal ``WatermarkDecoder`` byte for byte (spike P3-B)."""
+@pytest.mark.parametrize("carrier", CARRIERS)
+def test_reconstruction_is_byte_exact_for_every_length(
+    probe_bgr: np.ndarray, carrier: tuple[int, int]
+) -> None:
+    """n = 1..66 must equal ``WatermarkDecoder`` byte for byte (spike P3-B), per carrier."""
+    channel, scale = carrier
     mismatches = []
     for nbytes in range(1, 67):
         payload = bytes(((i * 37 + 16) % 256) for i in range(nbytes))
-        marked = _embed(probe_bgr, payload)
-        library = bytes(WatermarkDecoder("bytes", nbytes * 8).decode(marked, "dwtDctSvd"))
-        mine = bytes(wi._reconstruct_bytes(wi._block_scores(marked), nbytes))
+        marked = _embed(probe_bgr, payload, carrier=carrier)
+        library = bytes(
+            WatermarkDecoder("bytes", nbytes * 8).decode(
+                marked, "dwtDctSvd", scales=wi._scales_for(channel, scale)
+            )
+        )
+        mine = bytes(
+            wi._reconstruct_bytes(
+                wi._block_scores(marked, channel=channel, scale=scale), nbytes
+            )
+        )
         if mine != library:
             mismatches.append((nbytes, library.hex(), mine.hex()))
-    assert not mismatches, f"reconstruction diverged from the library: {mismatches}"
+    assert not mismatches, (
+        f"reconstruction diverged from the library on carrier {carrier}: {mismatches}"
+    )
 
 
 def test_block_geometry_and_capacity() -> None:

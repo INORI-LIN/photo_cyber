@@ -13,6 +13,19 @@ from __future__ import annotations
 # encoder/decoder must both be the lighter variant.
 WATERMARK_METHOD = "dwtDctSvd"
 DEFAULT_PAYLOAD = "photo-guard"
+# Layer ① carrier (P10, 2026-09-23). The payload used to ride channel 1 (the Cb/U chroma
+# channel) at step 36. Every JPEG 4:2:0 re-encode -- our own save and the platform's
+# re-compression alike -- decimates chroma, which wiped the block votes: measured round-trip
+# pass rates were 31/66 and 17/66 over payload lengths 1..66. Luma is not decimated, so the
+# carrier moves there; step 72 raises the per-block margin. Together they measured 66/66 on
+# both fixtures, before AND after an extra platform-style re-encode.
+CARRIER_CHANNEL = 0
+CARRIER_SCALE = 72
+
+# Read side tries the current carrier first, then these. A (channel, scale) mismatch fails
+# bidirectionally (131 / 117 bit errors measured), so keeping the legacy entry is what makes
+# already-published images stay verifiable.
+LEGACY_CARRIERS = ((1, 36),)
 
 # Legacy (raw, checksum-less) verification. These two are ADVISORY garbage filters
 # only — they must never be presented as proof. Spike P3-A (2026-09-23, 335 rows over
