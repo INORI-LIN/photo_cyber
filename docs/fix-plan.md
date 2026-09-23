@@ -1187,6 +1187,16 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 ---
 
+**批次 2 附带硬化（2026-09-23）：CI 中文断言的 locale 依赖**
+
+- **断言的比较语义是字节安全的（已本地实测）**：`docker.yml` 用的是 bash `[ "$a" = "$b" ]`，`=` 为逐字节 `strcmp`，locale 只影响 `[[ a < b ]]` 的排序与 `==` 的模式匹配；`LC_ALL=C` 下整行比较仍相等，`od -c` 可见原始 UTF-8 多字节序列。
+- **唯一真实风险是容器内的 stdout 编码**：`cli.py` 的 `print(f"线索（未验证）: …")` 取决于容器 locale，而 `python:3.11-slim` 未设任何 locale，原本只靠 CPython 的 PEP 538（C → `C.UTF-8`）自动 coerce。
+- **本机无法实测该环节**：开发机未安装 Docker，而 macOS 的 Python 在四种 locale 配置下（含关掉 coercion 的负控）`sys.stdout.encoding` 恒为 `utf-8`，因此宿主探针对 Debian 容器**无信息量** —— 这一点必须如实记下，不得当作已验证。
+- **处置**：Dockerfile 显式 `ENV LANG/LC_ALL=C.UTF-8` + `PYTHONIOENCODING=utf-8`（把"依赖解释器行为"变成"保证"，且受益者不止 CI）；`docker.yml` 的断言**保持整行精确相等**，但在不匹配时 `od -c` dump 字节 —— 这是在无法本地验证容器时唯一的现场诊断手段，用于区分编码问题与真实输出变化。首个端到端验证由 CI 的 `docker` 作业承担。
+- **明确不做**：不把断言降级为子串匹配或 `grep -q`（会掩盖输出格式回归，违反断言强度纪律）；不改 `ci.yml`（pytest 走 `capsys` 内存捕获，与 stdout 编码无关）。
+
+---
+
 ## 7 附录：审计与验证证据链
 
 本方案 14 个条目均走完同一四道流程：**设计**（每项一份长稿）→ **两个对抗视角的验证**（`feasibility` 可行性 / `regression` 回归波及面，两份判词各带 `refutations`/`corrections`/`missedRegressions`）→ **保真审计**（四份 `AUDIT-*.md`，逐条比对每节对验证意见的处置是否落地，并复核被引用的源码事实）→ **跨节一致性审查**（`CONSISTENCY.md`，14 节合并后才出现的互斥改动、归属歧义、新符号不一致、批次顺序矛盾、测试冲突与第三方行为主张冲突，并给出 R3/R4 一类的绑定裁决）。所有原始材料位于仓库外、不进版本控制：`/Users/jingdonglin/.codebuddy/projects/Users-jingdonglin-inori-lin-photo_cyber/01a0c7f5-9f5b-7b7b-b976-be9db27b714a/workflows/designs`（每项设计 JSON `<ID>.json` 与两份判词 `verdict-<ID>-feasibility.json` / `verdict-<ID>-regression.json`）、`…/workflows/designs/sections`（各节长稿 `<ID>.md`、`AUDIT-P1P2P3P4.md`/`AUDIT-P5P6P7P8.md`/`AUDIT-P9G1G2G3.md`/`AUDIT-G4G5.md`、`CONSISTENCY.md`）与 `…/workflows/designs/final`（进入第 6 节的压缩稿 `<ID>.md`）。

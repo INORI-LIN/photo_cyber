@@ -25,6 +25,15 @@
 
 FROM python:3.11-slim AS runtime
 
+# The CLI prints Chinese status text (the clue label on the checksum-less verify path), and
+# this base image ships with no locale of its own. CPython's PEP 538 C-locale coercion happens
+# to make stdout UTF-8 on Debian, but an explicit locale turns that from an interpreter
+# behaviour into a guarantee — for CI, and for anyone running this image under a bare
+# `docker run`. Keeping PYTHONIOENCODING separate means it holds even if the locale is absent.
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONIOENCODING=utf-8
+
 # uv binary, copied from Astral's official image — never installed via
 # pip and never via a `curl | sh` bootstrap. AGENTS.md §6 forbids pip;
 # this is the recommended Astral pattern.

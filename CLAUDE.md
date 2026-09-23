@@ -66,6 +66,7 @@ Build-step rules to preserve:
 
 - **Only `RUN ... download-models` may touch the network at build time.** Everything else stays inside the wheels and the lockfile. Don't add `RUN curl …`, `RUN pip …`, etc. — see AGENTS.md §6.4.
 - **`uv` binary comes from `COPY --from=ghcr.io/astral-sh/uv:latest /uv …`**, never `pip install uv` or a `curl | sh` install script.
+- **The runtime image sets `LANG`/`LC_ALL=C.UTF-8` and `PYTHONIOENCODING=utf-8`.** The CLI prints Chinese status text; do not assume stdout can encode it when adding steps that emit non-ASCII output. Keep CI assertions on that output as exact whole-line comparisons — never downgrade one to a substring match to dodge an encoding problem.
 - **`.dockerignore` must exclude `models/` and `.venv/`.** A user's local model copy or virtualenv would otherwise dominate build context (~5 GB) and would mask bugs in the in-image download step.
 
 ## Tests and CI

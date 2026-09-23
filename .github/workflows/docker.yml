@@ -84,7 +84,14 @@ jobs:
           echo "recovered: $recovered"
           # P3: the checksum-less path labels its output as a clue, so the exact line is
           # asserted rather than a substring match — a bare "ci-test" is no longer printed.
-          [ "$recovered" = "线索（未验证）: ci-test" ]
+          # The comparison itself is byte-wise (bash `=`, unaffected by locale), but the
+          # container's stdout encoding is a real dependency, so a mismatch dumps the bytes:
+          # that is what tells an encoding problem apart from a genuine output change.
+          if [ "$recovered" != "线索（未验证）: ci-test" ]; then
+            echo "::error::unexpected verify output"
+            printf '%s' "$recovered" | od -c | head -5
+            exit 1
+          fi
 
       # Strongest evidence the SD VAE is actually baked in: run with
       # --network none so any HuggingFace request would fail. PGD on CPU
