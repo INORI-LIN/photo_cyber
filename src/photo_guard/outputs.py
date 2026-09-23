@@ -60,6 +60,7 @@ def save_image_atomic(
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     previous_mode = destination.stat().st_mode & 0o7777 if destination.exists() else None
+    unprotected = False  # True while the swap has lifted the destination's write protection
     temp: Path | None = None
     try:
         temp = _create_temp_file(destination.parent)
@@ -78,20 +79,33 @@ def save_image_atomic(
             os.fsync(handle)
         finally:
             os.close(handle)
+        # Windows refuses to replace a read-only destination (measured on windows-latest:
+        # WinError 5 "Access is denied" out of `os.replace`), and a read-only output is
+        # precisely the mode this function promises to carry over — so lift the protection for
+        # the swap and re-apply it below. Best-effort: POSIX replaces regardless of the file's
+        # mode, and a destination we have no right to chmod (foreign owner) must still be
+        # allowed to proceed, leaving `os.replace` as the final authority on permissions.
+        if previous_mode is not None and not previous_mode & 0o200:
+            try:
+                os.chmod(destination, previous_mode | 0o200)
+                unprotected = True
+            except OSError:
+                pass
         os.replace(temp, destination)
         temp = None  # ownership handed to the destination; nothing left to clean up
-        # Re-applying the mode only *after* the replace is load-bearing on Windows: a
-        # read-only destination cannot be replaced at all (DeleteFile fails with
-        # ERROR_ACCESS_DENIED on read-only files), so chmod'ing the temp file first would
-        # turn "preserve the previous mode" into "refuse to write" exactly when the user had
-        # made the output read-only. POSIX is indifferent — `os.replace` depends on the
-        # directory's permissions, not the file's. Cost: the mode lags the content by the
-        # chmod in between; the content swap itself stays atomic.
+        # Re-applying the mode only *after* the replace keeps the swap free of a read-only
+        # destination. Cost: the mode lags the content by the chmod in between; the content
+        # swap itself stays atomic.
         if previous_mode is not None:
             os.chmod(destination, previous_mode)
     except OSError as exc:
         raise OSError(f"failed to write {destination}: {exc}") from exc
     finally:
+        if unprotected and previous_mode is not None and temp is not None:
+            try:  # a failed save must not leave a read-only output writable
+                os.chmod(destination, previous_mode)
+            except OSError:
+                pass
         if temp is not None:
             try:
                 temp.unlink()

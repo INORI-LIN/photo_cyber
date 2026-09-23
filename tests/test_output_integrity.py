@@ -118,6 +118,46 @@ def test_atomic_write_preserves_existing_file_permissions(tmp_path) -> None:
         assert destination.stat().st_mode & 0o777 == 0o604
 
 
+def test_atomic_write_replaces_a_read_only_destination(tmp_path) -> None:
+    """A read-only destination is replaced, and comes back read-only.
+
+    Windows cannot replace a read-only file at all (`os.replace` → WinError 5 "Access is
+    denied", measured on windows-latest), so the write path lifts the write protection for the
+    swap and re-applies it. POSIX needs no lift — which is exactly why this runs everywhere: it
+    is the only case that drives the lift *and* its undo on a platform where the flag is visible.
+    """
+    destination = tmp_path / "out.jpg"
+    destination.write_bytes(b"previous-good-bytes")
+    os.chmod(destination, 0o444)
+
+    outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    assert destination.stat().st_mode & 0o200 == 0  # still read-only
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "JPEG"
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
+def test_atomic_write_failure_restores_a_read_only_destination(tmp_path, monkeypatch) -> None:
+    """A swap that fails must not leave a previously read-only output writable."""
+    destination = tmp_path / "out.jpg"
+    destination.write_bytes(b"previous-good-bytes")
+    os.chmod(destination, 0o444)
+
+    def refuse(*_args, **_kwargs):
+        raise OSError(5, "Access is denied")
+
+    monkeypatch.setattr(os, "replace", refuse)
+
+    with pytest.raises(OSError, match="failed to write"):
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    assert destination.read_bytes() == b"previous-good-bytes"
+    assert destination.stat().st_mode & 0o200 == 0
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
 def test_atomic_write_new_file_follows_umask(tmp_path) -> None:
     destination = tmp_path / "out.jpg"
     current = os.umask(0)
