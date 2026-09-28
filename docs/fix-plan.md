@@ -30,9 +30,9 @@
 | P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
 | P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
 | P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [x] 批次 A 已落地（`def0a80`） |
-| P14 | 旧版 verify `--payload-bytes` 无上界，可长时空转 | low-med | S | B | 长度参数未与图像容量挂钩；进循环前用 `max_stored_bytes` 拒绝。 | [ ] 未开始 |
-| P16 | tile 明水印纵向长图下部整行不画 | med | S | B | 行内 x 偏移单向累加致 `range` 变空；取模修正，长图下段恢复覆盖。 | [ ] 未开始 |
-| P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [ ] 未开始 |
+| P14 | 旧版 verify `--payload-bytes` 无上界，可长时空转 | low-med | S | B | 长度参数未与图像容量挂钩；进循环前用 `max_stored_bytes` 拒绝。 | [x] 批次 B 已落地（`81411cb`） |
+| P16 | tile 明水印纵向长图下部整行不画 | med | S | B | 行内 x 偏移单向累加致 `range` 变空；取模修正，长图下段恢复覆盖。 | [x] 批次 B 已落地（`677478e`） |
+| P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [x] 批次 B 已落地（`d5fe104`） |
 | P17 | 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证 | med | S | C | （重叠：P2）用例抄实现自证、从不 import 被测逻辑；改为调用真实函数或行为断言。 | [ ] 未开始 |
 | P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [ ] 未开始 |
 | P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [ ] 未开始 |
@@ -57,7 +57,7 @@
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
-| B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。 |
+| B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。 |
 | D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。 |
 | E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
@@ -100,7 +100,7 @@
 - [ ] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。
 - [ ] P19 的线索路径（`--payload-bytes` 分支）是否改独立退出码（如 3）？ — 影响 P19、cli.py、README 退出码表、`docker.yml` 断言、P3 的结论 — 建议：采纳独立退出码 3，把「线索（未验证）」与「证据」在机器可读通道上分开；落地时同步 README 与 `docker.yml` 断言，并用新用例钉住。
 - [ ] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。
-- [ ] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。
+- [x] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。 → **已裁定（2026-09-28，批次 B 开工前）：改 2**；护栏只落在 `extract` 与 `extract_legacy`，`extract_envelope`（`--expected-payload` 路径）未动——加它会把该路径从 exit 1 变 2，属另一项契约变更，登记为同类残留。
 
 **本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（唯一的退出码映射变更）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
 
@@ -1406,12 +1406,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. 拒绝语义（保 exit 1 还是改 2）待裁定，见 §3 末条。
 
 **测试与验收**
-- [ ] 新增用例：不可能长度在**进入提取循环前**被拒（用调用计数/提前返回断言，避免依赖墙钟）。
-- [ ] 可能的长度路径行为不变（既有断言只加强或等价）。
+- [x] 新增用例：不可能长度在**进入提取循环前**被拒（用调用计数/提前返回断言，避免依赖墙钟）。
+- [x] 可能的长度路径行为不变（既有断言只加强或等价）。
 - 命令：`uv run --no-sync pytest tests/ -q -k payload`（用例名以落地时为准）
+- **落地记录（2026-09-28，`81411cb`）**：新增 `_require_capacity()`，在 `extract` 与 `extract_legacy` 进块循环前拒绝不可能长度（普通 `ValueError`，刻意非 `NoPayloadError`），消息带请求字节数与容量；`cli.py` 零改动（外层 handler 已映射为 2）。先红后绿（红态取自修复前旧码实跑）：spy 进入 `_block_scores` → 红，修复后计数为空；`extract` 旧码不抛、`extract_legacy` 抛 `NoPayloadError` → 红；CLI 用例旧码退 1（1.53s）→ 修复后退 2 且 stderr 含 `capacity` 与 `100000`。边界用例钉住「`>` 而非 `>=`」。断言改动性质：纯新增（既有断言零改动）= 加强。回归：`test_legacy_strictness` + `test_cli_exits` + `test_pipeline_order` + `test_carrier` + `test_watermark_discovery` 共 61 passed。README 未改：退出码 2 的既有表述「参数或运行错误（含 …）」已涵盖，未新增类别。残留登记：`extract_envelope` 的同类无界循环保持现状。
 
 **spike / 裁定与开放问题**
-- 裁定：不可能长度保 exit 1（现状）还是改 2 —— 见 §3。
+- 已裁定（2026-09-28，批次 B）：不可能长度改 **exit 2**（见 §3）；护栏只加 raw 两条入口。
 
 ---
 
@@ -1436,9 +1437,10 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. 不改 tile 的层序与语义（§四约定），只修正偏移计算。
 
 **测试与验收**
-- [ ] 新增/加强用例：1080×6000 三带改动像素**均 > 0**（旧码第三带为 0，必红）。
-- [ ] 1080×1920 既有期望不变（只加强或等价）。
+- [x] 新增/加强用例：1080×6000 三带改动像素**均 > 0**（旧码第三带为 0，必红）。
+- [x] 1080×1920 既有期望不变（只加强或等价）。
 - 命令：`uv run --no-sync pytest -m 'not slow' -q`
+- **落地记录（2026-09-28，`677478e`）**：`row_offset = ((y // step_y) * diag) % step_x` 一行修复。先红后绿：新增 `test_tile_covers_the_bottom_band_of_a_tall_image`，旧码在同一 fixture（1080×6000 纯灰）上三带 `[32245, 1061, 0]` 必红；修复后三带 `[45771, 45675, 45858]`（与「现象与证据」的审计 fixture 不是同一张图，故数值不同）。性质（仓库外探针，旧输出由修复前旧码实际渲染留存后再对比）：`step_x ≥ tile.width`、`step_y ≥ tile.height` ⇒ 瓦片两两不重叠 ⇒ 合成是并集 ⇒ **旧码已绘制像素零改动**——1080×1920：old 32245 → new 45771，丢失 0、改值 0、新增 13526；1080×6000：old 33306 → new 137304，丢失 0、改值 0、新增 103998。断言改动性质：纯新增（既有断言零改动）= 加强；未断言 1920 与旧输出逐位相等（不成立）。回归：`test_visible_watermark_modes` + `test_invisible_watermark_roundtrip` + `test_core_improvements` 共 20 passed。
 
 **spike / 裁定与开放问题**
 - 无 spike；无契约变更。
@@ -1470,12 +1472,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 4. 若 P6 先落地，本项改为**删除** `gpu_bench.py`（P6 的 bench 覆盖其用途）。
 
 **测试与验收**
-- [ ] 脚本在 core 环境（无 SD extra）下首次调用不再崩（退出码 0，或给出明确前置条件提示）。
-- [ ] 异常路径不残留产物、不写进 CWD。
+- [x] 脚本在 core 环境（无 SD extra）下首次调用不再崩（退出码 0，或给出明确前置条件提示）。
+- [x] 异常路径不残留产物、不写进 CWD。
 - 命令：`uv run --no-sync python gpu_bench.py`（最小调用以落地时为准）；`uv run --no-sync pytest -m 'not slow' -q`
+- **落地记录（2026-09-28，`d5fe104`）**：保留并修（P6 未落地，`bench/` 不存在）。修复：`tempfile.mkdtemp` + 整段 `try/finally: rmtree(ignore_errors=True)`；基线改 `layers={'invisible'}`（标签如实写 `invisible-only (baseline)`）；SD 三节包 `except RuntimeError` 打印异常自带的前置条件提示并退 0（SD 未跑时不打印 bounds）；度量块改同质量对照（q85）并注明「含 JPEG q85 残留」；docstring 如实化。先红后绿：修复前在 scratch CWD 实跑 → `ValueError: perturb layer uses noop` traceback、退出码 1、CWD 留下 `pg_gpu_test/`；修复后同命令 → 基线两节完成、SD 段打印提示、退出码 0、CWD 与 TMPDIR 均无残留；仓库根运行后 `git status` 无产物。SD 成功路径以 wrapper 走通（本机未装 extra）：度量块正常打印、退 0、无残留。本项不加提交的测试（文档标注可选）：SD 分支使 subprocess 冒烟依赖环境，源码文本断言属 P17 要消灭的空心测试。
 
 **spike / 裁定与开放问题**
-- 开放：保留并修 vs 删除，取决于 P6 是否先落地。
+- 已裁定（2026-09-28，批次 B）：**保留并修**（P6 未落地）；P6 落地后仍可按原推荐分支改为删除。
 
 ---
 
