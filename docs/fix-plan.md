@@ -74,7 +74,7 @@
 
 ## 3 需用户裁定的决策（实施前必须回答）
 
-- [ ] G1 与 AGENTS.md 三-① 点名 `invisible-watermark` 的冲突：选 (a) 接受偏离、仓内逐字转录 `_dwt_dct_svd.py`（vendor 两个模块），还是 (b) 兜底（core 继续声明 torch + 撤回 `CLAUDE.md:12`）、(c) 上游 fork；同时把 spike A/B/C 的判定分支写死（A 或 B 假 → 停止、不带容差、改走兜底；C 单独假 → 只换 fixture 内容重试）。 — 影响 G1、P3、G5、G2、P6 — 建议 (a)：AGENTS.md 逐字不改，偏离作为「开放问题」显式上报。
+- [x] G1 与 AGENTS.md 三-① 点名 `invisible-watermark` 的冲突：选 (a) 接受偏离、仓内逐字转录 `_dwt_dct_svd.py`（vendor 两个模块），还是 (b) 兜底（core 继续声明 torch + 撤回 `CLAUDE.md:12`）、(c) 上游 fork；同时把 spike A/B/C 的判定分支写死（A 或 B 假 → 停止、不带容差、改走兜底；C 单独假 → 只换 fixture 内容重试）。 — 影响 G1、P3、G5、G2、P6 — 建议 (a)：AGENTS.md 逐字不改，偏离作为「开放问题」显式上报。 → **已裁定（2026-09-28，spike 通过后）：(a)** —— 仓内逐字转录；转录范围按 §6 G1 第 2/3 步：只转 `dwtDctSvd.py`，bits↔bytes 与 256×256 守卫搬进 `watermark_invisible`（不 vendor `watermark.py`），P11 的 h/v 修复保留为子类。判定分支已在 spike 中执行并按此分支（A/A′/B/C/D/E/F 全绿，见 §3 九 spike 表第 5 行）。
 - [ ] 九个「必须先做 spike」的条目是否共用一个总表、且在 spike 出结论前不合并对应 PR（下表即提案；`spike 未结论` 视同未完成，不得先落地实现再补测）。 — 影响 P1、P3、P4、P6、P9、G1、G2、G3、G5 — 建议：采纳下表为批次门槛。
 
   | # | spike 名称 | 所属 ID | 阻塞的 ID/范围 | 通过判据（一句） |
@@ -918,13 +918,13 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **实验**：删依赖前、只用 uv，一次脚本同持 OLD（`imwatermark`）与 NEW（`_dwt_dct_svd`）跑 A/B/C，记版本串、`cv2.__file__`、SHA-256（首次 `uv run` 做全量 core sync，联网 + 532 MB）。
 - **通过判据**：A `np.array_equal` 每对为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bgr,bits))==bits` 为真、C NEW `extract` 精确解出 fixture（必须在此产出）。
 - **失败判据**：A 或 B 假 → 停止、不带容差，改兜底分支（core 声明 torch）；C 单独假 → 只换 fixture 内容重试。
-- **已执行（2026-09-28，材料在仓库外）**：**A/A′/B/C/D/E/F 全绿，门禁通过 → (a) 分支可行**，待用户对 §3 第一条 (a)/(b)/(c) 裁定后开批 D；逐条实测值与证据见 §3 九 spike 表第 5 行。加分项：D 证明候选稿独立加载不引入 torch；E（类区逐字相等）可复跑，用于批次 D 搬运后的回归。**「未通过不动 manifest」仍适用**：本 spike 未改 `pyproject.toml`/`uv.lock`。
+- **已执行（2026-09-28，材料在仓库外）**：**A/A′/B/C/D/E/F 全绿，门禁通过**；用户随后裁定走 **(a)**（见 §3 第一条），批 D 可开工；逐条实测值与证据见 §3 九 spike 表第 5 行。加分项：D 证明候选稿独立加载不引入 torch；E（类区逐字相等）可复跑，用于批次 D 搬运后的回归。**「未通过不动 manifest」仍适用**：本 spike 未改 `pyproject.toml`/`uv.lock`。
 - **材料位置（仓库外，不进版本控制；持久副本已留）**：`/Users/jingdonglin/.codebuddy/projects/Users-jingdonglin-inori-lin-photo_cyber/spikes/g1/` —— 候选转录稿 `_dwt_dct_svd_candidate.py`（sha256 `1d9d6ff151d7d5868ba653766caa903c794e77f6e142077566ccdf58611ceb90`，批次 D 据此搬入 `src/photo_guard/_dwt_dct_svd.py`）、harness `spike_g1.py` + `build_candidate.py`、证据 `evidence-G1.txt`、`fixtures/`（含待提交的 `dwtDctSvd_legacy_512.png`，776,402 B、sha256 `36f5ce9a526837dee42791e04af5a7e3fe53ad39680c36b81c856d8d795e7e7f`，两次运行字节一致）。
 
 **开放问题**
 
 - **AGENTS.md 冲突，需用户裁定**：`AGENTS.md:40/73/105/137/142` 点名 `invisible-watermark` 及其示例命令，该文件逐字不改；(a) 接受偏离（推荐）；(b) 兜底分支（core 声明 torch + 撤回 `CLAUDE.md:12`）；(c) 上游 fork。
-- fixture 策略：是否提交无损 PNG？**实测 512² = 776,402 B**（本节原估 200–500 KB 偏小；若要压到 ~430 KB 可换 384²，需连带改名）；已产出并留持久副本（见上条材料位置），交叉验证用的 511×507 一份（767,056 B）不提交。不接受提交 fixture 则互操作证明会腐烂。
+- fixture 策略：**已裁定（2026-09-28）：按原名提交 512²** —— `tests/fixtures/dwtDctSvd_legacy_512.png`（776,402 B，sha256 `36f5ce9a526837dee42791e04af5a7e3fe53ad39680c36b81c856d8d795e7e7f`，两次运行字节一致），交叉验证用的 511×507 一份不提交；本节原估 200–500 KB 偏小，实测值已更正于此。
 - `photoguard` extra 是否拆分 torch/huggingface-hub？不建议（多一种 sync 组合）。
 - 是否把上游 `imwatermark/watermark.py:9` 的 eager import 报回上游？一次惰性导入可把整个 issue 降级为改 pyproject；本节不做。
 
