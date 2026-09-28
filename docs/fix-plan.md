@@ -27,9 +27,9 @@
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
 | G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [ ] 未开始 |
-| P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [ ] 批次 A 进行中 |
-| P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [ ] 批次 A 进行中 |
-| P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [ ] 批次 A 进行中 |
+| P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
+| P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
+| P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [x] 批次 A 已落地（`def0a80`） |
 | P14 | 旧版 verify `--payload-bytes` 无上界，可长时空转 | low-med | S | B | 长度参数未与图像容量挂钩；进循环前用 `max_stored_bytes` 拒绝。 | [ ] 未开始 |
 | P16 | tile 明水印纵向长图下部整行不画 | med | S | B | 行内 x 偏移单向累加致 `range` 变空；取模修正，长图下段恢复覆盖。 | [ ] 未开始 |
 | P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [ ] 未开始 |
@@ -56,7 +56,7 @@
 | 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
-| A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 进行中（2026-09-28）：状态见 §7 P12/P13/P24。** |
+| A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。 |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。 |
 | D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。 |
@@ -1295,12 +1295,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 4. `cancel_task` 捕获 `RuntimeError` 后静默返回。
 
 **测试与验收**
-- [ ] 新测试文件 `tests/test_gui_lifecycle.py`：`importorskip("PySide6")` + `QT_QPA_PLATFORM=offscreen`；320×240 + `layers={'visible'}`（毫秒级、不引 torch）；用 QEventLoop 泵至 `_threads` 为空。
-- [ ] 三例：连跑两次均完成且 `_threads == []`（旧码第二次必红）；`closeEvent` 被接受；跑完调 `cancel_task` 不抛。
-- [ ] core 环境该模块整体 skipped，属**可选依赖守卫**（显式声明）；desktop 档须 **0 skip**。
-- [ ] 复跑 G3 的两条 GUI 场景（offscreen）回归，确认未破坏既有路径。
-- [ ] 复现脚本修复后重跑：`h1a` 无 `RuntimeError`、`h1b` 退出码 0。
+- [x] 新测试文件 `tests/test_gui_lifecycle.py`：`importorskip("PySide6")` + `QT_QPA_PLATFORM=offscreen`；320×240 + `layers={'visible'}`（毫秒级、不引 torch）；用 QEventLoop 泵至 `_threads` 为空。
+- [x] 三例：连跑两次均完成且 `_threads == []`（旧码第二次必红）；`closeEvent` 被接受；跑完调 `cancel_task` 不抛。
+- [x] core 环境该模块整体 skipped，属**可选依赖守卫**（显式声明）；desktop 档须 **0 skip**。
+- [x] 复跑 G3 的两条 GUI 场景（offscreen）回归，确认未破坏既有路径。
+- [x] 复现脚本修复后重跑：`h1a` 无 `RuntimeError`、`h1b` 退出码 0。
 - 命令：`uv run --no-sync pytest tests/test_gui_lifecycle.py -q`；`uv run --no-sync pytest -m gui -q`
+- **落地记录（2026-09-28，`def0a80`）**：`-m gui -q` → 3 passed / 0 skip；`-m 'not slow' -q` → 149 passed（`--collect-only -q` 实测 149 collected）；`h1b` 退出码 139 → 0，`h1a` 第二轮不再抛 `RuntimeError`。测试改动性质：新增文件（既有断言零改动）。红态取自修复前的独立进程复现脚本，非事后构造。
 
 **spike / 裁定与开放问题**
 - 无 spike。开放：修复触及线程生命周期，G3/P9 中「`AGENTS.md` 无 diff」的验收口径本批不适用（本批改 `AGENTS.md`）。
@@ -1330,10 +1331,11 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 3. 属**全平台保守化**（Linux 上大小写不同也会得到 `_2`）——须写进 `README.md` 与 `outputs` docstring，并注明 Unicode 残余（`ß`→`ss`、NFC/NFD 变体）。
 
 **测试与验收**
-- [ ] 新增用例：两输入只差大小写 → `IMG_0001_protected.jpg` / `img_0001_protected_2.jpg`。
-- [ ] 新增不变量断言 `len({_name_key(p.name) for p in planned}) == len(planned)`（**不依赖宿主 FS 大小写**，全平台可红可绿）。
-- [ ] 既有 `plan_batch` 期望逐条核对不变（只加强或等价，不得放宽）。
+- [x] 新增用例：两输入只差大小写 → `IMG_0001_protected.jpg` / `img_0001_protected_2.jpg`。
+- [x] 新增不变量断言 `len({_name_key(p.name) for p in planned}) == len(planned)`（**不依赖宿主 FS 大小写**，全平台可红可绿）。
+- [x] 既有 `plan_batch` 期望逐条核对不变（只加强或等价，不得放宽）。
 - 命令：`uv run --no-sync pytest tests/test_output_integrity.py -q`
+- **落地记录（2026-09-28，`def0a80`）**：`tests/test_output_integrity.py -q` → 43 passed；复现脚本重跑 planned 为 `IMG_0001_protected.jpg` / `img_0001_protected_2.jpg`、磁盘 2 个文件（旧码 1 个）。改动性质：该测试文件 +38/-0 纯增补 = **加强**，零放宽；新用例在 identity 键（修复前语义）下必红（`_name_key` 参数化三例 + `_2` 后缀期望）。验证者备注已照录：折叠唯一性断言对 identity 键不敏感，真正的回归锁是两条新用例。
 
 **spike / 裁定与开放问题**
 - 无 spike。开放：行为变更（Linux 上也保守去重）须在提交正文点名，并同步 README 与 docstring。
@@ -1371,10 +1373,11 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 7. README 补 `--visible-text` 与 `--max-payload-bytes` 两行、结构树补 `config.py`、`resources.py` 行补 `PHOTO_GUARD_RESOURCE_DIR`。
 
 **测试与验收**
-- [ ] `uv run --no-sync pytest tests/test_compliance.py -q` 两道合规门绿（白名单变更后仍不误报）。
-- [ ] 七条逐条与实现对照（读码复核）；`README.md`/`AGENTS.md` 中不再出现 `protect.py` 与「预留接入位」。
-- [ ] 文档不写死任何聚合用例数字（本项目政策）。
+- [x] `uv run --no-sync pytest tests/test_compliance.py -q` 两道合规门绿（白名单变更后仍不误报）。
+- [x] 七条逐条与实现对照（读码复核）；`README.md`/`AGENTS.md` 中不再出现 `protect.py` 与「预留接入位」。
+- [x] 文档不写死任何聚合用例数字（本项目政策）。
 - 命令：`uv run --no-sync pytest tests/test_compliance.py -q`；`grep -rn "protect.py" README.md AGENTS.md`（落定后应无输出）
+- **落地记录（2026-09-28，`def0a80`）**：七条全部落地（独立验证者逐条对码，七条均「已改」）；`tests/test_compliance.py -q` → 2 passed；`grep -rn "protect.py" README.md AGENTS.md` 与 `grep -n "预留接入位" AGENTS.md` 均无输出。附带：`Dockerfile` 顶部注释的「the one and only network-allowed call site」同步改为三类联网口径（与 §九.1 一致）。新增内容零聚合用例数字。
 
 **spike / 裁定与开放问题**
 - 无 spike。开放：第 4 条属用户已授权的 §一–§七 直改；其余各条只改表述、不改退出码与层序契约。
