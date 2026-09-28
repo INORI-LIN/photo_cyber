@@ -203,6 +203,34 @@ docker run --rm --gpus all -v "$PWD:/work" photo-guard:dev \
   --perturber sd
 ```
 
+### 冒烟（与 `.github/workflows/docker.yml` 一致）
+
+先在 `fixtures/` 下准备一张 `in.jpg`；镜像名为 `photo-guard:ci`：
+
+```bash
+docker build -t photo-guard:ci .
+
+# ① noise 扰动：保护后立刻验证
+docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
+  protect /work/in.jpg -o /work/out.jpg \
+  --layers invisible,perturb,visible \
+  --payload "ci-test" \
+  --perturber noise
+
+docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
+  verify /work/out.jpg --payload-bytes 7
+# 期望 stdout 整行为 线索（未验证）: ci-test —— 未启用 --payload-envelope，这条路径只给线索
+
+# ② 离线 SD 冒烟：--network none 下仍能跑 PGD，证明镜像内确实烘焙了 SD VAE
+docker run --rm --network none -v "$PWD/fixtures:/work" photo-guard:ci \
+  protect /work/in.jpg -o /work/out_sd.jpg \
+  --layers invisible,perturb,visible \
+  --payload "ci-test" \
+  --perturber sd \
+  --perturber-steps 2 \
+  --long-edge 384
+```
+
 ## 项目结构
 
 ```text
@@ -230,6 +258,9 @@ packaging/
 ## 开发与测试
 
 ```bash
+# 仅 core 依赖
+uv sync --frozen
+
 # 核心开发环境
 uv sync --frozen --group dev
 
@@ -239,14 +270,39 @@ uv sync --frozen --group dev --extra desktop
 # 完整 PhotoGuard 环境
 uv sync --frozen --group dev --extra desktop --extra photoguard
 
+# 发布构建（桌面 + PhotoGuard + Nuitka 打包工具）
+uv sync --frozen --extra desktop --extra photoguard --group package
+
 # 快速测试
 uv run pytest -m 'not slow' -q
 
-# CLI 帮助
+# CLI 帮助，以及等价的模块形式调用
 uv run photo-guard --help
+uv run python -m photo_guard protect input.jpg -o output.jpg --payload "owner:alice#2026"
 ```
 
-当前快速测试为 **55 项**，覆盖原有三层顺序、所有层组合、隐水印 JPEG 回环、参数校验、CRC envelope、设备发现、GUI 安全默认值和输出命名策略。
+常用运维命令：
+
+```bash
+uv run photo-guard download-models   # 一次性下载 SD VAE 到 models/，之后运行阶段强制本地加载
+uv run photo-guard devices           # 列出 CPU / CUDA / MPS 与不可用的适配器
+uv run photo-guard-gui               # 启动 PySide6 桌面界面
+```
+
+新增依赖统一走 uv：主依赖用 `uv add <包名>`，PhotoGuard extra 用 `uv add --optional photoguard <包名>`。
+
+快速档覆盖原有三层顺序、所有层组合、隐水印 JPEG 回环、参数校验、CRC envelope、设备发现；用例数见 `uv run pytest --collect-only -q`。
+
+`slow` marker 已在 `pyproject.toml` 注册，但当前仓库没有标记 `slow` 的用例。真实 SD 慢档需要 `uv sync --frozen --extra photoguard` 并用 `uv run photo-guard download-models` 准备本地模型；快速档全绿不等于 SD 路径有效。
+
+提交前跑一遍合规检查（`AGENTS.md` §6.4：检索被禁字面量，命中即判失败）：
+
+```bash
+grep -RIn --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
+     --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
+     --exclude=test_compliance.py \
+     "pip install" .   # 应无输出
+```
 
 项目依赖必须写入 `pyproject.toml` 并由 `uv.lock` 锁定；禁止新增 `requirements.txt`，所有 Python 命令统一通过 `uv run` 执行。
 
@@ -286,7 +342,6 @@ uv run python packaging/build_desktop.py
 
 ## 参考
 
-- `AGENTS.md`：原始三层方案和 uv 环境规范；
-- `CLAUDE.md`：开发代理约束和架构说明；
+- `AGENTS.md`：三层方案与 uv 规范，另含 §八–§十一 仓库实现约定；
 - `invisible-watermark`：频域水印实现；
 - MIT PhotoGuard：对抗图像编辑思路。

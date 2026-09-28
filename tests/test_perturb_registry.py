@@ -1,6 +1,6 @@
 """Perturber registry + lazy-import contract for the SD perturber.
 
-CLAUDE.md flags this as a load-bearing invariant: importing photo_guard.perturb
+AGENTS.md §八（懒加载契约）flags this as a load-bearing invariant: importing photo_guard.perturb
 must NOT pull in torch / diffusers. Only the first apply() on the SD perturber
 may. We assert that explicitly here so a careless `import torch` at the top of
 perturb.py would fail this test.

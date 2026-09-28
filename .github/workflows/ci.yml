@@ -31,7 +31,7 @@ jobs:
           if grep -RIn \
                   --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
                   --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
-                  --exclude=CLAUDE.md --exclude=test_compliance.py \
+                  --exclude=test_compliance.py \
                   "pip install" .; then
             echo "::error::pip install reference found — AGENTS.md 6 forbids pip"
             exit 1

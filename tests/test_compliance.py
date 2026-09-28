@@ -11,7 +11,7 @@ SELF = Path(__file__).name
 
 _FORBIDDEN = "pip" + " install"  # split so the literal isn't in this file's body
 _EXCLUDE_DIRS = {".venv", ".git", ".github", "__pycache__", ".pytest_cache"}
-_EXCLUDE_FILES = {"uv.lock", "AGENTS.md", "README.md", "CLAUDE.md", SELF}
+_EXCLUDE_FILES = {"uv.lock", "AGENTS.md", "README.md", SELF}
 
 
 def _scan_repo_for_forbidden() -> list[tuple[Path, int, str]]:

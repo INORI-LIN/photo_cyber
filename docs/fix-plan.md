@@ -3,6 +3,8 @@
 > 状态：草案。由一次代码审计（9 项）+ 一次完备性审计（5 项）产出，经两轮对抗验证与一次跨节一致性审查后压缩成稿。实施时按批次推进，完成后就地回写每项的验收勾选框。
 > 本文档不修改 AGENTS.md；与其冲突之处在各项的「开放问题」里显式标注。
 
+> 注（2026-09-28）：CLAUDE.md 已删除，不重复内容并入 AGENTS.md §八–§十一与 README.md。本文所有「文件:行号」引用（含 CLAUDE.md:NN、README.md:NNN）为写作时的历史坐标，行号可能已漂移——按内容（章节/用例名/命令文本）定位，勿按行号；凡步骤写「改 CLAUDE.md:…」者，一律改 AGENTS.md/README.md 对应内容。
+
 ---
 
 ## 1 问题总览
@@ -17,7 +19,7 @@
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [ ] 未开始 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [ ] 未开始 |
-| P9 | 文档与实现漂移（README 项数 / CLAUDE slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。 | [ ] 未开始 |
+| P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [ ] 未开始 |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
@@ -34,7 +36,7 @@
 |---|---|---|
 | 1 | P3, G3 | `uv run pytest -m 'not slow' -q` 全绿；`protect in.jpg -o in.jpg` 退 2 且原图 sha256 不变，`protect in.jpg -o out.jpg && verify out.jpg` 退 0 且 stdout 恰为原 payload；`git diff --stat AGENTS.md` 为空。**批次 1 已完成（2026-09-23）：见 §6 各项的实施记录。** |
 | 2 | **P10 修复 + P11（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。**批次 2 部分完成（2026-09-23）：P10 与 P11 已落地（`910a298`）；P8、P4 尚未开工，本节验收门槛中的 EXIF 与容量两条仍待落地后回写。** |
-| 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md CLAUDE.md` 无输出。 |
+| 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
 
@@ -90,7 +92,7 @@
 
 1. 每批开工前用 AskUserQuestion 集中确认 2–3 条与本批相关的未定项（从第 3 节的决策清单挑），并给出推荐项；用户未答的项按推荐项执行，并在该批 PR 描述里点名「按推荐执行 X」。
 2. 每批完成后跑全量 fast 回归（`uv run pytest -m 'not slow' -q`，涉及 GUI 的批次加 `--extra desktop` 与 `-m gui`），把批内各项的验收勾选框、`--collect-only -q` 的实测收集数（不写推算数字）与「加强/等价」标注就地回写本文档；出现「放宽」即为回归，必须回退。
-3. 默认只提交不推送；推送需逐次显式授权（`CLAUDE.md:126`），G1 的两 commit「先红后绿」与 release 的 verify 闸门同样适用。
+3. 默认只提交不推送；推送需逐次显式授权（AGENTS.md §十一），G1 的两 commit「先红后绿」与 release 的 verify 闸门同样适用。
 
 ---
 
@@ -653,15 +655,15 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 - 损坏 EXIF：硬拒绝（推荐 `ValueError`→exit 2）还是警告后继续 exit 0？后者重引静默降级，需裁定。
 - **AGENTS.md 冲突裁定**：判定无冲突（方向属解码非第四层），AGENTS.md 不改；若取更严格读法则构成 **AGENTS.md 冲突，需用户裁定**。
 
-> 摘要：事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。
+> 摘要：事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。文档半边（README:238 与 CLAUDE.md:71）已随 2026-09-28 的 CLAUDE.md 合并消解，剩余仅 subject 代码面。
 
-### P9 — 文档与实现漂移（README 项数 / CLAUDE slow 描述 / subject Tier-3）
+### P9 — 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3）
 
 **严重度**：P3-low（tier 3 不可达）
 **工作量**：S
 **批次**：3（内序 P9 → P2、P9 → P1）
-**依赖**：无硬依赖；P1 同改 CLAUDE.md:71（保留「不写死用例数」）
-**触及文件**：subject.py、test_subject_fallbacks.py、conftest.py、README.md、CLAUDE.md（AGENTS.md 不动）
+**依赖**：无硬依赖；P1 同改 README 快速档（继承「不写死用例数」政策）
+**触及文件**：subject.py、test_subject_fallbacks.py、conftest.py、README.md（AGENTS.md 不动）
 
 **现象与证据**
 - README.md:238「55 项」过期：AST 计数 58（46 函数 + 12 parametrize）；`-m 'not slow'` 不排除用例。
@@ -678,8 +680,8 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 4. test_subject_fallbacks.py:33-42 改名 + 换断言（见下表）。
 5. 新增 `test_centre_fallback_when_saliency_raises`：补 `import cv2`；patch `detect_salient_box` 抛 `cv2.error`；禁止 patch cvtColor。
 6. `:25-30` 加断言、conftest.py:33 docstring 改文字（见下表）。
-7. README.md:238 删项数；写快速档命令 + 覆盖面 + 「用例数见 `--collect-only -q`」；**不得有聚合数字**（P2/G1/G2/G5 不得写）；删「GUI 安全默认值和输出命名策略」句。
-8. CLAUDE.md:71 删 `≈55 cases`、`~20s`；加「不写死用例数」「快速档绿≠SD 有效」与 `uv run pytest -m slow --collect-only -q`；**不得写「不需要 torch」**（仍经 imwatermark→rivaGan.py:2 引 torch）。
+7. （已随合并完成）README 半边已按本口径落地：删项数、写快速档命令 + 覆盖面 + 「用例数见 `--collect-only -q`」、删「GUI 安全默认值和输出命名策略」句；本条不再需要独立执行。
+8. （已随合并完成）CLAUDE.md 已删除，其 slow/用例数描述迁入 AGENTS.md §十，并按「不写死用例数」落地；本条不再需要独立执行。
 9. 不修：一致性检查、AGENTS.md、pyproject.toml:46（P1）、README.md:6/:270（P5）、detect_faces。
 
 **被驳回或部分采纳的验证者意见**
@@ -706,11 +708,11 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 | 同上 | `test_saliency_tier_lands_on_high_contrast`（`:25-30`） | fast | `salient is not None` |
 
 **验收标准**
-- [ ] `grep -rn "55 项\|≈55 cases" README.md CLAUDE.md` 无输出（禁裸 `grep 55`）。
+- [ ] `grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出（禁裸 `grep 55`）。
 - [ ] `uv run pytest -m 'not slow' -q` 全绿；collect 数 = 落地前实测 + 1（不写绝对值）；该文件 `-v` 含两个新名字
 - [ ] 反向实验（删判据 / 去降级）失败输出贴 PR。
 - [ ] `uv run pytest -m slow --collect-only -q`：退出码 5 属预期、输出 `no tests collected (N deselected)`
-- [ ] `git diff --stat AGENTS.md pyproject.toml uv.lock` 空；工作树只含上述 5 个路径。
+- [ ] `git diff --stat pyproject.toml uv.lock` 空；工作树只含 subject.py、test_subject_fallbacks.py、conftest.py、README.md 四个路径。
 
 **风险与未知**
 - 恒定 640×480 + `--layers visible`：旧 Box(0,0,192,144) → 新 Box(128,96,384,288)（默认路径 config.py:41）；PR 须点明。
