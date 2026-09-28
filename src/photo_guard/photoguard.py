@@ -23,6 +23,18 @@ class PGDConfig:
     cancel_check: Callable[[], bool] | None = None
 
 
+def pad_to_multiple_of_8(rgb: np.ndarray) -> np.ndarray:
+    """Pad an ``HxWx3`` float image up to multiples of 8 by repeating its edge pixels.
+
+    The SD VAE downsamples by 8, so both sides must be multiples of 8; the attack crops
+    back with ``[:h, :w]`` afterwards, so the original region must stay byte-identical.
+    Module-level and torch-free on purpose: the tests call this instead of restating the
+    arithmetic (P17).
+    """
+    pad_h, pad_w = (-rgb.shape[0]) % 8, (-rgb.shape[1]) % 8
+    return np.pad(rgb, ((0, pad_h), (0, pad_w), (0, 0)), mode="edge")
+
+
 class _SDEncoderAttack:
     def __init__(self, cfg: PGDConfig) -> None:
         self.cfg = cfg
@@ -75,8 +87,7 @@ class _SDEncoderAttack:
         h, w = rgb.shape[:2]
         if h == 0 or w == 0:
             raise ValueError("PhotoGuard cannot process an empty image")
-        pad_h, pad_w = (-h) % 8, (-w) % 8
-        rgb = np.pad(rgb, ((0, pad_h), (0, pad_w), (0, 0)), mode="edge")
+        rgb = pad_to_multiple_of_8(rgb)
         x_orig = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(
             self._device, dtype=self._dtype
         )

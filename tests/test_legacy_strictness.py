@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from photo_guard import pipeline, watermark_invisible as wi
+from photo_guard import config, pipeline, watermark_invisible as wi
 
 # 15 bytes: a length the existing round-trip tests already prove this fixture recovers
 # exactly (tests/test_pipeline_order.py uses the same length).
@@ -140,12 +140,44 @@ def test_both_raw_entry_points_reject_an_impossible_length(decode) -> None:
         decode(flat, capacity + 1)
 
 
-def test_advisory_constants_exist_and_are_not_proof_thresholds() -> None:
-    from photo_guard import config
+def test_advisory_gate_is_decided_by_blocks_per_bit_at_the_floor(tmp_path) -> None:
+    """P17 — the old version asserted ``LEGACY_MIN_BLOCKS_PER_BIT == 16`` against itself.
 
-    assert config.DEFAULT_MAX_PAYLOAD_BYTES == 128
-    assert 0.0 < config.LEGACY_MIN_MEAN_MARGIN < 0.5021  # below the statistic's ceiling
-    assert config.LEGACY_MIN_BLOCKS_PER_BIT == 16
+    This pins the *behaviour* the constant buys, at the 320x320 embedding floor: a 12-byte
+    payload gets 16 blocks/bit and passes the gate; a 14-byte payload gets 14 and fails it —
+    while the margin gate is satisfied in both cases, so blocks/bit is what decides.
+    Flip the constant to 1 and the failing assertions go red.
+    """
+    source = tmp_path / "floor.jpg"
+    rng = np.random.default_rng(7)
+    Image.fromarray(rng.integers(40, 215, (320, 320, 3), dtype=np.uint8)).save(source, quality=92)
+
+    def clue_for(payload: str) -> wi.LegacyExtraction:
+        out = tmp_path / f"floor_{len(payload)}.jpg"
+        pipeline.protect(
+            source,
+            out,
+            pipeline.ProtectOptions(payload=payload, visible_mode="tile", visible_text="© t"),
+        )
+        return pipeline.verify_legacy(out, len(payload))
+
+    passing = clue_for("owner:alice#"[:12])  # 12 bytes -> 16 blocks/bit
+    failing = clue_for("owner:alice#01")  # 14 bytes -> 14 blocks/bit
+
+    assert passing.text == "owner:alice#"
+    assert failing.text == "owner:alice#01"
+    for clue in (passing, failing):
+        assert clue.mean_margin >= config.LEGACY_MIN_MEAN_MARGIN  # the other gate passes
+        assert clue.advisory_pass is (clue.blocks_per_bit >= config.LEGACY_MIN_BLOCKS_PER_BIT)
+    assert passing.blocks_per_bit >= config.LEGACY_MIN_BLOCKS_PER_BIT
+    assert failing.blocks_per_bit < config.LEGACY_MIN_BLOCKS_PER_BIT
+    assert f"{failing.blocks_per_bit} blocks/bit" in failing.notes
+
+
+def test_mean_margin_gate_sits_below_the_statistic_ceiling() -> None:
+    # The margin statistic cannot exceed ~0.5020 (spike P3-A), so a gate at or above that
+    # would be unsatisfiable; this is a sanity bound, not a restatement of the value.
+    assert 0.0 < config.LEGACY_MIN_MEAN_MARGIN < 0.5021
 
 
 def test_boundary_margin_is_zero_for_a_constant_image() -> None:
