@@ -1,6 +1,7 @@
 """PySide6 desktop application for interactive and batch photo protection."""
 from __future__ import annotations
 
+import argparse
 import csv
 from dataclasses import dataclass
 from functools import partial
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from . import config, device, outputs, perturb, pipeline
+from . import config, device, gui_logic, outputs, perturb, pipeline
 
 _IMAGE_FILTER = "Images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
 
@@ -292,14 +293,15 @@ class MainWindow(QMainWindow):
                 self.device_combo.addItem(label, (item.backend, item.index))
 
     def _build_options(self) -> pipeline.ProtectOptions:
-        layers = set()
-        if self.layer_invisible.isChecked(): layers.add(pipeline.LAYER_INVISIBLE)
-        if self.layer_sd.isChecked(): layers.add(pipeline.LAYER_PERTURB)
-        if self.layer_visible.isChecked(): layers.add(pipeline.LAYER_VISIBLE)
+        layers = gui_logic.layers_from_checks(
+            self.layer_invisible.isChecked(),
+            self.layer_sd.isChecked(),
+            self.layer_visible.isChecked(),
+        )
         backend, index = self.device_combo.currentData() or ("auto", None)
         kwargs = {}
         perturber = "noop"
-        if self.layer_sd.isChecked():
+        if pipeline.LAYER_PERTURB in layers:
             perturber = "sd"
             kwargs = {
                 "epsilon": self.epsilon.value(), "step_size": self.step_size.value(),
@@ -423,13 +425,21 @@ class MainWindow(QMainWindow):
         }.items(): self.settings.setValue(key, value)
 
     def _load_settings(self) -> None:
-        self.output_dir.setText(self.settings.value("output_dir", self.output_dir.text()))
-        self.suffix.setText(self.settings.value("suffix", self.suffix.text()))
-        self.visible_text.setText(self.settings.value("visible_text", self.visible_text.text()))
-        self.visible_mode.setCurrentText(self.settings.value("mode", self.visible_mode.currentText()))
-        self.alpha.setValue(float(self.settings.value("alpha", self.alpha.value())))
-        self.long_edge.setValue(int(self.settings.value("long_edge", self.long_edge.value())))
-        self.quality.setValue(int(self.settings.value("quality", self.quality.value())))
+        defaults = {
+            "output_dir": self.output_dir.text(), "suffix": self.suffix.text(),
+            "visible_text": self.visible_text.text(), "mode": self.visible_mode.currentText(),
+            "alpha": self.alpha.value(), "long_edge": self.long_edge.value(),
+            "quality": self.quality.value(),
+        }
+        stored = {key: self.settings.value(key, None) for key in gui_logic.SETTINGS_KEYS}
+        values = gui_logic.load_settings(stored, defaults)
+        self.output_dir.setText(str(values["output_dir"]))
+        self.suffix.setText(str(values["suffix"]))
+        self.visible_text.setText(str(values["visible_text"]))
+        self.visible_mode.setCurrentText(str(values["mode"]))
+        self.alpha.setValue(float(values["alpha"]))
+        self.long_edge.setValue(int(values["long_edge"]))
+        self.quality.setValue(int(values["quality"]))
 
     def closeEvent(self, event) -> None:
         if self._thread_running():
@@ -440,7 +450,16 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for ``photo-guard-gui``.
+
+    Arguments are parsed *before* Qt starts: creating the application first made ``--help``
+    fall through to ``app.exec()`` and block forever (G6). Unknown arguments are ignored on
+    purpose — macOS passes ``-psn_…`` when the app is launched from Finder.
+    """
+    parser = argparse.ArgumentParser(prog="photo-guard-gui", description="Photo Guard 桌面端")
+    parser.parse_known_args(argv)
+
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Photo Guard")
     app.setOrganizationName("PhotoGuard")

@@ -1,20 +1,97 @@
-"""GUI-level logic that is testable without Qt.
+"""P2 — the Qt-free GUI logic must be callable from the core test tier.
 
-``test_unique_output_policy`` used to live here, but it re-implemented the renaming loop
-instead of calling it, so it could not fail when the real code broke. That coverage now
-lives in ``tests/test_output_integrity.py``, which drives the shipped function.
-
-``test_gui_defaults_are_safe`` is still a weak assertion — it builds a ``ProtectOptions``
-directly and so has no coupling to ``gui.py``'s defaults. It is scheduled for replacement
-when P2 (fix-plan batch 3) extracts the Qt-free logic and rewrites this file.
+Before P2 the checkbox→layer mapping and the QSettings coercion lived inline in ``gui.py``,
+so the only "tests" either restated the logic or built a ``ProtectOptions`` directly — they
+could not fail when ``gui.py`` broke. These tests call ``gui_logic`` instead, which is the
+implementation the GUI itself imports.
 """
 from __future__ import annotations
 
-from photo_guard import pipeline
+import pytest
+
+from photo_guard import config, gui_logic, outputs, pipeline
+
+DEFAULTS = {
+    "output_dir": "/tmp/out",
+    "suffix": outputs.DEFAULT_SUFFIX,
+    "visible_text": config.DEFAULT_VISIBLE_TEXT,
+    "mode": config.DEFAULT_VISIBLE_MODE,
+    "alpha": config.DEFAULT_VISIBLE_ALPHA,
+    "long_edge": config.DEFAULT_LONG_EDGE,
+    "quality": config.DEFAULT_JPEG_QUALITY,
+}
 
 
-def test_gui_defaults_are_safe() -> None:
-    options = pipeline.ProtectOptions(payload_envelope=True)
-    assert options.layers == frozenset({"invisible", "visible"})
-    assert "perturb" not in options.layers
-    pipeline.validate_options(options)
+@pytest.mark.parametrize(
+    ("invisible", "sd", "visible", "expected"),
+    [
+        (True, False, True, {"invisible", "visible"}),
+        (True, True, True, {"invisible", "perturb", "visible"}),
+        (False, True, True, {"perturb", "visible"}),
+        (True, False, False, {"invisible"}),
+        (False, False, True, {"visible"}),
+        (True, True, False, {"invisible", "perturb"}),
+        (False, True, False, {"perturb"}),
+        (False, False, False, set()),
+    ],
+)
+def test_layers_all_combos(invisible, sd, visible, expected) -> None:
+    assert gui_logic.layers_from_checks(invisible, sd, visible) == frozenset(expected)
+
+
+def test_default_checkbox_state_is_the_safe_default() -> None:
+    """The startup state (invisible + visible checked) must equal the documented default."""
+    assert gui_logic.layers_from_checks(True, False, True) == pipeline.DEFAULT_LAYERS
+    # "No layers" stays representable — validate_options owns the rejection.
+    with pytest.raises(ValueError):
+        pipeline.validate_options(pipeline.ProtectOptions(layers=frozenset()))
+
+
+def test_load_settings_coerces_saved_values() -> None:
+    values = gui_logic.load_settings(
+        {
+            "output_dir": "/abs/out",
+            "suffix": "_x",
+            "visible_text": "© t",
+            "mode": "tile",
+            "alpha": "0.25",
+            "long_edge": "640",
+            "quality": 70.9,
+        },
+        DEFAULTS,
+    )
+    assert values == {
+        "output_dir": "/abs/out",
+        "suffix": "_x",
+        "visible_text": "© t",
+        "mode": "tile",
+        "alpha": 0.25,
+        "long_edge": 640,
+        "quality": 70,
+    }
+
+
+def test_load_settings_junk_falls_back_per_key() -> None:
+    assert gui_logic.load_settings(None, DEFAULTS) == DEFAULTS
+    values = gui_logic.load_settings(
+        {
+            "output_dir": "relative/path",
+            "suffix": 5,
+            "visible_text": None,
+            "mode": 7,
+            "alpha": "not-a-number",
+            "long_edge": None,
+            "quality": None,
+        },
+        DEFAULTS,
+    )
+    assert values == DEFAULTS
+    for bad in ("", "out", "../out"):
+        assert gui_logic.load_settings({"output_dir": bad}, DEFAULTS)["output_dir"] == DEFAULTS["output_dir"]
+
+
+def test_load_settings_only_overrides_provided_keys() -> None:
+    values = gui_logic.load_settings({"suffix": "_mine"}, DEFAULTS)
+    assert values["suffix"] == "_mine"
+    assert values["alpha"] == DEFAULTS["alpha"]
+    assert values["output_dir"] == DEFAULTS["output_dir"]
