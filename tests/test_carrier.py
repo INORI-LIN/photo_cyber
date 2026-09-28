@@ -49,6 +49,28 @@ def test_embed_round_trips_through_the_configured_carrier() -> None:
     assert wi.extract(marked, len(PAYLOAD.encode())) == PAYLOAD
 
 
+@pytest.mark.parametrize("channel", [2, 3, 99])
+def test_an_out_of_range_carrier_channel_fails_loudly(monkeypatch, channel) -> None:
+    """P21 — channels ≥ 2 are silently unembeddable: the library loops over ``range(2)``.
+
+    Pre-fix, ``CARRIER_CHANNEL = 2`` made ``embed`` return the image unchanged and every
+    reader fail forever, with no error anywhere.
+    """
+    monkeypatch.setattr(config, "CARRIER_CHANNEL", channel)
+    with pytest.raises(ValueError, match="carrier"):
+        wi.embed(_detailed(), PAYLOAD)
+    with pytest.raises(ValueError, match="carrier"):
+        wi.carrier_candidates()
+
+
+def test_the_embeddable_channels_are_not_rejected(monkeypatch) -> None:
+    """Guardrail must not fire for the channels the library actually carries (0 and 1)."""
+    monkeypatch.setattr(config, "CARRIER_CHANNEL", 1)
+    assert wi.carrier_candidates()[0] == (1, config.CARRIER_SCALE)
+    bgr = _detailed()
+    assert wi.extract(wi.embed(bgr, PAYLOAD), len(PAYLOAD.encode())) == PAYLOAD
+
+
 def test_swap_fix_reduces_distortion_on_detailed_content() -> None:
     """The library's H/V swap costs an 18 dB PSNR drop on detailed content; ours does not."""
     bgr = _detailed()

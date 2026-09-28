@@ -7,7 +7,7 @@ fall back to CPU.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import json
 import platform
 import subprocess
@@ -25,9 +25,6 @@ class DeviceInfo:
     available: bool = True
     supported: bool = True
     memory_bytes: int | None = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
 
     @property
     def key(self) -> str:

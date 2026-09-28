@@ -34,16 +34,32 @@ from . import config
 
 _MAGIC = "PG1"
 
-# Transcribed from imwatermark.dwtDctSvd's defaults. Only channel 1 — the Cb/U channel of
-# BGR2YUV — carries the watermark, because scales[0] and scales[2] are both 0.
-_SCALE = 36
+# The library's embed/decode loops run over ``range(2)``, so only channels 0..1 can carry
+# bits at all (P21).
+_MAX_EMBEDDABLE_CHANNEL = 1
 _BLOCK = 4
 _DWT_CROP = 4
 _DECISION = 127.0 / 255.0  # the library tests `avg * 255 > 127`
 
 
+def _require_embeddable_channel(channel: int) -> None:
+    """Reject a carrier channel the library cannot carry bits in (P21).
+
+    ``EmbedDwtDctSvd.encode``/``decode`` loop over ``range(2)``, so a channel ≥ 2 leaves the
+    scales vector all-zero: embedding silently becomes a no-op and every reader fails
+    forever, with nothing raising. A plain ``ValueError`` (never ``NoPayloadError``) keeps
+    the CLI mapping it to exit 2.
+    """
+    if not 0 <= channel <= _MAX_EMBEDDABLE_CHANNEL:
+        raise ValueError(
+            f"carrier channel {channel} is out of range: the watermark library only carries "
+            f"bits in channels 0..{_MAX_EMBEDDABLE_CHANNEL} (check config.CARRIER_CHANNEL)"
+        )
+
+
 def _scales_for(channel: int, scale: int) -> list[int]:
     """The library's ``scales`` vector for a single carrier channel."""
+    _require_embeddable_channel(channel)
     return [scale if index == channel else 0 for index in range(3)]
 
 
@@ -57,6 +73,7 @@ def carrier_candidates() -> tuple[tuple[int, int], ...]:
     current = (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
     ordered: list[tuple[int, int]] = []
     for candidate in (current, *config.LEGACY_CARRIERS):
+        _require_embeddable_channel(candidate[0])
         if candidate not in ordered:
             ordered.append(candidate)
     return tuple(ordered)
