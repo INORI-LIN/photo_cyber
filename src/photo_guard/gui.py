@@ -80,23 +80,32 @@ class ProtectWorker(QObject):
 
     @Slot()
     def run(self) -> None:
-        if pipeline.LAYER_PERTURB in self.options.layers:
-            self.options.perturber_kwargs["cancel_check"] = lambda: self.cancelled
-            self.options.perturber_instance = perturb.get(
-                self.options.perturber, **self.options.perturber_kwargs
-            )
-        for position, item in enumerate(self.items, start=1):
-            if self.cancelled:
-                break
-            self.progress.emit(position - 1, len(self.items), item.source.name)
-            try:
-                pipeline.protect(item.source, item.output, self.options)
-            except Exception as exc:
+        position = 0
+        try:
+            if pipeline.LAYER_PERTURB in self.options.layers:
+                self.options.perturber_kwargs["cancel_check"] = lambda: self.cancelled
+                self.options.perturber_instance = perturb.get(
+                    self.options.perturber, **self.options.perturber_kwargs
+                )
+            for position, item in enumerate(self.items, start=1):
+                if self.cancelled:
+                    break
+                self.progress.emit(position - 1, len(self.items), item.source.name)
+                try:
+                    pipeline.protect(item.source, item.output, self.options)
+                except Exception as exc:
+                    self.item_done.emit(str(item.source), "失败", str(exc))
+                else:
+                    self.item_done.emit(str(item.source), "成功", str(item.output))
+                self.progress.emit(position, len(self.items), item.source.name)
+        except Exception as exc:
+            # P25: an exception escaping the slot would strand the thread — nothing else
+            # emits ``finished``, so the window can never be closed — and PySide6 aborts
+            # the process on unhandled slot exceptions. Report the unattempted items.
+            for item in self.items[position:]:
                 self.item_done.emit(str(item.source), "失败", str(exc))
-            else:
-                self.item_done.emit(str(item.source), "成功", str(item.output))
-            self.progress.emit(position, len(self.items), item.source.name)
-        self.finished.emit(self.cancelled)
+        finally:
+            self.finished.emit(self.cancelled)
 
     @Slot()
     def cancel(self) -> None:
@@ -118,28 +127,35 @@ class VerifyWorker(QObject):
 
     @Slot()
     def run(self) -> None:
-        for position, path in enumerate(self.paths, start=1):
-            if self.cancelled:
-                break
-            self.progress.emit(position - 1, len(self.paths), path.name)
-            try:
-                if self.auto_discover:
-                    value = pipeline.discover_payload(path)
-                    status = "通过（自动发现）"
-                elif self.expected:
-                    value = pipeline.verify_expected(path, self.expected)["payload"]
-                    status = "通过"
+        position = 0
+        try:
+            for position, path in enumerate(self.paths, start=1):
+                if self.cancelled:
+                    break
+                self.progress.emit(position - 1, len(self.paths), path.name)
+                try:
+                    if self.auto_discover:
+                        value = pipeline.discover_payload(path)
+                        status = "通过（自动发现）"
+                    elif self.expected:
+                        value = pipeline.verify_expected(path, self.expected)["payload"]
+                        status = "通过"
+                    else:
+                        # No checksum on this path: report a clue and label the row as such.
+                        clue = pipeline.verify_legacy(path, int(self.legacy_bytes or 0))
+                        value = f"{clue.text}  [{clue.notes}]"
+                        status = "线索（未验证）"
+                except Exception as exc:
+                    self.item_done.emit(str(path), "未通过", str(exc))
                 else:
-                    # No checksum on this path: report a clue and label the row as such.
-                    clue = pipeline.verify_legacy(path, int(self.legacy_bytes or 0))
-                    value = f"{clue.text}  [{clue.notes}]"
-                    status = "线索（未验证）"
-            except Exception as exc:
+                    self.item_done.emit(str(path), status, value)
+                self.progress.emit(position, len(self.paths), path.name)
+        except Exception as exc:
+            # P25: see ProtectWorker.run — ``finished`` must be emitted no matter what.
+            for path in self.paths[position:]:
                 self.item_done.emit(str(path), "未通过", str(exc))
-            else:
-                self.item_done.emit(str(path), status, value)
-            self.progress.emit(position, len(self.paths), path.name)
-        self.finished.emit(self.cancelled)
+        finally:
+            self.finished.emit(self.cancelled)
 
     @Slot()
     def cancel(self) -> None:
@@ -325,7 +341,10 @@ class MainWindow(QMainWindow):
         self.protect_results.clear(); self.protect_log.clear(); self._save_settings()
         worker = ProtectWorker(items, options)
         worker.item_done.connect(self._protect_item_done)
-        worker.progress.connect(lambda done, total, name: self._set_progress(self.protect_progress, done, total, name))
+        # P26: a plain lambda is invoked *in the emitting thread* (the worker), so touching
+        # a widget there repaints Qt from a non-GUI thread — SIGSEGV under offscreen once the
+        # window is shown. A bound slot of this main-thread object gets a queued connection.
+        worker.progress.connect(self._on_protect_progress)
         self._start_worker(worker, self._protect_finished)
         self.protect_start.setEnabled(False); self.protect_cancel.setEnabled(True)
 
@@ -340,8 +359,8 @@ class MainWindow(QMainWindow):
         self.verify_results.clear(); self.verify_table.setRowCount(0)
         worker = VerifyWorker(paths, expected, legacy, auto)
         worker.item_done.connect(self._verify_item_done)
-        worker.progress.connect(lambda done, total, name: self._set_progress(self.verify_progress, done, total, name))
-        self._start_worker(worker, lambda _: self.statusBar().showMessage("验证完成"))
+        worker.progress.connect(self._on_verify_progress)  # P26: see start_protect
+        self._start_worker(worker, self._on_verify_finished)
 
     def _start_worker(self, worker: QObject, finish_callback) -> None:
         if self._thread_running(): return self._error("已有任务正在运行")
@@ -387,6 +406,18 @@ class MainWindow(QMainWindow):
     def _protect_finished(self, cancelled: bool) -> None:
         self.protect_start.setEnabled(True); self.protect_cancel.setEnabled(False)
         self.statusBar().showMessage("任务已取消" if cancelled else "保护完成")
+
+    @Slot(int, int, str)
+    def _on_protect_progress(self, done: int, total: int, name: str) -> None:
+        self._set_progress(self.protect_progress, done, total, name)
+
+    @Slot(int, int, str)
+    def _on_verify_progress(self, done: int, total: int, name: str) -> None:
+        self._set_progress(self.verify_progress, done, total, name)
+
+    @Slot(bool)
+    def _on_verify_finished(self, cancelled: bool) -> None:
+        self.statusBar().showMessage("验证完成")
 
     def _set_progress(self, bar: QProgressBar, done: int, total: int, name: str) -> None:
         limit = max(1, total)
