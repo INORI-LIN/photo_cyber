@@ -7,9 +7,14 @@ implementation the GUI itself imports.
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from photo_guard import config, gui_logic, outputs, pipeline
+
+_GUI_SOURCE = Path(__file__).resolve().parents[1] / "src" / "photo_guard" / "gui.py"
 
 DEFAULTS = {
     "output_dir": "/tmp/out",
@@ -95,3 +100,30 @@ def test_load_settings_only_overrides_provided_keys() -> None:
     assert values["suffix"] == "_mine"
     assert values["alpha"] == DEFAULTS["alpha"]
     assert values["output_dir"] == DEFAULTS["output_dir"]
+
+
+def _protect_call_lines(node: ast.AST) -> set[int]:
+    return {
+        call.lineno
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "protect"
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "pipeline"
+    }
+
+
+def test_pipeline_protect_is_only_called_by_the_worker_class() -> None:
+    """The heavy protect call must never run on the GUI thread (P26's neighbourhood).
+
+    AST-based so reformatting cannot fool it: moving ``pipeline.protect(...)`` into
+    ``MainWindow`` — where it would freeze the window for the whole batch — turns this red.
+    """
+    tree = ast.parse(_GUI_SOURCE.read_text(encoding="utf-8"))
+    worker = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ProtectWorker"
+    )
+    assert _protect_call_lines(tree) == _protect_call_lines(worker) != set()

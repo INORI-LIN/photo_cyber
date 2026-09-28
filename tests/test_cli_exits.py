@@ -247,3 +247,20 @@ def test_verify_with_an_impossible_payload_bytes_exits_two(tmp_path: Path, capsy
     err = capsys.readouterr().err
     assert "capacity" in err and "100000" in err
 
+
+def test_protect_with_an_out_of_range_carrier_exits_two(tmp_path: Path, monkeypatch, capsys) -> None:
+    """P21: a channel the library cannot carry bits in must fail loudly, not no-op.
+
+    Pre-fix this exited 0 and wrote an *unmarked* image while claiming success.
+    """
+    from photo_guard import config
+
+    monkeypatch.setattr(config, "CARRIER_CHANNEL", 2)
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main(["protect", str(src), "-o", str(out), "--visible-mode", "tile"]) == 2
+    assert "carrier" in capsys.readouterr().err
+    assert not out.exists()
+
