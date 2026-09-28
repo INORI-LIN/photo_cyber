@@ -9,6 +9,12 @@ Two P0 failure modes lived here before (see ``docs/fix-plan.md`` §6 G3):
   phone exports) resolved to one path and the second write silently replaced the first
   while both reported success.
 
+命名去重对大小写不敏感，且全平台保守化：Linux（大小写敏感）上两个仅有大小写差异的 stem
+（``IMG_0001`` / ``img_0001``）也会得到 ``_2`` 后缀，以免一批产物落到大小写不敏感的盘
+（APFS / NTFS）上互相覆盖——``os.path.normcase`` 不用，它在 POSIX 上是恒等，救不了 APFS。
+Unicode 残余：键为 ``unicodedata.normalize("NFC", name).casefold()``，不覆盖所有等价形式
+（NFD/NFKD 等变体、``ﬁ`` / ``fi`` 这类兼容形式）。见 P13（``docs/fix-plan.md`` §7）。
+
 Imports are stdlib + Pillow only, so this module stays usable from the CLI, the GUI and
 tests without pulling Qt or torch.
 """
@@ -130,12 +136,27 @@ def sanitize_suffix(raw: str) -> str:
     return suffix
 
 
+def _name_key(name: str) -> str:
+    """Return the key used when deciding whether two output names collide.
+
+    Case-insensitive on purpose, and conservatively so on *every* platform: a batch whose
+    stems differ only in case (``IMG_0001.JPG`` / ``img_0001.jpg``) must not resolve to two
+    names that a case-insensitive filesystem (APFS, NTFS) would merge into one file. The
+    ``_2`` rename therefore happens on Linux too.
+
+    ``os.path.normcase`` is deliberately not used — it is the identity on POSIX and would not
+    save APFS. Residual gap: NFC normalisation plus ``casefold`` does not cover every
+    equivalent spelling (NFD/NFKD variants, compatibility forms such as ``ﬁ`` vs ``fi``).
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
 def _unique_output(
     directory: Path, stem: str, extension: str, taken: frozenset[str] | set[str] = frozenset()
 ) -> Path:
     candidate = directory / f"{stem}{extension}"
     number = 2
-    while candidate.name in taken or candidate.exists():
+    while _name_key(candidate.name) in taken or candidate.exists():
         candidate = directory / f"{stem}_{number}{extension}"
         number += 1
     return candidate
@@ -151,6 +172,7 @@ def plan_batch(
 
     ``taken`` is what makes this correct for a batch: two same-stem sources that do not
     exist on disk yet still cannot collide, because the first reservation is remembered.
+    Reservations are keyed through ``_name_key``, so that holds for case-only differences too.
     """
     suffix = sanitize_suffix(suffix)
     directory = Path(directory)
@@ -158,6 +180,6 @@ def plan_batch(
     planned: list[Path] = []
     for source in sources:
         candidate = _unique_output(directory, Path(source).stem + suffix, extension, taken)
-        taken.add(candidate.name)
+        taken.add(_name_key(candidate.name))
         planned.append(candidate)
     return planned

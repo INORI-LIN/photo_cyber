@@ -265,6 +265,44 @@ def test_plan_batch_gives_same_stem_inputs_distinct_paths(tmp_path, sources, exp
     planned = outputs.plan_batch(tmp_path / "out", [tmp_path / s for s in sources], "_protected")
     assert [p.name for p in planned] == expected
     assert len(set(planned)) == len(sources)
+    # Distinct paths are not enough on their own: two names that differ only in case still
+    # land on one file under APFS/NTFS, so the *folded* names must be distinct too.
+    assert len({outputs._name_key(p.name) for p in planned}) == len(planned)
+
+
+def test_plan_batch_treats_case_only_differences_as_collisions(tmp_path) -> None:
+    """P13/M1: two stems differing only in case must not resolve to two names one
+    case-insensitive filesystem would merge.
+
+    The dedup key is case-folded on every platform, so the ``_2`` rename happens on Linux
+    too — which is the point: a batch planned on a case-sensitive filesystem cannot silently
+    overwrite itself once the outputs reach APFS or NTFS (the pre-fix code returned
+    ``IMG_0001_protected.jpg`` / ``img_0001_protected.jpg``, and both writes reported
+    success while the directory kept one file). ``os.path.normcase`` would not fix this — it
+    is the identity on POSIX — hence the explicit ``unicodedata`` key.
+    """
+    planned = outputs.plan_batch(
+        tmp_path,
+        [tmp_path / "A" / "IMG_0001.JPG", tmp_path / "B" / "img_0001.jpg"],
+        "_protected",
+    )
+
+    assert [p.name for p in planned] == ["IMG_0001_protected.jpg", "img_0001_protected_2.jpg"]
+    assert len({outputs._name_key(p.name) for p in planned}) == len(planned)
+
+
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        ("IMG_0001_protected.jpg", "img_0001_protected.jpg"),
+        # NFD spelling of "é": only NFC normalisation makes the two keys equal.
+        ("\u00e9.jpg", "e\u0301.jpg"),
+        # casefold, not lower(): "straße" != "strasse" under lower().
+        ("Stra\u00dfe.jpg", "STRASSE.jpg"),
+    ],
+)
+def test_name_key_folds_case_and_normalizes_nfc(left: str, right: str) -> None:
+    assert outputs._name_key(left) == outputs._name_key(right)
 
 
 def test_plan_batch_composes_with_existing_files(tmp_path) -> None:

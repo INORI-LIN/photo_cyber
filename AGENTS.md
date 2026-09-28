@@ -110,7 +110,7 @@ uv add "torch" --index https://download.pytorch.org/whl/cpu
 uv sync --frozen
 
 # 5. 运行脚本（始终通过 uv run，禁止裸跑）
-uv run python protect.py input.jpg
+uv run photo-guard protect input.jpg
 ```
 
 ### 6.3 命令映射对照（旧习惯 → 本方案要求）
@@ -128,7 +128,7 @@ uv run python protect.py input.jpg
 
 - 提交前确认仓库包含 `pyproject.toml` 与 `uv.lock`，且**不包含** `requirements.txt`（避免诱导他人 pip 安装）。
 - 可在 CI 加一道检查：检索脚本与文档中是否出现 `pip install`，命中即判失败。
-- 全新环境复现验证：`uv sync --frozen && uv run python protect.py --help` 应一次通过。
+- 全新环境复现验证：`uv sync --frozen && uv run photo-guard protect --help` 应一次通过。
 
 ---
 
@@ -141,7 +141,7 @@ uv run python protect.py input.jpg
 uv python install 3.11 && uv python pin 3.11
 uv add pillow invisible-watermark numpy
 # 运行
-uv run python protect.py input.jpg
+uv run photo-guard protect input.jpg
 ```
 
 处理流程：
@@ -149,7 +149,7 @@ uv run python protect.py input.jpg
 ```
 输入原图
   → 嵌入抗压缩隐形水印
-  → PhotoGuard 对抗扰动（预留接入位）
+  → PhotoGuard 对抗扰动（真 SD VAE encoder PGD，CLI 用 --perturber sd，见 §8.3）
   → 按平台规格预压缩
   → 打绑定主体的明水印
   → 输出成品
@@ -167,7 +167,7 @@ uv run python protect.py input.jpg
 
 - 唯一编排 `pipeline.protect`：`load → fit_long_edge(1080) → ① embed(DWT-DCT-SVD) → ② perturb → ③ visible → save JPEG`。
 - `ProtectOptions.layers` 只控**成员**（哪些层跑），不控**顺序**（顺序写死在代码里）；`ALL_LAYERS` 是全集，CLI 暴露为逗号分隔子集。
-- 空集或未知层名 → `pipeline.validate_options` 抛 `ValueError` → CLI 映射为 **exit 2**。
+- CLI 路径上空集或未知层名由 `cli._parse_layers` 先行拒绝；`validate_options` 是第二道（编程调用方）；两者都映射为 **exit 2**。
 - **resize 先于 embed**：DWT-DCT 对几何重采样敏感，嵌入必须发生在 resize 后的像素上。这是 §二 顺序与 §五「先压长边」表面冲突的解法，勿「修回」字面顺序。
 - CLI 默认 `--layers invisible,visible`；指定 `--perturber noise|sd` 会自动把 `perturb` 并入集合。扩展新层时在固定位置插入并自带成员校验，绝不让集合决定顺序。
 
@@ -223,7 +223,7 @@ uv run python protect.py input.jpg
 
 镜像自包含：SD VAE 在构建期烘焙进 `/app/models/sd-vae-ft-mse`，运行期设 `HF_HUB_OFFLINE=1` 等完全离线。四条不得破坏的规则：
 
-1. 构建期的模型/包下载**只允许** `RUN ... download-models` 这一步；apt 系统依赖与 uv 二进制分别来自系统源与官方镜像（`python:*-slim` + `COPY --from=ghcr.io/astral-sh/uv:latest`），不得**新增**其他联网步骤。
+1. 构建期联网限三类：apt 系统依赖、uv 二进制（ghcr 官方镜像）、包与模型（PyPI 的 `uv sync` 与 `RUN … download-models`）；不得**新增**第四类联网步骤。
 2. `uv` **只能**来自 `COPY --from=ghcr.io/astral-sh/uv:latest /uv ...`；不得用安装脚本或包管理器装 uv。
 3. 运行镜像设 `LANG`/`LC_ALL=C.UTF-8` 与 `PYTHONIOENCODING=utf-8`；CLI 有中文输出，针对它的 CI 断言必须**整行精确相等**，不得为绕编码问题降级为子串匹配。
 4. `.dockerignore` **必须**排除 `models/` 与 `.venv/`：本地模型/虚拟环境会撑爆构建上下文，并掩盖镜像内下载步骤的 bug。
@@ -253,5 +253,5 @@ uv run python protect.py input.jpg
 - 分支 `main`；remote `origin → https://github.com/INORI-LIN/photo_cyber.git`。
 - 提交信息沿用历史体例：`type(scope): 中文摘要` + 中文正文说明缘由；历史提交带 `Co-Authored-By` 尾注（是否添加按实际协作工具决定）。
 - **未经用户显式确认不得 push**：`git push` 属于影响远端的动作，需先取得同意。
-- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md` 与 `README.md`（它们是规则本身的文档，两道合规门均已排除）；新文档与代码不得抄入，否则 grep 门与 `tests/test_compliance.py` 都会红。
+- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md`、`README.md` 与 `.github/`（它们是规则本身的文档，两道合规门都整体排除它：ci.yml 的 `--exclude-dir=.github` 与 `tests/test_compliance.py` 的 `_EXCLUDE_DIRS`）；新文档与代码不得抄入，否则 grep 门与 `tests/test_compliance.py` 都会红。
 - 维护边界：§一–§七 的改动需经用户确认；§八–§十一 随代码同步，改实现时一并更新对应条目。

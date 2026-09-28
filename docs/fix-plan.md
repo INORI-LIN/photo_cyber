@@ -27,6 +27,23 @@
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
 | G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [ ] 未开始 |
+| P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [ ] 批次 A 进行中 |
+| P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [ ] 批次 A 进行中 |
+| P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [ ] 批次 A 进行中 |
+| P14 | 旧版 verify `--payload-bytes` 无上界，可长时空转 | low-med | S | B | 长度参数未与图像容量挂钩；进循环前用 `max_stored_bytes` 拒绝。 | [ ] 未开始 |
+| P16 | tile 明水印纵向长图下部整行不画 | med | S | B | 行内 x 偏移单向累加致 `range` 变空；取模修正，长图下段恢复覆盖。 | [ ] 未开始 |
+| P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [ ] 未开始 |
+| P17 | 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证 | med | S | C | （重叠：P2）用例抄实现自证、从不 import 被测逻辑；改为调用真实函数或行为断言。 | [ ] 未开始 |
+| P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [ ] 未开始 |
+| P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [ ] 未开始 |
+| P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [ ] 未开始 |
+| P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
+| P22 | Dockerfile 无 USER/HEALTHCHECK、base/uv/apt tag 浮动 | low | S | F | 默认 root 运行、镜像 tag 未钉；补非 root 与健康探针、固定 tag。 | [ ] 未开始 |
+| P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [ ] 未开始 |
+| G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [ ] 未开始 |
+| G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] 未开始 |
+| P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [ ] 未开始 |
+| P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [ ] 未开始 |
 
 ---
 
@@ -39,12 +56,19 @@
 | 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
+| A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 进行中（2026-09-28）：状态见 §7 P12/P13/P24。** |
+| B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。 |
+| C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。 |
+| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。 |
+| E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
+| F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
 
-三条硬定序，实施时不得调换：
+四条硬定序，实施时不得调换：
 
 1. **batch 3 内 P9 先于 P2/P1。** P9 撤销 `README.md:238` 与 `CLAUDE.md:71` 的聚合数字，并把「不写死用例数」定为唯一政策；若 P2/P1 先落地，两者会各自往文档里塞新数字，P9 再改即第二次返工，且 G1/G2/G5 的文档步骤都引用这条政策。
 2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P3 于批次 1 定义的 `watermark_invisible.max_stored_bytes(h, w)`（P4 只消费该函数；P4 本体属批次 2，尚未落地）。
 3. **G1 的 spike 必须在 batch 4 开工前完成，并按结论分支。** G1 的 spike A/B/C（`_dwt_dct_svd` 与 `invisible-watermark` 0.2.0 逐位等价）不通过就走兜底分支（core 继续声明 torch、撤回 `CLAUDE.md:12`），此时 G1/G5/G2 依赖的 core-only 闭包、extra 声明与 lock 差异面全部改写；G1 也是唯一能改变「fast 档仍经 `imwatermark` → `rivaGan.py:2` 引 torch」这一现状的条目——今天 P3 的 `'torch' in sys.modules` 断言仍为 `True`，只有 G1 落地后才应为 `False`。
+4. **P17 不早于 P2（同属 GUI 测试面）。** P17 的断言替换须落在 P2 收敛后的测试结构上，先落地 P2 再动 P17，避免同一测试面二次返工。
 
 ---
 
@@ -74,6 +98,9 @@
 - [ ] G5 的两处：smoke 在 `UV_PROJECT_ENVIRONMENT=$TMP/venv`（项目外）跑，与 AGENTS.md:88「依赖装项目本地 `.venv`」的张力；以及仓库 public/private 决定 macOS leg 每 PR 跑还是转 nightly。 — 影响 G5、P2 — 建议：接受项目外隔离 venv（冲突显式标注）或改「复制 checkout 再 sync」；macOS 建议 `ci.yml` 加 `macos-15` 每 PR 跑，并只在 Linux 上跑 smoke。
 - [ ] P5/P6 的契约与阈值：AGENTS.md 三-②「输出崩坏、失真」强于可证明者，是 README 如实降级还是用户自行补边界；P6 首轮若 portrait_like/smooth_lowtex 的 q85 <100% 走哪条产品决策。 — 影响 P5、P6、P1 — 建议：README 如实写「只实现 encoder-attack 变体、强度未测量、提高成本非必然崩坏」，并把与 AGENTS.md 的差异上报；首轮不达则按 Q2 改默认 payload 长度或只在 README 限定承诺范围，禁缩语料、禁降钉。
 - [ ] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。
+- [ ] P19 的线索路径（`--payload-bytes` 分支）是否改独立退出码（如 3）？ — 影响 P19、cli.py、README 退出码表、`docker.yml` 断言、P3 的结论 — 建议：采纳独立退出码 3，把「线索（未验证）」与「证据」在机器可读通道上分开；落地时同步 README 与 `docker.yml` 断言，并用新用例钉住。
+- [ ] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。
+- [ ] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。
 
 **本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（唯一的退出码映射变更）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
 
@@ -1231,7 +1258,530 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 ---
 
-## 7 附录：审计与验证证据链
+## 7 二次审计（2026-09-28）
+
+### 7.0 本轮口径与实测范围
+
+- **锚定 HEAD `9b81ebf`**：三路只读审计（文档一致性 / 源码缺陷 / 测试·CI·打包）在本轮开始时进行，工作树干净。本章所有「文件:行号」只是**历史坐标**，一律按函数名/用例名/命令定位；行号漂移不构成条目失效（与顶部总注同口径）。
+- **本轮实测范围**：fast 档全绿；CI 两条 workflow 对 `9b81ebf` 均 success（REST 实测）；H1（P12）与 M1（P13）已用独立进程复现脚本实测；GUI 相关结论取自 offscreen 平台的实测运行。
+- **本轮未跑（列为待办，结论不得预判）**：① 真实 SD 慢档（需 `uv sync --extra photoguard` 与本地模型）；② `docker build`（开发机未安装 Docker，与 §6「批次 2 附带硬化」记的同一限制）。
+- **编号与批次**：条目续编 **P12–P26 + G6/G7**（P25/P26 为 P12 验证时新发现，随本轮一并沉淀）；批次用 **A–F 字母制**（避免与已完成的批次 1–5 重号），路线见 §2。**G6 不单独立项实现，落地时并入 G5**。
+- **格式**：P12–P19、P24–P26、G6、G7 用六段式（严重度/工作量/批次/重叠/触及文件 → 现象与证据 → 根因 → 推荐方案 → 测试与验收 → spike/裁定与开放问题）；**L 级条目 P20/P21/P22/P23 用四段简式**。逐条证据标「实测」或「读码」；任何聚合用例数字都不写死，取值现场跑 `uv run --no-sync pytest --collect-only -q`；本章验收命令统一带 `--no-sync`（避免运行期 sync 卸载 desktop extra，见 G6）。
+
+---
+
+### P12 — GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV（审计码 H1）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：high
+- 工作量：S（约 40 行 + 1 个新测试文件）
+- 批次：A
+- 重叠：G3/P9 里「`AGENTS.md` 无 diff」的验收口径**不可照抄**（本批改 `AGENTS.md`，见 P24）
+- 触及文件：`src/photo_guard/gui.py`、`tests/test_gui_lifecycle.py`（新）、`pyproject.toml`（注册 `gui` marker）
+
+**现象与证据（实测）**
+- `gui.py` 的 `_start_worker` 把 QThread 交给 `finished -> deleteLater`，却从不把 `self.thread` 置空。
+- 复现脚本 `/tmp/pg_repro_h1a.py`：第一轮完成后 `win.thread is None` 为 `False`、`_threads` 为 0；第二次调用 `start_protect()` 抛 `RuntimeError: libshiboken: Internal C++ object (PySide6.QtCore.QThread) already deleted.`（经按钮触发时 PySide 打印后吞掉，界面无反应、无提示）。
+- 复现脚本 `/tmp/pg_repro_h1b.py`：跑完一轮后 `win.close()` → 进程退出码 139（SIGSEGV），`close()` 未返回。
+- `cancel_task` 与 `closeEvent` 使用**同一判据**（对可能已析构的对象调 `isRunning()`）。
+
+**根因**
+线程对象已被析构而 Python 侧引用未清：`isRunning()` 会访问已删除的 C++ 对象，判据本身即触发 use-after-free；槽内异常被 PySide 吞掉，故障从「报错」退化为「无反应 + 退出时崩溃」。
+
+**推荐方案**
+1. 新增 `_release_worker(thread, worker)` 回调，在 `deleteLater` **之前**连接：从 `_threads` 移除；`self.thread is thread` 时置 None；`self.worker is worker` 时置 None。
+2. 新增 `_thread_running()`：`self.thread` 为 None → False；`isRunning()` 抛 `RuntimeError` 时顺手置 None 并返回 False。
+3. `_start_worker` 与 `closeEvent` 改用 `_thread_running()`。
+4. `cancel_task` 捕获 `RuntimeError` 后静默返回。
+
+**测试与验收**
+- [ ] 新测试文件 `tests/test_gui_lifecycle.py`：`importorskip("PySide6")` + `QT_QPA_PLATFORM=offscreen`；320×240 + `layers={'visible'}`（毫秒级、不引 torch）；用 QEventLoop 泵至 `_threads` 为空。
+- [ ] 三例：连跑两次均完成且 `_threads == []`（旧码第二次必红）；`closeEvent` 被接受；跑完调 `cancel_task` 不抛。
+- [ ] core 环境该模块整体 skipped，属**可选依赖守卫**（显式声明）；desktop 档须 **0 skip**。
+- [ ] 复跑 G3 的两条 GUI 场景（offscreen）回归，确认未破坏既有路径。
+- [ ] 复现脚本修复后重跑：`h1a` 无 `RuntimeError`、`h1b` 退出码 0。
+- 命令：`uv run --no-sync pytest tests/test_gui_lifecycle.py -q`；`uv run --no-sync pytest -m gui -q`
+
+**spike / 裁定与开放问题**
+- 无 spike。开放：修复触及线程生命周期，G3/P9 中「`AGENTS.md` 无 diff」的验收口径本批不适用（本批改 `AGENTS.md`）。
+- 交叉引用：第二轮在「offscreen 平台 + 窗口 `show()` 过」下存在与本项修复无关的偶发崩溃（修复前第二轮不可达，故此前无法暴露），见 **P26**。
+
+---
+
+### P13 — 批量命名大小写碰撞：跨盘静默覆盖、双报成功（审计码 M1）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：high
+- 工作量：S
+- 批次：A
+- 重叠：无（既有 `plan_batch` 期望只加强/等价，不放宽）
+- 触及文件：`src/photo_guard/outputs.py`、`tests/test_output_integrity.py`、`README.md`（批量命名句）、`outputs` docstring
+
+**现象与证据（实测）**
+- 复现脚本 `/tmp/pg_repro_m1.py`：`plan_batch` 对 `A/IMG_0001.JPG` 与 `B/img_0001.jpg` 返回 `['IMG_0001_protected.jpg', 'img_0001_protected.jpg']`（字符串不同，`taken` 拦不住）。
+- 在大小写不敏感文件系统（Windows、默认 APFS）上两次写入落到同一路径：磁盘只剩一个文件，而两次都报成功。
+
+**根因**
+`taken` 集存的是**原始大小写**；`exists()` 又按宿主文件系统语义（POSIX 恒等，救不了 APFS）——两道判据在大小写不敏感盘上都失效。
+
+**推荐方案**
+1. `taken` 的键改 `_name_key(name) = unicodedata.normalize("NFC", name).casefold()`，读写用同一键。
+2. 保留 `candidate.exists()`；**不用** `os.path.normcase`（POSIX 上恒等，救不了 APFS）。
+3. 属**全平台保守化**（Linux 上大小写不同也会得到 `_2`）——须写进 `README.md` 与 `outputs` docstring，并注明 Unicode 残余（`ß`→`ss`、NFC/NFD 变体）。
+
+**测试与验收**
+- [ ] 新增用例：两输入只差大小写 → `IMG_0001_protected.jpg` / `img_0001_protected_2.jpg`。
+- [ ] 新增不变量断言 `len({_name_key(p.name) for p in planned}) == len(planned)`（**不依赖宿主 FS 大小写**，全平台可红可绿）。
+- [ ] 既有 `plan_batch` 期望逐条核对不变（只加强或等价，不得放宽）。
+- 命令：`uv run --no-sync pytest tests/test_output_integrity.py -q`
+
+**spike / 裁定与开放问题**
+- 无 spike。开放：行为变更（Linux 上也保守去重）须在提交正文点名，并同步 README 与 docstring。
+
+---
+
+### P24 — 文档纠错七条（README/AGENTS）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low
+- 工作量：S
+- 批次：A
+- 重叠：无（纯文档表述，不改契约；与 P9 的文档面互不代偿）
+- 触及文件：`README.md`、`AGENTS.md`
+
+**现象与证据（读码确认，七条）**
+1. `README` 退出码 2 的说明缺「含 `--expected-payload` 不符与信封 CRC 不确定」。
+2. `AGENTS.md` §十一 合规白名单未收 `.github/`（两道合规门均已整体排除 `.github`，白名单应与之对齐）。
+3. `AGENTS.md` §九.1 写「只允许 download-models 联网」不实——Dockerfile 的 `uv sync --extra photoguard` 也从 PyPI 下载。
+4. `AGENTS.md` §6.2/§6.4/§七 的 `uv run python protect.py` 已过期（仓库无 `protect.py`，入口是 `photo-guard`）；§七「PhotoGuard（预留接入位）」与实现矛盾（已是真 SD VAE encoder PGD）——**用户已授权直接改**。
+5. `README` 符号链接句与 `outputs.py` 对只读目标 `chmod` 的行为不符。
+6. `AGENTS.md` §8.1 未写明未知层实际由 `cli._parse_layers` 先行拒绝。
+7. `README` 参数表缺 `--visible-text`（默认 © photo-guard）与 `--max-payload-bytes`（默认 128）；项目结构树缺 `config.py`；`resources.py` 行缺 `PHOTO_GUARD_RESOURCE_DIR`。
+
+**根因**
+文档跨版本手写维护、未随实现同步；部分表述停留在设计期承诺，实现演进（真 SD encoder、入口更名、合规门收口）后未回改，于是同一事实在 README/AGENTS 两处各错一半。
+
+**推荐方案**（七条，逐条对应上面编号）
+1. README 退出码 2 补「（含 `--expected-payload` 不符与信封 CRC 不确定）」。
+2. AGENTS §十一 合规白名单补 `.github/`。
+3. AGENTS §九.1 改为「联网限三类：apt 系统依赖、uv 二进制、包与模型」。
+4. AGENTS §6.2/§6.4/§七 的示例改真实入口 `photo-guard`；§七 如实描述真 SD VAE encoder PGD。
+5. README 符号链接句改为与 `outputs.py` 实际行为一致。
+6. AGENTS §8.1 注明 `cli._parse_layers` 是第一道拒绝、`pipeline.validate_options` 是第二道。
+7. README 补 `--visible-text` 与 `--max-payload-bytes` 两行、结构树补 `config.py`、`resources.py` 行补 `PHOTO_GUARD_RESOURCE_DIR`。
+
+**测试与验收**
+- [ ] `uv run --no-sync pytest tests/test_compliance.py -q` 两道合规门绿（白名单变更后仍不误报）。
+- [ ] 七条逐条与实现对照（读码复核）；`README.md`/`AGENTS.md` 中不再出现 `protect.py` 与「预留接入位」。
+- [ ] 文档不写死任何聚合用例数字（本项目政策）。
+- 命令：`uv run --no-sync pytest tests/test_compliance.py -q`；`grep -rn "protect.py" README.md AGENTS.md`（落定后应无输出）
+
+**spike / 裁定与开放问题**
+- 无 spike。开放：第 4 条属用户已授权的 §一–§七 直改；其余各条只改表述、不改退出码与层序契约。
+
+---
+
+### P14 — 旧版 verify `--payload-bytes` 无上界，可长时空转（审计码 M2）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low-med
+- 工作量：S
+- 批次：B
+- 重叠：P3/P4 的容量口径（`max_stored_bytes`）
+- 触及文件：`watermark_invisible.py`、`cli.py`
+
+**现象与证据（实测）**
+- 旧版 raw 提取路径**无上界**（对比 `find_envelope` 用 `min(max_bytes, max_stored_bytes)`）。
+- `--payload-bytes 200000` 单次约 0.21 s；`1e8` 可空转 2 分钟以上。
+- 1080p 图的实际容量仅 4050 字节——超出该值的请求在物理上不可能成功。
+
+**根因**
+`--payload-bytes` 只被当作循环上界使用，未与图像容量挂钩，于是「不可能长度」退化成长时间空转而非早退。
+
+**推荐方案**
+1. 进循环前用 `max_stored_bytes(h, w)` 判断，不可能长度直接拒绝。
+2. 拒绝语义（保 exit 1 还是改 2）待裁定，见 §3 末条。
+
+**测试与验收**
+- [ ] 新增用例：不可能长度在**进入提取循环前**被拒（用调用计数/提前返回断言，避免依赖墙钟）。
+- [ ] 可能的长度路径行为不变（既有断言只加强或等价）。
+- 命令：`uv run --no-sync pytest tests/ -q -k payload`（用例名以落地时为准）
+
+**spike / 裁定与开放问题**
+- 裁定：不可能长度保 exit 1（现状）还是改 2 —— 见 §3。
+
+---
+
+### P16 — tile 明水印纵向长图下部整行不画（审计码 M5）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：S
+- 批次：B
+- 重叠：无
+- 触及文件：`watermark_visible.py`、`tests`
+
+**现象与证据（实测）**
+- `row_offset=(y//step_y)*diag` 单向累加 → 行越靠下，x 起点越右，`range` 变空即整行不画。
+- 实测改动像素：1080×1920 三带为 5584 / 10275 / 4072；1080×6000 为 19931 / 4081 / **0**（下段完全无水印）。
+
+**根因**
+行内 x 偏移未取模（未折回画布宽度内），偏移量随 y 单调增长，长图下半必然出空区间。
+
+**推荐方案**
+1. `row_offset` 取模（或按 ±半幅居中），保证每行都有落笔区间。
+2. 不改 tile 的层序与语义（§四约定），只修正偏移计算。
+
+**测试与验收**
+- [ ] 新增/加强用例：1080×6000 三带改动像素**均 > 0**（旧码第三带为 0，必红）。
+- [ ] 1080×1920 既有期望不变（只加强或等价）。
+- 命令：`uv run --no-sync pytest -m 'not slow' -q`
+
+**spike / 裁定与开放问题**
+- 无 spike；无契约变更。
+
+---
+
+### P18 — `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实（审计码 M11）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：S
+- 批次：B
+- 重叠：P6（若 P6 落地，本项改为「删除 `gpu_bench.py`」）
+- 触及文件：`gpu_bench.py`、`tests`（可选）
+
+**现象与证据（实测）**
+- `ProtectOptions(perturber='noop', layers={'perturb'})` 被 `pipeline.validate_options` 拒（`ValueError: perturb layer uses noop`），脚本**首次调用即崩**。
+- `TEMP` 缺省回退 `.`，产物写进 CWD；异常时 `rmtree` 不执行。
+- 脚本把 JPEG q85 误差当作扰动读取（历史坐标 `:76-80`）。
+- docstring 自称 not committed，实际**已提交**。
+
+**根因**
+脚本未按 `validate_options` 的成员/扰动器契约取值（`perturb` 配 `noop` 非法）；临时目录缺省与清理未走 `finally`；docstring 与仓库事实脱节。
+
+**推荐方案**
+1. 基线配置改 `layers={'invisible'}`（或把 `perturber` 换成 `noise`），让首次调用即可跑通。
+2. `rmtree` 移入 `finally`；`TEMP` 缺省不再回退 `.`。
+3. docstring 如实描述（已提交、用途与前置条件）。
+4. 若 P6 先落地，本项改为**删除** `gpu_bench.py`（P6 的 bench 覆盖其用途）。
+
+**测试与验收**
+- [ ] 脚本在 core 环境（无 SD extra）下首次调用不再崩（退出码 0，或给出明确前置条件提示）。
+- [ ] 异常路径不残留产物、不写进 CWD。
+- 命令：`uv run --no-sync python gpu_bench.py`（最小调用以落地时为准）；`uv run --no-sync pytest -m 'not slow' -q`
+
+**spike / 裁定与开放问题**
+- 开放：保留并修 vs 删除，取决于 P6 是否先落地。
+
+---
+
+### P17 — 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证（审计码 M6 残余）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：S
+- 批次：C
+- 重叠：P2（**硬定序：P17 不早于 P2**，见 §2）
+- 触及文件：`tests/test_photoguard_shape.py`、`tests/test_legacy_strictness.py`
+
+**现象与证据（读码）**
+- `test_photoguard_shape` 只自证 `(h + (-h) % 8) % 8 == 0` 的算术、**从不 import 被测逻辑**。
+- `test_legacy_strictness` 有一条断言为「常量等于自身字面值」。
+
+**根因**
+用例把被测实现抄成等价算式在测试里重算，断言与被测代码之间没有因果关系——实现改了它也不会红。
+
+**推荐方案**
+1. `test_photoguard_shape`：把真实 padding 计算导出为函数并**调用**（而不是重算），断言 `%8` 性质。
+2. `test_legacy_strictness`：该条改为行为断言，或删除（不得保留同义自证）。
+
+**测试与验收**
+- [ ] 替换后的断言在旧实现上必红（先红后绿，落地时贴两态证据）。
+- [ ] fast 档全绿；文档不写死聚合数字。
+- 命令：`uv run --no-sync pytest tests/test_photoguard_shape.py -q`；`uv run --no-sync pytest -m 'not slow' -q`
+
+**spike / 裁定与开放问题**
+- 硬定序：不早于 P2 开工（同属 GUI 测试面）；无 spike。
+
+---
+
+### P21 — 死符号 `_SCALE`/`to_dict` 与载体通道无护栏（审计码 L3）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low | 工作量：S | 批次：C | 重叠：无 | 触及文件：`watermark_invisible.py`、`device.py`
+
+**现象与证据（读码）**
+- `_SCALE` 与 `to_dict` 全仓无引用。
+- `range(2)` 与 `config.CARRIER_CHANNEL` 之间**无护栏**：把通道参数改成 ≥2 会**静默不嵌入**，其后的校验必然失败。
+
+**推荐方案**
+1. 删除 `_SCALE`/`to_dict`，或加注释说明保留理由（若为外部/历史用途）。
+2. 给载体通道加护栏：通道数与 `CARRIER_CHANNEL` 越界时响亮失败（`ValueError` → exit 2），并加测试钉住。
+
+**测试与验收**
+- [ ] `grep -rn "_SCALE\|to_dict" src/ tests/` 的结果与决定一致（删净或留注释）。
+- [ ] 越界护栏用例：`CARRIER_CHANNEL` 越界时抛错并落到 exit 2。
+- 命令：`uv run --no-sync pytest -m 'not slow' -q`
+
+---
+
+### P15 — 模型加载未强制 safetensors、download 无 revision（审计码 M3）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：M（spike + 代码）
+- 批次：D
+- 重叠：P1（同触 `photoguard.py`，改动面不同）
+- 触及文件：`photoguard.py`、`download.py`、`cli.py`（提示文案）、`docs`
+
+**现象与证据（读码，未实测）**
+- `from_pretrained(..., local_files_only=True)` 未传 `use_safetensors=True`：目录里只要有 `.bin` 就会走 `torch.load`（pickle）。
+- `download` 无 `revision` 钉住。
+- 入口 `--perturber-model` / `--repo` / `PHOTO_GUARD_RESOURCE_DIR` 都指向任意本地目录。
+
+**根因**
+加载与下载两侧都信任「本地目录内容」：既没有格式闸门也没有版本钉，于是同时留下**任意代码执行（以用户权限）**与 **Docker 烘焙不可复现**两类风险。
+
+**推荐方案**
+1. 先 spike：真 diffusers + 只放 `.bin` 是否确实走 `torch.load`（结论先落文档，未结论不得先合实现）。
+2. 加载侧加 `use_safetensors=True`（是否硬失败见 §3）。
+3. `download` 与加载两侧钉同一个 `revision`（钉哪一版见 §3）。
+4. `cli.py` 提示文案与 `docs` 同步说明模型来源与信任边界。
+
+**测试与验收**
+- [ ] spike 有结论并回写本节；代码改动晚于结论。
+- [ ] 加载侧：无 safetensors 的目录按 §3 裁定被拒或警告；带 `revision` 的下载路径可复现。
+- 命令：本项需 `uv sync --extra photoguard` + 本地模型环境（本轮未跑，列为待办）；先跑 `uv run --no-sync pytest -m 'not slow' -q` 确认未破坏 fast 档。
+
+**spike / 裁定与开放问题**
+- spike：真 diffusers + 只放 `.bin` 的加载分支。
+- 裁定：`use_safetensors=True` 是否硬失败、`revision` 钉哪一版 —— 见 §3。
+
+---
+
+### P19 — 线索路径退 0 与「证据」语义混同（审计码 L1）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：S（待裁定）
+- 批次：D
+- 重叠：P3（结论）与 `docker.yml` 断言
+- 触及文件：`cli.py`、`README`、`docker.yml` 断言
+
+**现象与证据（读码）**
+- `--payload-bytes` 分支 stdout 标注「线索（未验证）」但 `return 0`。
+- 机器可读通道把「线索」与「证据」混同：P3 已证无阈值可分（真实产物与可打印垃圾完全重叠），调用方无法从退出码区分二者。
+
+**根因**
+退出码契约只有 0/1/2，线索路径复用了「成功」的 0，下游脚本/CI 断言可能把未验证的线索当验真通过使用。
+
+**推荐方案**
+1. 待裁定（见 §3）：是否给线索路径独立退出码（如 3）。
+2. 若采用独立码：同步 `README` 退出码表、`docker.yml` 断言与 P3 的结论措辞，并新增用例钉住。
+3. 若维持现状：须在 README 显式写明「线索路径退 0 不等于验真通过」，并在 CI 断言里不把该分支当证据。
+
+**测试与验收**
+- [ ] 裁定结论落文档并写进该批 PR 描述（按推荐执行 X）。
+- [ ] 契约变更（若发生）由新用例钉住；未变更则 README 补警示。
+- 命令：`uv run --no-sync pytest tests/test_cli_exits.py -q`（用例名以落地时为准）
+
+**spike / 裁定与开放问题**
+- 裁定：线索路径是否改独立退出码（如 3）—— 见 §3。
+
+---
+
+### P20 — 写成功后 `chmod` 失败会误报写失败（审计码 L2）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low | 工作量：S | 批次：E | 重叠：无 | 触及文件：`outputs.py`、`tests`
+
+**现象与证据（读码，待验证）**
+- 收尾的 `os.chmod` 在 `try` 内且**非 best-effort**：exFAT/SMB/NTFS-3G 等目标上，内容已落盘却会报 `failed to write`（开发机无对应挂载点，未实测）。
+
+**推荐方案**
+1. 先补实测（spike）：在 chmod 不可用的目标上写入，确认是否误报以及文件的真实落盘状态。
+2. `chmod` 改 best-effort（失败只警告、不影响退 0），或把它移出失败判定路径；语义定义为「内容落盘即成功」。
+
+**测试与验收**
+- [ ] 用例：monkeypatch `os.chmod` 抛 `OSError` → 仍退 0，且文件内容完整可读。
+- [ ] 真实挂载点（exFAT/SMB/NTFS-3G）手工验证一条（本机不可跑，记为待办）。
+- 命令：`uv run --no-sync pytest tests/test_output_integrity.py -q`
+
+---
+
+### P22 — 镜像 root 运行与浮动 tag（审计码 L4）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low | 工作量：S | 批次：F | 重叠：无 | 触及文件：`Dockerfile`
+
+**现象与证据（读码）**
+- `Dockerfile` 全文无 `USER`、无 `HEALTHCHECK`（容器默认 root 运行）。
+- base/uv/apt 的 tag 浮动（未钉 digest 或版本）。
+
+**推荐方案**
+1. 加非 root `USER`（并保证模型与工作目录对运行用户可读）。
+2. 补 `HEALTHCHECK`；若决定不加，须明确记录理由，避免被误读为已有健康探针。
+3. base 与 uv 镜像钉 digest（或至少固定版本号）。
+
+**测试与验收**
+- [ ] `docker build` 后 `docker run --rm <img> id -u` 非 0（本轮未跑 docker，列为待办）。
+- [ ] `docker inspect` 可见 HEALTHCHECK；tag 改动在 diff 中可见。
+- 命令：`docker build .`（本机待办）；CI 侧口径以 `docker.yml` 为准
+
+---
+
+### P23 — ISCC 路径硬编码且无存在性检查（审计码 L5）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low | 工作量：S | 批次：F | 重叠：无 | 触及文件：`packaging/windows-installer.iss`、`release-desktop.yml`
+
+**现象与证据（读码）**
+- `.iss`/workflow 硬编码 `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`。
+- workflow 调用该路径但**无存在性检查**，缺失时的行为没有闸门兜住。
+
+**推荐方案**
+1. workflow 加 ISCC 存在性检查：找不到即响亮失败（非零退出），不静默跳过。
+2. 路径改为可配置（环境变量/在 PATH 中查找/注册表探测），不依赖唯一硬编码位置。
+
+**测试与验收**
+- [ ] ISCC 缺失时 workflow 的检查步骤响亮失败（退出非 0）。
+- [ ] 存在时 `.iss` 编译产物可生成（VersionInfo 口径沿用 G5）。
+- 命令：在 Windows runner 上触发 `release-desktop.yml` 的检查步骤（本轮未跑，列为待办）
+
+---
+
+### G6 — CI/GUI 入口/发布闸门三点（审计码 M8/M9/M10）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：M
+- 批次：D
+- 重叠：**G5（本项不单独立项实现，落地时并入 G5）**
+- 触及文件：`gui.py`（入口）、`.github/workflows/{ci,release-desktop}.yml`、`README`
+
+**现象与证据（实测）**
+- `photo-guard-gui --help` 20 s 不退出（直接 `app.exec()`，只能被 kill）。
+- `desktop_entry` 的 `--smoke-test` 只在 release 跑，且只查 `PHOTOGUARD_MODEL_ID` 非空、**不查目录存在**。
+- `uv sync --frozen --group dev` 会卸载 4 个 pyside6 包（实测），而 `ci.yml` 只装 core+dev → 未来的 `-m gui` 档在 CI **无法执行**。
+- `release-desktop.yml` 由 tag 直接触发：两个 job 都不跑 pytest、不比 tag 与 `pyproject` 版本、无 Release 步骤（README 说在该 workflow 下载产物）。
+
+**根因**
+入口、CI 与发布路径各自长大、缺统一闸门：GUI 入口不响应 `--help`；CI 环境装不到 desktop extra；release 无验证与版本一致性检查，声明（README）与行为分家。
+
+**推荐方案**（并入 G5 落地，不单独出 PR）
+1. `gui.py` 入口支持 `--help`（解析参数后再决定是否进事件循环），不启动 Qt 即返回。
+2. `--smoke-test` 增加模型**目录存在性**校验（不只看 `PHOTOGUARD_MODEL_ID` 非空）。
+3. `ci.yml` 的 gui job 显式装 desktop extra 后跑 `-m gui`（与 P2/G5 的 job 合并）。
+4. `release-desktop.yml` 前置 `verify`（tag 与 `pyproject` 版本一致、`pytest -m 'not slow'` 通过），并在 workflow 内产出 Release 产物（与 README 声明对齐）。
+
+**测试与验收**
+- [ ] `photo-guard-gui --help` 在有限时间内退 0（不再被 kill）。
+- [ ] `--smoke-test` 在模型目录缺失时红、存在时绿。
+- [ ] CI gui job 装 desktop extra 后 `uv run --no-sync pytest -m gui -q` 全过、0 skip。
+- [ ] release：verify 红时两个构建 job 未启动；tag 与版本不一致时红。
+- 命令：`uv run --no-sync photo-guard-gui --help`；`uv run --no-sync pytest -m gui -q`（workflow 侧以 CI 结果为准）
+
+**spike / 裁定与开放问题**
+- 无 spike。开放：落地顺序与 G5 一致（批次 D）。
+
+---
+
+### G7 — 零覆盖模块：`resources`/`devices`/`download-models`/`packaging`（审计码 M7）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：med
+- 工作量：S-M
+- 批次：F
+- 重叠：无
+- 触及文件：`tests/*`（新）
+
+**现象与证据（读码）**
+- `resources.application_root()`、`cli` 的 `devices` 与 `download-models` 两分支、`download.py` 的错误分支、`packaging/*` 均无测试。
+- `resources` 是冻结包/macOS bundle 里 `models/` 的**唯一解码器**：定位逻辑一出错，打包产物就找不到模型，且现有 fast 档不触碰这些路径。
+
+**根因**
+这些模块只在打包/发布/联网路径上被使用，日常 fast 档不经过；测试从未覆盖其分支，错误只能在真实发布时暴露。
+
+**推荐方案**
+1. `resources`：用 `PHOTO_GUARD_RESOURCE_DIR` + monkeypatch `sys.frozen` 覆盖（源码树/冻结包/macOS bundle 三种布局）。
+2. `cli` 的 `devices` 与 `download-models`：覆盖帮助与错误分支（不联网）。
+3. `download.py` 的错误分支：用假参数断言错误路由，不触网。
+4. `packaging/*`：用 `spec_from_file_location` 加载（G5 已有先例，禁 `import packaging.*`）。
+
+**测试与验收**
+- [ ] 新增用例在 core 环境可收集、可运行（不引联网、不引真模型）；联网相关负控用 monkeypatch 断言错误路由。
+- [ ] fast 档全绿；文档不写死聚合数字。
+- 命令：`uv run --no-sync pytest -m 'not slow' -q`；`uv run --no-sync pytest --collect-only -q`（取值现场跑）
+
+**spike / 裁定与开放问题**
+- 无 spike；无契约变更。
+
+---
+
+### P25 — worker 槽抛异常致线程永久存活、窗口关不掉（审计码 H1-b）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low-med
+- 工作量：S
+- 批次：C
+- 重叠：P12（同一线程生命周期面；P12 已验证通过，本条是其验证时新发现的独立缺口）
+- 触及文件：`src/photo_guard/gui.py`、`tests/test_gui_lifecycle.py`
+
+**现象与证据（读码）**
+- `ProtectWorker.run` 只把 `pipeline.protect(...)` 包在 try/except 内；`perturb.get(...)` 与收尾的 `self.finished.emit(...)` 在保护之外，`VerifyWorker.run` 同理。
+- 一旦 `run()` 抛出，`finished` 永不发射 → `thread.quit()` 不执行 → 线程永久存活：`_thread_running()` 恒为 True、「开始保护」永久禁用、`closeEvent` 每 100 ms 重试永不接受（**窗口关不掉**），进程退出时 134（SIGABRT）。
+- 现网路径（GUI 只传 `noop`/`sd`）暂不可达，属防御性缺口；P12 的验证者以内存重建方式确认。
+
+**根因**
+「`finished` 一定会发」只是约定，没有结构性保证；异常从 `run()` 逃逸即破坏 P12 依赖的释放回调链。
+
+**推荐方案**
+1. `ProtectWorker.run` / `VerifyWorker.run` 主体包 `try/finally`，`finally` 内发 `finished`（保留现有 `cancelled` 语义）。
+2. 顺手把 `perturb.get(...)` 一并纳入保护范围。
+
+**测试与验收**
+- [ ] 新增用例：让 `perturb.get`（或等价注入点）抛错 → 断言 `_threads == []`、`protect_start` 恢复可用、`closeEvent` 被接受；该用例在旧实现上必红（先红后绿）。
+- [ ] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；fast 档全绿。
+
+**spike / 裁定与开放问题**
+- 无 spike；无契约变更。
+
+---
+
+### P26 — 显示窗口下连续两轮保护触发 Qt 重绘异常（审计码 H1-c）
+
+**严重度 / 工作量 / 批次 / 重叠 / 触及文件**
+- 严重度：low-med（真实平台不崩、仅重绘警告；offscreen 下段错误，会遮蔽 headless 自动化）
+- 工作量：S（定位）；修复方案待 spike
+- 批次：C
+- 重叠：P12（第二轮可达性由其修复带来；现象非 P12 引入）
+- 触及文件：`src/photo_guard/gui.py`、`tests/*`、`/tmp` 复现脚本
+
+**现象与证据（实测 2026-09-28，P12 修复后）**
+- 触发矩阵（1 个输入文件；`offscreen` 平台；窗口调用过 `show()`）：1 轮 → 退出 0；**2 轮 → 退出 139（SIGSEGV）**；2 轮但把 `_set_progress` 置空 → 退出 0；2 轮但窗口不 `show()` → 退出 0（现交付用例正是此形态，故稳定）。
+- `cocoa`（真实平台）：2 轮 + `show()` → 退出 0，但修复前输出一条 `QBackingStore::endPaint() called with active painter; did you forget to destroy it or call QPainter::end() on it?`；把 `_set_progress` 改为幂等更新（仅在值变化时 set）后该警告消失，offscreen 崩溃不受影响。
+- 崩溃栈（`PYTHONFAULTHANDLER=1`）：`gui._set_progress` ← `progress` lambda ← `ProtectWorker.run`，即主线程投递进度信号时渲染路径重入；伴随 `QWidget::repaint: Recursive repaint detected`。
+
+**根因（假设，未定论）**
+第二轮开始后，进度条更新与 offscreen 平台的 backing store/paint 生命周期叠加，出现递归重绘并段错误；cocoa 下表现为可容忍的 paint 重入。P12 修复前第二轮不可达，因此该组合从未被触发。
+
+**推荐方案**
+1. 先做最小复现 spike：纯 Qt（无本项目代码）的 `QProgressBar` + 定时 `setValue`，在 offscreen 下 `show()` 后重复两轮，确认是否为平台/版本问题（记录 PySide6 版本与 Qt 版本矩阵）。
+2. 若与高频更新有关：给 `_set_progress` 加合并（coalescing，如 50 ms 节流）或改用 `QMetaObject.invokeMethod` 单点合并。
+3. 若确认仅 offscreen 平台：把「显示窗口的两轮」明确划入手工/真实平台验收，并在 GUI 测试基座保持「不 `show()`」的约定（现状），同时在本文档记录平台差异。
+
+**测试与验收**
+- [ ] spike 结论落档（是平台 bug、还是本仓库可修）。
+- [ ] 若可修：新增用例「offscreen + `show()` + 两轮」退出 0（先红后绿）；若不可修：用例形态与平台限制写入 P26 与本项验收。
+- [ ] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`cocoa` 手工两次批量无警告。
+
+**spike / 裁定与开放问题**
+- 需 spike（Qt offscreen 递归重绘）；若不修，需要在本文档显式声明为已知平台差异，避免后续把 headless 崩溃误判为 P12 回归。
+
+---
+
+## 8 附录：审计与验证证据链
 
 本方案 14 个条目均走完同一四道流程：**设计**（每项一份长稿）→ **两个对抗视角的验证**（`feasibility` 可行性 / `regression` 回归波及面，两份判词各带 `refutations`/`corrections`/`missedRegressions`）→ **保真审计**（四份 `AUDIT-*.md`，逐条比对每节对验证意见的处置是否落地，并复核被引用的源码事实）→ **跨节一致性审查**（`CONSISTENCY.md`，14 节合并后才出现的互斥改动、归属歧义、新符号不一致、批次顺序矛盾、测试冲突与第三方行为主张冲突，并给出 R3/R4 一类的绑定裁决）。所有原始材料位于仓库外、不进版本控制：`/Users/jingdonglin/.codebuddy/projects/Users-jingdonglin-inori-lin-photo_cyber/01a0c7f5-9f5b-7b7b-b976-be9db27b714a/workflows/designs`（每项设计 JSON `<ID>.json` 与两份判词 `verdict-<ID>-feasibility.json` / `verdict-<ID>-regression.json`）、`…/workflows/designs/sections`（各节长稿 `<ID>.md`、`AUDIT-P1P2P3P4.md`/`AUDIT-P5P6P7P8.md`/`AUDIT-P9G1G2G3.md`/`AUDIT-G4G5.md`、`CONSISTENCY.md`）与 `…/workflows/designs/final`（进入第 6 节的压缩稿 `<ID>.md`）。
 

@@ -20,8 +20,10 @@
 #
 # The image is fully offline at runtime: HF_HUB_OFFLINE=1 is set and the
 # SD VAE weights are baked in at /app/models/sd-vae-ft-mse via the
-# build-time `download-models` step (the one and only network-allowed
-# call site, per src/photo_guard/download.py).
+# build-time `download-models` step. Build-time networking is limited to
+# three classes (AGENTS.md §九): apt system packages, the uv binary from the
+# official ghcr image, and packages/models from PyPI (`uv sync`) plus this
+# `download-models` step.
 
 FROM python:3.11-slim AS runtime
 

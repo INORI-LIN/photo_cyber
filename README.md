@@ -156,6 +156,7 @@ uv run photo-guard devices
 | `--device` | `auto` | `auto` / `cpu` / `cuda` / `mps` |
 | `--device-index` | `None` | 多 CUDA 显卡时指定索引 |
 | `--visible-mode` | `subject` | `subject` / `tile` / `center` |
+| `--visible-text` | `© photo-guard` | 明水印文字 |
 | `--visible-alpha` | `0.10` | 明水印透明度，范围 0–1 |
 | `--long-edge` | `1080` | 输出长边；0 保持原尺寸 |
 | `--quality` | `85` | JPEG 质量，范围 1–100 |
@@ -163,12 +164,13 @@ uv run photo-guard devices
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
 | `--perturber-model` | 本地模型目录 | 不接受运行时远程加载 |
+| `--max-payload-bytes` | `128` | 盲检信封搜索上界 |
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
-退出码：`0` 成功，`1` 未恢复出 payload（含盲检未找到信封），`2` 参数或运行错误。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+退出码：`0` 成功，`1` 未恢复出 payload（含盲检未找到信封），`2` 参数或运行错误（含 `--expected-payload` 不符、信封 CRC 校验不确定）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
-`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，替换的是链接本身、它指向的文件不受影响。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖。
+`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个目标文件是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换，且成功路径不回贴原权限位，目标文件的写位会保留。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 
 ## 固定处理顺序
 
@@ -236,6 +238,7 @@ docker run --rm --network none -v "$PWD/fixtures:/work" photo-guard:ci \
 ```text
 src/photo_guard/
 ├── cli.py                   # protect / verify / devices / download-models
+├── config.py                # 对外可调默认值的唯一来源
 ├── gui.py                   # PySide6 桌面界面与后台批处理
 ├── pipeline.py              # 固定顺序编排和参数校验
 ├── outputs.py               # 原子写盘与批量命名（绝不写输入文件）
@@ -246,7 +249,7 @@ src/photo_guard/
 ├── perturb.py               # 扰动注册表和重依赖懒加载
 ├── photoguard.py            # SD VAE encoder PGD
 ├── compress.py              # 输出尺寸处理
-├── resources.py             # 源码和打包资源定位
+├── resources.py             # 源码和打包资源定位（PHOTO_GUARD_RESOURCE_DIR 可覆盖资源根）
 └── download.py              # 唯一联网的模型下载入口
 
 packaging/

@@ -45,4 +45,5 @@ package = [
 testpaths = ["tests"]
 markers = [
     "slow: requires torch + diffusers and a HuggingFace model download (excluded from CI)",
+    "gui: requires PySide6 (desktop extra); excluded from the core-only tier",
 ]

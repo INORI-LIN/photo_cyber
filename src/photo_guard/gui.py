@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Iterable
 
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem, QTextEdit,
     QVBoxLayout, QWidget,
 )
+from shiboken6 import isValid
 
 from . import config, device, outputs, perturb, pipeline
 
@@ -340,22 +342,37 @@ class MainWindow(QMainWindow):
         self._start_worker(worker, lambda _: self.statusBar().showMessage("验证完成"))
 
     def _start_worker(self, worker: QObject, finish_callback) -> None:
-        if self.thread and self.thread.isRunning(): return self._error("已有任务正在运行")
+        if self._thread_running(): return self._error("已有任务正在运行")
         self.thread = QThread(self); self._threads.append(self.thread)
         self.worker = worker; worker.moveToThread(self.thread)
         self.thread.started.connect(worker.run)
         worker.finished.connect(finish_callback); worker.finished.connect(self.thread.quit)
         worker.finished.connect(worker.deleteLater)
         current_thread = self.thread
+        # Release our refs *before* Qt deletes the C++ thread (P12): the old order left
+        # self.thread dangling, so a second run and closeEvent touched a dead wrapper.
+        current_thread.finished.connect(partial(self._release_worker, current_thread, worker))
         current_thread.finished.connect(current_thread.deleteLater)
-        current_thread.finished.connect(lambda: self._threads.remove(current_thread) if current_thread in self._threads else None)
         current_thread.start()
+
+    def _release_worker(self, thread: QThread, worker: QObject) -> None:
+        if thread in self._threads: self._threads.remove(thread)
+        if self.thread is thread: self.thread = None
+        if self.worker is worker: self.worker = None
+
+    def _thread_running(self) -> bool:
+        if self.thread is None: return False
+        try:
+            return self.thread.isRunning()
+        except RuntimeError:  # the C++ QThread is gone; drop the stale wrapper
+            self._release_worker(self.thread, self.worker)
+            return False
 
     @Slot()
     def cancel_task(self) -> None:
-        if self.worker and hasattr(self.worker, "cancel"):
-            # Calling the slot directly is intentional: a queued call cannot run
-            # while the worker thread is busy inside the synchronous pipeline.
+        # Calling the slot directly is intentional: a queued call cannot run while the
+        # worker thread is busy inside the synchronous pipeline.
+        if self.worker is not None and isValid(self.worker) and hasattr(self.worker, "cancel"):
             self.worker.cancel()
 
     def _protect_item_done(self, source: str, status: str, detail: str) -> None:
@@ -370,7 +387,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("任务已取消" if cancelled else "保护完成")
 
     def _set_progress(self, bar: QProgressBar, done: int, total: int, name: str) -> None:
-        bar.setRange(0, max(1, total)); bar.setValue(done); bar.setFormat(f"{done}/{total}  {name}")
+        limit = max(1, total)
+        text = f"{done}/{total}  {name}"
+        if bar.maximum() != limit: bar.setRange(0, limit)
+        if bar.value() != done: bar.setValue(done)
+        if bar.format() != text: bar.setFormat(text)
 
     def export_csv(self) -> None:
         if not self.verify_results: return self._error("没有可导出的验证结果")
@@ -411,7 +432,7 @@ class MainWindow(QMainWindow):
         self.quality.setValue(int(self.settings.value("quality", self.quality.value())))
 
     def closeEvent(self, event) -> None:
-        if self.thread and self.thread.isRunning():
+        if self._thread_running():
             self.cancel_task()
             event.ignore()
             QTimer.singleShot(100, self.close)
