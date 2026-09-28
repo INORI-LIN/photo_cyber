@@ -193,6 +193,7 @@ uv run photo-guard protect input.jpg
 | `compress.py` | `fit_long_edge`；0 保留原尺寸，负数非法 | 是 |
 | `device.py` | CPU/CUDA/MPS 懒发现与显式选择 | 是 |
 | `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程 | 是 |
+| `gui_logic.py` | GUI 的 Qt-free 逻辑（`SETTINGS_KEYS`、勾选→层集合、设置强转/回落）；禁 Qt 导入 | 是 |
 | `resources.py` | 源码树与打包布局（Nuitka / macOS bundle）下的资源定位 | 否 |
 
 ### 8.4 可选 extra 的懒加载契约

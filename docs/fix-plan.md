@@ -12,14 +12,14 @@
 | ID | 标题 | 严重度 | 工作量 | 批次 | 一句话摘要 | 状态 |
 |---|---|---|---|---|---|---|
 | P1 | PhotoGuard 真实路径零质量断言 / slow 死配置 / PGD 无 seed | high（真路径零断言、slow 死配置）/ medium（无 seed、ε 名不副实）/ low（scaling_factor） | S（≤25 行代码 + 1 个 slow 文件 + 3 条 fast 用例 + Dockerfile 1 行 + docker.yml 2 步） | 3 | 真 SD 路径零断言、slow 死配置、PGD 无 seed；建慢档真断言并补 seed/L∞ 语义。 | [ ] 未开始 |
-| P2 | GUI 零真实测试 + 自证式假覆盖 | P1-high | M | 3 | 413 行 gui.py 从未被测试 import，两个「GUI 测试」抄逻辑自证；本 issue 抽出 Qt-free 的 gui_logic 与 gui 档覆盖。 | [ ] 未开始 |
+| P2 | GUI 零真实测试 + 自证式假覆盖 | P1-high | M | C | 413 行 gui.py 从未被测试 import，两个「GUI 测试」抄逻辑自证；本 issue 抽出 Qt-free 的 gui_logic 与 gui 档覆盖。 | [x] 批次 C 已落地（`ab816d0`+`aadf27d`） |
 | P3 | 验证无法盲检 + 旧版 raw 验证启发式可能误判通过 | P0 | M | 1 | verify 必须先给长度（忘了长度 envelope 便不可达），旧版 raw 又只查「坏字符过半」，故错长度/局部损坏会 exit 0 报出错误 payload；改为密集梯度 CRC 盲检 + 严格旧版判据。 | [x] 批次 1 已完成 |
 | P4 | 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0 | P1 | S-M（改 `:94` 时转 P6/P7） | 2 | 隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。 | [ ] 未开始 |
 | P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [ ] 未开始 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [ ] 未开始 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [ ] 未开始 |
-| P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [ ] 未开始 |
+| P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [ ] 未开始（仅余 subject.py 代码面；2026-09-28 批次 C 开工前裁定不并入，待排批次） |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
@@ -33,8 +33,8 @@
 | P14 | 旧版 verify `--payload-bytes` 无上界，可长时空转 | low-med | S | B | 长度参数未与图像容量挂钩；进循环前用 `max_stored_bytes` 拒绝。 | [x] 批次 B 已落地（`81411cb`） |
 | P16 | tile 明水印纵向长图下部整行不画 | med | S | B | 行内 x 偏移单向累加致 `range` 变空；取模修正，长图下段恢复覆盖。 | [x] 批次 B 已落地（`677478e`） |
 | P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [x] 批次 B 已落地（`d5fe104`） |
-| P17 | 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证 | med | S | C | （重叠：P2）用例抄实现自证、从不 import 被测逻辑；改为调用真实函数或行为断言。 | [ ] 未开始 |
-| P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [ ] 未开始 |
+| P17 | 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证 | med | S | C | （重叠：P2）用例抄实现自证、从不 import 被测逻辑；改为调用真实函数或行为断言。 | [x] 批次 C 已落地（`1162ac9`） |
+| P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [x] 批次 C 已落地（`af97a09`+`aadf27d`） |
 | P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [ ] 未开始 |
 | P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [ ] 未开始 |
 | P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
@@ -42,8 +42,8 @@
 | P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [ ] 未开始 |
 | G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [ ] 未开始 |
 | G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] 未开始 |
-| P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [ ] 未开始 |
-| P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [ ] 未开始 |
+| P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
+| P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
 
 ---
 
@@ -58,7 +58,7 @@
 | 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
-| C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。 |
+| C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
 | D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。 |
 | E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
 | F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
@@ -248,14 +248,15 @@
 负控：新断言须能红。
 
 **验收标准**
-- [ ] `uv run pytest -m 'not slow'` 全绿且收集数较改前增；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip。
-- [ ] 主线程加 `pipeline.protect(...)` → AST 用例红；旧命名循环与旧测试名无输出。
-- [ ] test_cli_exits.py 全绿；AGENTS.md 无 diff、无 requirements.txt、uv.lock 无 diff。
+- [x] `uv run --no-sync pytest -m 'not slow' -q` 全绿且收集数较改前增（实测 193 passed、`--collect-only -q` 193 collected；落地前 155）；`uv run --no-sync pytest -m gui -q` 全过、0 skip（实测 15 passed、0 skip）。
+- [x] 主线程加 `pipeline.protect(...)` → AST 用例红（实测：临时在 `MainWindow._error` 插一行后 `test_pipeline_protect_is_only_called_by_the_worker_class` 报「Extra items in the left set: 449」失败；移除后恢复绿）。
+- [x] `tests/test_cli_exits.py` 全绿；无 `requirements.txt`、`uv.lock` 无 diff。**「AGENTS.md 无 diff」一条不适用** —— 用户 2026-09-28 裁定：新增模块须同步 §8.3，按 §十一「§八–§十一 随代码同步」执行（先例：批次 A 的 P12/P24）。
+- **落地记录（2026-09-28，批次 C，`ab816d0`+`aadf27d`）**：抽出 `src/photo_guard/gui_logic.py`（`SETTINGS_KEYS`/`layers_from_checks`/`load_settings`，禁 Qt、仅 stdlib），`gui.py` 的 `_build_options`/`_load_settings` 接线；`tests/test_gui_logic.py` 重写为调用真实现（12 例：8 组组合、类型强转、垃圾逐键回落、默认层集），删 `test_gui_defaults_are_safe`（无耦合）；新增 `tests/test_gui_qt.py`（gui 档，QSettings 重定向到临时 INI 后构造真实 `MainWindow`：默认勾选、8 组组合 → `_build_options()`、同 stem 批量命名互异）。红态：旧实现无 `gui_logic` 模块 → 该文件收集期 ImportError。结构锁 `test_pipeline_protect_is_only_called_by_the_worker_class`（AST，落在 `aadf27d`）。**G6 入口点随本项落地**：`gui.main` 在建 QApplication **之前**解析 argparse（`--help` 实测 0.77s 退 0；未知参数刻意忽略以兼容 macOS Finder 的 `-psn_…`）；`packaging/desktop_entry.py::_smoke_test` 增加模型**目录存在性**校验（缺目录退 2，旧码退 0 必红）+ 新增 `tests/test_desktop_entry.py`（三例，含目录存在时绿的配对）。两文件断言与退码 4 按裁定留 D 批 G5；ci.yml 的 gui job 按路线留 D 批。断言改动性质：纯新增 + 接线等价（既有断言零改动），零放宽。
 
 **风险与未知**
-- S1 阻塞（只读、无 `.venv`）：offscreen、QSettings 隔离、`run()` 信号未验证。
-- Linux CI 可能缺 libGL/libxkbcommon；只给 gui job 加 apt-get install。
-- worker 测试直接调 `run()`，不覆盖 `_start_worker`（gui.py:334-344）。
+- S1 阻塞（只读、无 `.venv`）：offscreen、QSettings 隔离、`run()` 信号未验证。 —— **批次 C 已闭环**：offscreen + QSettings 临时重定向 + 真实 `MainWindow` 在 gui 档 15 例全绿。
+- Linux CI 可能缺 libGL/libxkbcommon；只给 gui job 加 apt-get install。 —— 留 D 批（CI gui job 未建）。
+- worker 测试直接调 `run()`，不覆盖 `_start_worker`（gui.py:334-344）。 —— 批次 C 的 P12/P25/P26 用例都经 `start_protect()`/`_start_worker` 真实路径，不再只是直调 `run()`。
 
 **spike（如需）**
 - S1：假设 offscreen 可构造窗口、QSettings 可重定向、`run()` 同步；实验 = 冷 sync 后探针打印 `fileName()`/`count()`；通过 = fileName 在 tmp、count==1；失败 = 改 `wait()`。
@@ -1503,9 +1504,10 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. `test_legacy_strictness`：该条改为行为断言，或删除（不得保留同义自证）。
 
 **测试与验收**
-- [ ] 替换后的断言在旧实现上必红（先红后绿，落地时贴两态证据）。
-- [ ] fast 档全绿；文档不写死聚合数字。
+- [x] 替换后的断言在旧实现上必红（先红后绿，落地时贴两态证据）。
+- [x] fast 档全绿；文档不写死聚合数字。
 - 命令：`uv run --no-sync pytest tests/test_photoguard_shape.py -q`；`uv run --no-sync pytest -m 'not slow' -q`
+- **落地记录（2026-09-28，批次 C，`1162ac9`）**：`photoguard.pad_to_multiple_of_8()` 由 `attack()` 内联代码抽出（torch-free，保持 §8.4 懒加载），测试改为调用真函数——6 例：非 8 倍数形状补齐、`padded[:h,:w]` 与原图逐字节相等、edge 模式由「复制边缘像素」钉住；红态 = 旧实现无该符号（实测 6 failed）。`test_legacy_strictness` 的常量自证改为行为断言：320×320 真实成品，12 字节载荷得 16 blocks/bit 通过 gate、14 字节得 14 不通过，两例 `mean_margin` 均 ≥ margin gate（证明否决在 blocks/bit）；反事实红态 = 仓库外 pytest 插件把 `LEGACY_MIN_BLOCKS_PER_BIT` 改 1 → 用例报 `assert 14 < 1` 且可观察到 `advisory_pass` 由 False 变 True。`DEFAULT_MAX_PAYLOAD_BYTES == 128` 一行删除（无低成本行为可钉，默认值已在 config/README 文档化），保留 `mean_margin` 范围界并注明理由；fixture（尺寸, 载荷）由仓库外探针先实测得出，未照抄文档数字。断言改动性质：替换后为**加强**（新断言可失败），零放宽。
 
 **spike / 裁定与开放问题**
 - 硬定序：不早于 P2 开工（同属 GUI 测试面）；无 spike。
@@ -1526,9 +1528,10 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. 给载体通道加护栏：通道数与 `CARRIER_CHANNEL` 越界时响亮失败（`ValueError` → exit 2），并加测试钉住。
 
 **测试与验收**
-- [ ] `grep -rn "_SCALE\|to_dict" src/ tests/` 的结果与决定一致（删净或留注释）。
-- [ ] 越界护栏用例：`CARRIER_CHANNEL` 越界时抛错并落到 exit 2。
+- [x] `grep -rn "_SCALE\|to_dict" src/ tests/` 的结果与决定一致（删净或留注释）。
+- [x] 越界护栏用例：`CARRIER_CHANNEL` 越界时抛错并落到 exit 2。
 - 命令：`uv run --no-sync pytest -m 'not slow' -q`
+- **落地记录（2026-09-28，批次 C，`af97a09`+`aadf27d`）**：删净 `watermark_invisible._SCALE`（含上方描述通道 1 的过期注释）与 `device.DeviceInfo.to_dict` 及其 `asdict` 导入（`json` 仍被 device.py 的 system_profiler 分支使用，保留）；严格 grep（`grep -rnE "(^|[^A-Za-z_])_SCALE\b|to_dict" --include="*.py" src/ tests/`，排除 `CARRIER_SCALE` 子串误命中）无命中。护栏 `_require_embeddable_channel`（合法 0..1，普通 `ValueError`、非 `NoPayloadError`）落在 `_scales_for`（embed/extract 都经它）与 `carrier_candidates`（全部读入口）。红态：monkeypatch 通道=2 时旧码 `embed` 静默返回未标记图、`carrier_candidates()` 正常返回 → 三个参数化用例「DID NOT RAISE ValueError」必红；CLI 端到端用例（`aadf27d`）在旧码退 0 且写出未标记图，现退 2 且不落文件。配对用例保证 channel=1 不被误伤（防护栏过严）。断言改动性质：纯新增 = 加强，零放宽。
 
 ---
 
@@ -1747,8 +1750,9 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. 顺手把 `perturb.get(...)` 一并纳入保护范围。
 
 **测试与验收**
-- [ ] 新增用例：让 `perturb.get`（或等价注入点）抛错 → 断言 `_threads == []`、`protect_start` 恢复可用、`closeEvent` 被接受；该用例在旧实现上必红（先红后绿）。
-- [ ] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；fast 档全绿。
+- [x] 新增用例：让 `perturb.get`（或等价注入点）抛错 → 断言 `_threads == []`、`protect_start` 恢复可用、`closeEvent` 被接受；该用例在旧实现上必红（先红后绿）。
+- [x] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；fast 档全绿。
+- **落地记录（2026-09-28，批次 C，`46f1a8b`）**：两个 worker 的 `run()` 改 `try/except/finally` —— `finally` 必发 `finished(self.cancelled)`（保留 cancelled 语义），`except` 把异常逐条落到未处理项的 `item_done(..., "失败", ...)`（必须捕获：PySide6 对槽内未捕获异常会打印并在退出时 SIGABRT，且 `finished` 不发就没有任何路径能释放线程），`perturb.get(...)` 一并纳入保护。红态（修复前独立进程实测，offscreen，注入抛错）：`threads=1 / start_enabled=False / close_accepted=False`；修复后同脚本 `threads=0 / True / True`。新增 `tests/test_gui_lifecycle.py::test_worker_exception_still_releases_the_thread`（注入 `gui.perturb.get` 抛错 → 断言 `_threads` 清空、开始按钮恢复、`close()` 为真、结果行「失败」含异常文本）。`-m gui -q` → 15 passed、0 skip。
 
 **spike / 裁定与开放问题**
 - 无 spike；无契约变更。
@@ -1778,9 +1782,11 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 3. 若确认仅 offscreen 平台：把「显示窗口的两轮」明确划入手工/真实平台验收，并在 GUI 测试基座保持「不 `show()`」的约定（现状），同时在本文档记录平台差异。
 
 **测试与验收**
-- [ ] spike 结论落档（是平台 bug、还是本仓库可修）。
-- [ ] 若可修：新增用例「offscreen + `show()` + 两轮」退出 0（先红后绿）；若不可修：用例形态与平台限制写入 P26 与本项验收。
-- [ ] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`cocoa` 手工两次批量无警告。
+- [x] spike 结论落档（是平台 bug、还是本仓库可修）。 —— **结论：本仓库可修**（见下方落地记录；最小复现与纯 Qt 对照实验均指向跨线程投递，而非 offscreen 平台缺陷）。
+- [x] 若可修：新增用例「offscreen + `show()` + 两轮」退出 0（先红后绿）；若不可修：用例形态与平台限制写入 P26 与本项验收。
+- [x] `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip（15 passed）。
+- [ ] `cocoa` 手工两次批量无警告：**本轮未做真实平台手工**（不弹窗打扰）；实现前审计已记录 `_set_progress` 幂等化后该 paint 警告不再出现（gui.py 现为幂等更新），留作人工验收。
+- **落地记录（2026-09-28，批次 C，`46f1a8b`）**：根因（仓库外探针实测，非猜测）——普通 callable（lambda/partial）接收跨线程信号时，PySide 走**直接调用**、在发射线程（worker）执行（探针：`plain_on_main False`），于是从非 GUI 线程写 `QProgressBar`，offscreen + `show()` 下第二轮递归重绘 SIGSEGV（`QWidget::repaint: Recursive repaint detected`，退出 139）；绑定 `@Slot` 方法（接收者是在主线程的 `MainWindow`）则走队列连接（`bound_on_main True`）。纯 Qt 对照实验同形：lambda 连接 + `show()` + 两轮 → 139；绑定槽 → 0。修复：`worker.progress` 与 verify 的 finish 回调由 lambda 改为 `_on_protect_progress`/`_on_verify_progress`/`_on_verify_finished` 三个绑定槽（后者原先在 worker 线程里动 `statusBar()`）。红/绿：修复前子进程「offscreen + `show()` + 两轮」第二轮即崩、退 139；修复后同脚本退 0。新增 `tests/test_gui_lifecycle.py::test_two_shown_rounds_under_offscreen_do_not_crash`（子进程跑，崩溃不会带走 pytest）。未动 `thread.finished → partial(_release_worker)`（纯 Python 状态、P12 已钉）与 `thread.quit`/`worker.deleteLater`（Qt 语义正确）；更深层线程亲和性归 P7 的 spike。
 
 **spike / 裁定与开放问题**
 - 需 spike（Qt offscreen 递归重绘）；若不修，需要在本文档显式声明为已知平台差异，避免后续把 headless 崩溃误判为 P12 回归。

@@ -240,6 +240,7 @@ src/photo_guard/
 ├── cli.py                   # protect / verify / devices / download-models
 ├── config.py                # 对外可调默认值的唯一来源
 ├── gui.py                   # PySide6 桌面界面与后台批处理
+├── gui_logic.py             # GUI 的 Qt-free 逻辑（设置持久化、勾选→层集合）
 ├── pipeline.py              # 固定顺序编排和参数校验
 ├── outputs.py               # 原子写盘与批量命名（绝不写输入文件）
 ├── device.py                # CPU / CUDA / MPS 检测与选择
@@ -278,6 +279,9 @@ uv sync --frozen --extra desktop --extra photoguard --group package
 
 # 快速测试
 uv run pytest -m 'not slow' -q
+
+# GUI 测试（需要 desktop extra；core 环境该档整体 skip）
+uv run pytest -m gui -q
 
 # CLI 帮助，以及等价的模块形式调用
 uv run photo-guard --help
