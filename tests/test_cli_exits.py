@@ -235,3 +235,15 @@ def test_verify_with_a_zero_payload_bytes_exits_two(tmp_path: Path, capsys) -> N
     assert main(["verify", str(src), "--payload-bytes", "0"]) == 2
     assert "positive" in capsys.readouterr().err
 
+
+def test_verify_with_an_impossible_payload_bytes_exits_two(tmp_path: Path, capsys) -> None:
+    """P14: 1200x1600 holds 3750 stored bytes, so 100000 is a parameter error (exit 2).
+
+    The old code treated it as "no payload recovered" (exit 1) after a multi-second spin.
+    """
+    src = tmp_path / "in.jpg"
+    _seed_textured(src)
+    assert main(["verify", str(src), "--payload-bytes", "100000"]) == 2
+    err = capsys.readouterr().err
+    assert "capacity" in err and "100000" in err
+

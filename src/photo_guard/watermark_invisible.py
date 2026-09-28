@@ -122,6 +122,24 @@ def max_stored_bytes(height: int, width: int) -> int:
     return total_blocks(height, width) // 8
 
 
+def _require_capacity(image_bgr: np.ndarray, payload_bytes: int) -> None:
+    """Reject a stored length the image can never carry, before any block loop (P14).
+
+    ``payload_bytes`` is only a loop bound to the decoder, so an impossible length used to
+    spin for ``payload_bytes * 8`` iterations and then report "no payload" — a parameter
+    error misfiled as an extraction outcome. A plain ``ValueError`` (never
+    ``NoPayloadError``) keeps the CLI mapping it to exit 2.
+    """
+    if payload_bytes <= 0:
+        raise ValueError("payload_bytes must be positive")
+    height, width = image_bgr.shape[:2]
+    capacity = max_stored_bytes(height, width)
+    if payload_bytes > capacity:
+        raise ValueError(
+            f"payload_bytes {payload_bytes} exceeds this image's capacity of {capacity} bytes"
+        )
+
+
 def _block_scores(
     image_bgr: np.ndarray, *, channel: int | None = None, scale: int | None = None
 ) -> np.ndarray:
@@ -204,9 +222,12 @@ def embed(image_bgr: np.ndarray, payload: str) -> np.ndarray:
 def extract(
     image_bgr: np.ndarray, payload_bytes: int, carrier: tuple[int, int] | None = None
 ) -> str:
-    """Low-level raw decode, permissive by design. Prefer :func:`extract_legacy`."""
-    if payload_bytes <= 0:
-        raise ValueError("payload_bytes must be positive")
+    """Low-level raw decode, permissive by design. Prefer :func:`extract_legacy`.
+
+    Permissive about its *output* (undecodable bytes become ``errors="replace"``), strict
+    about the *request*: a length beyond the image's capacity is a parameter error (P14).
+    """
+    _require_capacity(image_bgr, payload_bytes)
     channel, scale = carrier or (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
     decoder = WatermarkDecoder("bytes", payload_bytes * 8)
     raw = decoder.decode(
@@ -371,8 +392,7 @@ class LegacyExtraction:
 
 def extract_legacy(image_bgr: np.ndarray, payload_bytes: int) -> LegacyExtraction:
     """Decode a raw (checksum-less) payload as a *clue*, with its advisory metrics."""
-    if payload_bytes <= 0:
-        raise ValueError("payload_bytes must be positive")
+    _require_capacity(image_bgr, payload_bytes)
     # Without a checksum the carrier cannot be confirmed, so each candidate is tried and the
     # first that yields recoverable text wins; the result records which one it was.
     found: tuple[int, int] | None = None

@@ -105,6 +105,41 @@ def test_zero_payload_bytes_is_a_value_error(tmp_path) -> None:
     assert not isinstance(excinfo.value, wi.NoPayloadError)
 
 
+def test_an_impossible_length_is_rejected_before_any_extraction(monkeypatch) -> None:
+    """P14: a length beyond the image's capacity is an argument error, not a slow clue hunt.
+
+    The spy proves the rejection happens *before* the block loop: the old code entered it
+    (and spun for ``payload_bytes * 8`` iterations) even when success was impossible.
+    """
+    flat = np.full((256, 256, 3), 128, dtype=np.uint8)
+    capacity = wi.max_stored_bytes(256, 256)
+    calls: list[str] = []
+    monkeypatch.setattr(wi, "_block_scores", lambda *a, **k: calls.append("scores"))
+
+    with pytest.raises(ValueError, match="capacity") as excinfo:
+        wi.extract_legacy(flat, capacity + 1)
+    assert calls == []
+    assert not isinstance(excinfo.value, wi.NoPayloadError)
+    assert str(capacity + 1) in str(excinfo.value)
+    assert str(capacity) in str(excinfo.value)
+
+
+def test_the_capacity_boundary_itself_is_not_a_parameter_error() -> None:
+    """The guard is ``>``, not ``>=``: a full-capacity request still runs and reports a clue."""
+    flat = np.full((256, 256, 3), 128, dtype=np.uint8)
+    capacity = wi.max_stored_bytes(256, 256)
+    with pytest.raises(wi.NoPayloadError):
+        wi.extract_legacy(flat, capacity)
+
+
+@pytest.mark.parametrize("decode", [wi.extract, wi.extract_legacy])
+def test_both_raw_entry_points_reject_an_impossible_length(decode) -> None:
+    flat = np.full((256, 256, 3), 128, dtype=np.uint8)
+    capacity = wi.max_stored_bytes(256, 256)
+    with pytest.raises(ValueError, match="capacity"):
+        decode(flat, capacity + 1)
+
+
 def test_advisory_constants_exist_and_are_not_proof_thresholds() -> None:
     from photo_guard import config
 
