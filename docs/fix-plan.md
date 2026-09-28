@@ -83,7 +83,7 @@
   | 2 | 容量常数（`blocks//8` 是否远高于 q85+明水印+扰动后的可恢复上界） | P4 | P4（batch 2）；P6 的 `blocks_per_bit` | 上界 ≥29/11 字节；控制格（`+1`）全失败；安全系数 ≥ 最坏内容类 2 倍 |
   | 3 | S1 色度下采样 / S2 WebP 可用性 / S4 打包暴露面 | P6 | P6（batch 5） | S1 反推得 `(2,2,1,1,1,1)`；S2 `features.check('webp')` 为 True 则保留该格；S4 wheel/sdist 不含 `bench/` |
   | 4 | H1 Sobel 在恒定灰度上恰为 0 | P9 | P9（batch 3），进而 P2/P1 的文档步骤 | 输出 `0.0 0.0`；任一非 0 则显式传 `borderType=BORDER_REFLECT_101` 重跑 |
-  | 5 | 转录等价 spike A/B/C（旧库 vs `_dwt_dct_svd`） | G1 | G1（batch 4）；决定 P3 的 `'torch' in sys.modules` 断言、P6 的 core-only 分支、G5/G2 的 lock 差异面 | A 每对 `np.array_equal` 为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bits))==bits`、C 精确解出删依赖前产出的 fixture |
+  | 5 | 转录等价 spike A/B/C（旧库 vs `_dwt_dct_svd`） | G1 | G1（batch 4）；决定 P3 的 `'torch' in sys.modules` 断言、P6 的 core-only 分支、G5/G2 的 lock 差异面 | A 每对 `np.array_equal` 为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bits))==bits`、C 精确解出删依赖前产出的 fixture。**已执行 2026-09-28：A/A′/B/C/D/E/F 全绿** —— A 五组 `np.array_equal` 逐对为真（512×512 / 511×507 / 260×330；scales 覆盖 `[72,0,0]`（出货）、`[0,36,0]`（库默认，与 legacy 载体同）、`[0,72,0]`、`[36,36,0]`（双通道）、`[23,0,0]`；含非 ASCII `© 水印` 与 37-bit 非 8 倍数），两侧输出 sha256 逐对相同；A′ 仓库 P11 修复路径（`_CarrierEmbed`）与转录修复变体逐位相等，含出货路径 `wi.embed`；B 逐行字节/位回环为真、库 `WatermarkDecoder` 一致，`wi.extract(wi.embed(…))` 亦真；C 两份 fixture 候选与库均精确解出；D 子进程内候选独立加载时 `torch`/`imwatermark` 均不在 `sys.modules`；E 类区逐字相等（3192 字符）；F 256×256 守卫同型同消息。 |
   | 6 | S1 PEP 639 落点 / S2 Nuitka 数据落点 / S3 ISCC `LicenseFile` | G2 | G2（batch 4） | 两处出现 `License-Expression`；licenses/models 落 `Contents/Resources`；ISCC 退 0 且向导页显示正文 |
   | 7 | `uv sync --frozen --group dev` 的 prune 是否移除 desktop extra | G3 | G3（batch 1）的验收与 GUI 手工步骤次序 | `import PySide6` 成功 → 顺序执行；`ModuleNotFoundError` → gui 步骤显式 `--extra desktop`，uv sync 那条排最后 |
   | 8 | ISCC 缺 define / `UV_PROJECT_ENVIRONMENT` 隔离 / tag 闸门 | G5 | G5（batch 4） | 缺 `/D` define 须非零退出；smoke 退 0 且两负控分别红；verify 红时两构建 job 未启动 |
@@ -918,11 +918,13 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **实验**：删依赖前、只用 uv，一次脚本同持 OLD（`imwatermark`）与 NEW（`_dwt_dct_svd`）跑 A/B/C，记版本串、`cv2.__file__`、SHA-256（首次 `uv run` 做全量 core sync，联网 + 532 MB）。
 - **通过判据**：A `np.array_equal` 每对为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bgr,bits))==bits` 为真、C NEW `extract` 精确解出 fixture（必须在此产出）。
 - **失败判据**：A 或 B 假 → 停止、不带容差，改兜底分支（core 声明 torch）；C 单独假 → 只换 fixture 内容重试。
+- **已执行（2026-09-28，材料在仓库外）**：**A/A′/B/C/D/E/F 全绿，门禁通过 → (a) 分支可行**，待用户对 §3 第一条 (a)/(b)/(c) 裁定后开批 D；逐条实测值与证据见 §3 九 spike 表第 5 行。加分项：D 证明候选稿独立加载不引入 torch；E（类区逐字相等）可复跑，用于批次 D 搬运后的回归。**「未通过不动 manifest」仍适用**：本 spike 未改 `pyproject.toml`/`uv.lock`。
+- **材料位置（仓库外，不进版本控制；持久副本已留）**：`/Users/jingdonglin/.codebuddy/projects/Users-jingdonglin-inori-lin-photo_cyber/spikes/g1/` —— 候选转录稿 `_dwt_dct_svd_candidate.py`（sha256 `1d9d6ff151d7d5868ba653766caa903c794e77f6e142077566ccdf58611ceb90`，批次 D 据此搬入 `src/photo_guard/_dwt_dct_svd.py`）、harness `spike_g1.py` + `build_candidate.py`、证据 `evidence-G1.txt`、`fixtures/`（含待提交的 `dwtDctSvd_legacy_512.png`，776,402 B、sha256 `36f5ce9a526837dee42791e04af5a7e3fe53ad39680c36b81c856d8d795e7e7f`，两次运行字节一致）。
 
 **开放问题**
 
 - **AGENTS.md 冲突，需用户裁定**：`AGENTS.md:40/73/105/137/142` 点名 `invisible-watermark` 及其示例命令，该文件逐字不改；(a) 接受偏离（推荐）；(b) 兜底分支（core 声明 torch + 撤回 `CLAUDE.md:12`）；(c) 上游 fork。
-- fixture 策略：是否提交 ~200–500 KB 无损 PNG？不接受则互操作证明会腐烂。
+- fixture 策略：是否提交无损 PNG？**实测 512² = 776,402 B**（本节原估 200–500 KB 偏小；若要压到 ~430 KB 可换 384²，需连带改名）；已产出并留持久副本（见上条材料位置），交叉验证用的 511×507 一份（767,056 B）不提交。不接受提交 fixture 则互操作证明会腐烂。
 - `photoguard` extra 是否拆分 torch/huggingface-hub？不建议（多一种 sync 组合）。
 - 是否把上游 `imwatermark/watermark.py:9` 的 eager import 报回上游？一次惰性导入可把整个 issue 降级为改 pyproject；本节不做。
 
