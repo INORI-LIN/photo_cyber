@@ -90,7 +90,9 @@ def apply_tile(
     # offset rows for a denser visual lock
     diag = int(math.tan(math.radians(angle)) * step_y)
     for y in range(-tile.height, base.height + tile.height, step_y):
-        row_offset = (y // step_y) * diag
+        # P16: wrap the diagonal shift, or rows far down start past the right edge and the
+        # whole row goes unpainted (measured: the bottom third of a 1080x6000 image).
+        row_offset = ((y // step_y) * diag) % step_x
         for x in range(-tile.width + row_offset, base.width + tile.width, step_x):
             overlay.alpha_composite(tile, (x, y))
 

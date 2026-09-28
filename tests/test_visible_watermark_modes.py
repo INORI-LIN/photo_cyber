@@ -34,3 +34,19 @@ def test_visible_modes_smoke(textured_rgb: Image.Image, mode: str) -> None:
 def test_unknown_mode_raises(textured_rgb: Image.Image) -> None:
     with pytest.raises(ValueError, match="unknown visible-mode"):
         watermark_visible.apply(textured_rgb, "© test", mode="bogus")
+
+
+def test_tile_covers_the_bottom_band_of_a_tall_image() -> None:
+    """P16: the row offset used to run off-canvas, leaving a tall image's last third blank.
+
+    The offset accumulates ``diag`` per row without wrapping, so once it passed the canvas
+    width the x-range went empty: measured 0 changed pixels in the bottom third of a
+    1080x6000 image (the top two thirds were painted).
+    """
+    arr = np.full((6000, 1080, 3), 128, dtype=np.uint8)
+    out = watermark_visible.apply_tile(Image.fromarray(arr, "RGB"), "© test")
+
+    changed = (np.array(out) != arr).any(axis=2)
+    third = arr.shape[0] // 3
+    bands = [int(changed[i * third : (i + 1) * third].sum()) for i in range(3)]
+    assert min(bands) > 0, f"a band was left unpainted: {bands}"
