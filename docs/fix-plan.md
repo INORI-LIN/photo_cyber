@@ -1948,14 +1948,22 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 - `verify` **success**：锁 round-trip（`uv lock --offline` 后 `git diff --exit-code -- uv.lock` 无漂移；空缓存下也退 0，已本机验证）、fast 档、以及版本闸门三分支（dispatch → 通过；`v0.1.0` → 通过；`v9.9.9` → 退 1 并打印 `::error::`，本机等价复跑）。
 - `windows` **failure**：仅卡在 notices `--check`（上面已 bootstrap）；因此**尚未走到** ISCC，A3（`/DMyAppVersion` 注入与缺 define 的退码）与 A6（安装包 VersionInfo == tag）**仍未取证**，需下一次 dispatch 或一次 tag 推送。
-- `macos-arm64`：notices `--check`（本机生成的 `Darwin / arm64` 段与 runner 安装集一致）与 `download-models`（钉住 revision、只取 json+safetensors）通过；Nuitka 构建步**长时间未结束**（03:24:19 起 >85 分钟，进行中日志 GitHub 不发布，无法判断是慢还是卡）。**S2（Nuitka 数据落点）与 DMG staging 因此仍未取证**——S2 的判定器就是 bundle 内的 `--smoke-test`（材料经 `resources.application_root()` 定位，缺则退 4）。
+- `macos-arm64`（sha `f6e74e7` 那一轮已收口）：notices `--check`（本机生成的 `Darwin / arm64` 段与 runner 安装集一致）与 `download-models`（钉住 revision、只取 json+safetensors）通过；Nuitka 构建**成功**（`Successfully created 'dist/desktop_entry.app/Contents/MacOS/desktop_entry'`，03:24:19 → 06:00:52 ≈ **2 小时 36 分**，属 macos-15 三核 runner 上 PySide6+torch 的正常量级）。但 step 9 `Smoke test app bundle` **失败，且失败点不是 S2**：workflow 里的 `BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 -print -quit)` **抓错了可执行文件**——bundle 的 `Contents/MacOS/` 里还有 Nuitka 一并冻结进来的 `torch/bin/protoc`、`torch_shm_manager` 等，被选中的那个回答 `Missing value for flag: --smoke-test`（它不认识这个 flag），主程序的 smoke test 根本没跑。**因此 S2 与 DMG staging 仍未取证**，但已排除「材料没进包」这一可能（Nuitka 日志逐条打印了 `Included data file 'licenses/GPL-3.0.txt' …`、`models/sd-vae-ft-mse/…`）。修法见 §9.8。
 - A4 的**负向分支**（verify 红时两个构建 job 未启动）仍未取证：它需要一次 tag 推送；正向上 `needs: verify` 已生效（两个构建 job 只有在 `verify` 绿后才启动）。
 
 **7. 本轮仍未取证清单（如实登记）**
 
-1. A3 / A6：ISCC `/D` 与 VersionInfo（需 Windows job 跑到那一步；段已补，待重跑）。
-2. A5：热缓存时长与 `arm64 红则回滚矩阵行`（需两次完整构建）。
-3. S2 与 DMG staging（macOS 构建未结束）。
+1. A3 / A6：ISCC `/D` 与 VersionInfo（Windows job 已能走过 notices `--check`，但下一道门是 `download-models` 的 Windows 编码问题——见 §9.8，修复后待重跑）。
+2. A5：热缓存时长与 `arm64 红则回滚矩阵行`（需两次完整构建；已测得单次 macOS 冷构建 ≈ 2 小时 36 分）。
+3. S2 与 DMG staging（macOS 构建已成功、但 smoke step 因 workflow 的选错可执行文件而失败，see §9.8；材料确已进包，落点待下一轮判定）。
 4. A4 的负向分支（需 tag 推送）。
-5. `docker` 重跑：三条冒烟（noise、SD 离线、P15 拒载）与线索路径 `rc=3` 断言——修复已提交，待重跑回执。
+5. ~~`docker` 重跑~~ —— **已取证，见 §9.8**。
 6. Windows 的 `--smoke-test` / macOS 的 `--smoke-test`（依赖上面 1/3）。
+
+**8. 第三轮修复与 `docker` 全绿（sha `34536c5`）**
+
+- **`docker` 全绿**（run 36530184362，唯一 job `build` success）：`Build image` **success**（许可材料的两条 COPY 生效，项目元数据校验通过）；`downloaded stabilityai/sd-vae-ft-mse@31f26fde… -> /app/models/sd-vae-ft-mse (json + safetensors only)`（P15 的钉版 + 只取 json/safetensors 在镜像内成立）；noise 冒烟 `recovered: 线索（未验证）: ci-test` 且脚本断言 `clue_rc == 3` 通过（**P19 在真镜像取证**）；SD 离线冒烟 `protected: /work/out_sd.jpg size=384x288 … perturber=sd`；**P15 拒载冒烟**：`refusal rc=2` + `protect failed: Error no file named diffusion_pytorch_model.safetensors found in directory /work/no-safetensors.` + 未落成品。
+- **第三轮修掉的三处**（`34536c5`）：
+  1. Dockerfile 的目录 COPY 语义：`COPY … licenses/ /app/` 只复制目录**内容**、没建出 `/app/licenses/`（CI 报错从 `glob LICENSE` 变成 `glob licenses/*.txt`）→ 拆成 `COPY LICENSE THIRD_PARTY_NOTICES.md /app/` + `COPY licenses/ /app/licenses/`。
+  2. Windows 的 CLI 编码：`download-models` 的成功消息里那个 `→`（旧代码就有）在 cp1252 下抛 `UnicodeEncodeError`，一次成功运行被报成失败 → 新增 `cli._tolerate_legacy_console()`（仅对非 UTF-8 且支持 `reconfigure` 的流设 `errors="replace"`，UTF-8 流一律不碰），并把该行改成 ASCII `->`。本机以 `PYTHONIOENCODING=cp1252` 实测：`download-models` 退 0；线索路径打印 `???????: ci-test` 且**退码仍为 3**。
+  3. release workflow 的 macOS 可执行文件选择（见 §9.6）：显式用 `$APP/Contents/MacOS/desktop_entry`，回退到 `-maxdepth 1` 的浅层搜索；并把「许可材料在包内」的路径断言**移到 smoke test 之前**（纯文件系统检查，smoke 失败时也能看到布局），smoke 失败时 dump `Contents/` 布局。
