@@ -44,12 +44,12 @@
 | G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] 未开始 |
 | P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
-| P27 | verify 退码口径不一致 + `extract_envelope` 缺容量护栏 | med | S | I | 「整图找不到信封」在 `--expected-payload` 路径退 2，另两条 verify 路径同语义退 1；`extract_envelope` 未接 P14 的 `_require_capacity`。 | [ ] 未开始（批 I） |
+| P27 | verify 退码口径不一致 + `extract_envelope` 缺容量护栏 | med | S | I | 「整图找不到信封」在 `--expected-payload` 路径退 2，另两条 verify 路径同语义退 1；`extract_envelope` 未接 P14 的 `_require_capacity`。 | [x] 批次 I 已落地（`a3fffbd`） |
 | P28 | 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口 | low-med | S | K | `-o` 指向目录要跑完 resize+embed（+PGD）才在 `os.replace` 炸；`save_image_atomic` 的 `mkdir`/`stat` 在 try 之外，报错不带 `failed to write <dest>`。 | [ ] 未开始（批 K） |
 | P29 | GUI 三处纪律缺口（导出 / 活动 output_dir / 模式白名单） | med | S | K | `export_csv` 裸 `open()` 可终止 GUI；活动 output_dir 绕过设置层的绝对路径校验；设置层无 `visible_mode` 白名单。 | [ ] 未开始（批 K；注入路径待复现） |
 | P30 | `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突 | low | S | K | 校验拒绝 `noop`+`{perturb}`，而 `protect` 会优先用调用方实例；编程调用方被误拒。 | [ ] 未开始（批 K） |
-| P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [ ] 未开始（批 I） |
-| P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [ ] 未开始（批 I） |
+| P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [x] 批次 I 已落地（`a3fffbd`；4 通道实为静默接受，见 §10.5） |
+| P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [x] 批次 I 已落地（`a3fffbd`） |
 | G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿未署名、opencv wheel 的 LGPL-2.1 组件无记、无 Linux notices 段且镜像不跑 `--check`、Python 合规门弱于 ci.yml 的正则。 | [ ] 未开始（批 J） |
 | G9 | release 三处高危（校验文件不可解析 / 发布竞态 / 缺 GUI 门） | **high** | M | J | Windows 校验文件是 UTF-16 表格却随 release 上传；两平台并发 `gh release create` 必有一方 422；tag 发布链不跑 GUI 档。 | [ ] 未开始（批 J） |
 | G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [ ] 未开始（批 J） |
@@ -74,7 +74,7 @@
 | D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1（`22ce170`+`fbeed66`+`a155b97`）、D2=G2+G5/G6（`ecdb59d`+`1c7ebca`）、D3=P15+P19 三项全部落地；本行收口，仅剩「推送后由 CI 验」的条目（G5 的 A3/A4/A5/A6、G2 的两平台 smoke）与 D2 拆出后另行排期的 4 项：P1、P8、P4、P9 代码面。** |
 | ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
-| **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。 |
+| **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。** |
 | **J** | G9 → G10 → G8（含 AGENTS §十一 正则句） | 三个 workflow 本地 PyYAML 过一遍；`packaging/smoke_wheel.sh` 实跑（真安装并 import 所建 wheel）；收紧后的合规门全绿；Windows 校验文件、发布竞态、ISCC 一律**待 CI 取证**。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
@@ -2009,6 +2009,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 #### P27 — verify 退码口径不一致 + `extract_envelope` 缺容量护栏（med，批 I）
 
+> **[x] 批次 I 已落地（`a3fffbd`）**，实施记录与实测见 §10.5。
+
 - **现象**（实测）：`verify 干净图.jpg --expected-payload x` 退 **2**，而「什么都没取回」在另两条路径（`--payload-bytes`、盲检）退 **1**；`extract_envelope` 收到超出 `max_stored_bytes(h,w)` 的长度时不早退，先跑完两轮载体的全块扫描再报错。
 - **证据**（读码）：`cli.py:134-138` 无 `NoPayloadError` 分支；`watermark_invisible.py:352-355` 只查 `<= 0`，而 `extract:269`/`extract_legacy:437` 都走 `_require_capacity`；`NoPayloadError`/`IntegrityUncertainError` 均 `ValueError` 子类（`:114,:118`），所以现状统一落 2。
 - **方案**：① `extract_envelope` 的 `<= 0` 换成 `_require_capacity(image_bgr, payload_bytes)`（同文案分支**等价**、超容量分支**加强**；P14 残留收口）；② `cli.py` 的 `--expected-payload` 分支内层捕获 `NoPayloadError` → stderr `no payload recovered: …` + **退 1**；`IntegrityUncertainError` 与 payload 不符**保持 2**。
@@ -2041,6 +2043,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 #### P31 — 层① 入口校验：空载荷 / ndim / 通道（med，批 I）
 
+> **[x] 批次 I 已落地（`a3fffbd`）**，含一处审计更正（4 通道实为静默接受）与一处范围注记（`find_envelope`），见 §10.5。
+
 - **现象**（读码）：① `pack_payload("")` 返回 13 字符 `PG1:00000000:`，而 `envelope_lengths` 从 17 起（非空载荷的最小值）→ 该信封**结构上不可发现**；② `embed(bgr, "")` 构造 `wmLen=0`，在 `_dwt_dct_svd.py:149` 的 `num % self._wmLen` 抛 `ZeroDivisionError`（非 `ValueError`，接不上 exit 2 映射）；③ 三个入口都不校验数组形状，2 维灰度或 4 通道输入抛 `cv2.error`（同样不是 `ValueError`）。
 - **证据**：`watermark_invisible.py:281-285`（pack）、`:307-314`（梯子）、`:243-255`（embed）、`:352-355`（extract_envelope）；`_dwt_dct_svd.py:149/:112`；映射 `cli.py:180-185`。
 - **方案**：① `pack_payload` 空载荷 → `ValueError("payload must not be empty")`；② `embed` 同样拒绝空载荷，且**排在既有 256² 面积门与 `_require_method` 之后**（保持既有错误优先级）；③ `embed`/`extract`/`extract_envelope` 追加「`ndim == 3` 且 `shape[2] == 3`」校验，**追加在既有门之后**，抛 `ValueError`；④ 容量护栏归 P27（同一处改动不重复）。
@@ -2048,6 +2052,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验收**：先红后绿；fast 全绿；`_dwt_dct_svd.decode_bits` 的上游 `ZeroDivisionError` 契约**不动**（其 docstring 已声明）。
 
 #### P32 — 死符号与冗余 handler 收口（low，批 I）
+
+> **[x] 批次 I 已落地（`a3fffbd`）**，实施记录见 §10.5。
 
 - **证据**（读码）：`resources.model_dir:21-22` 全仓零调用方（`download.py:42` 走 `config.PHOTOGUARD_MODELS_DIR`）；`cli.py:180` 的 `InterruptedError` 是 `OSError` 子类、与同元组重复；`cli.py:186` 末尾 `return 2` 因 `subparsers(required=True)` 当前不可达；`pipeline.verify:139-141` 只被 `tests/test_pipeline_order.py`、`tests/test_pipeline_layers.py` 调用（**测试专用，保留**）。
 - **方案**：删 `resources.model_dir`（落地前再 `grep -rn` 复核）；去掉 `InterruptedError`（语义等价）；末尾 `return 2` 保留并加注释（新子命令漏接时的防御网）；`pipeline.verify` docstring 标注「测试专用薄封装」。
@@ -2103,3 +2109,18 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 ### 10.4 批次重订
 
 §2 的批次表已就地重订：**原批 E 作废**，其四项与 P20 按文件族重切为 **K**（P28→P29→P30，P28 先于 P8）、**L**（P8→G4）、**M**（P4→P6→P5）、**O**（P7、P20）；新增 **H**（DOC1/DOC2）、**I**（P27→P31→P32，本轮执行）、**J**（G9→G10→G8，因发布链危害高而提前）；原批 F 扩为 **F′**（纳入 G11）。硬定序增至五条（新增：**P28 先于 P8**）。各批开工前的待定项清单见 §3 裁定段 ④。
+
+### 10.5 批 I 落地记录（2026-09-29，`a3fffbd`）
+
+- **P27**：`extract_envelope` 的 `<= 0` 换成 `_require_capacity`（同文案分支等价、超容量分支加强，P14 残留收口）；`cli.py` 的 `--expected-payload` 分支捕获 `NoPayloadError` → 退 1，`IntegrityUncertainError` 与 payload 不符保持 2。
+  - **先红 2 例**：干净图 `--expected-payload` 曾退 2（应 1）、超容量请求曾报 `no photo-guard envelope at that length`（应含 `capacity`）。
+  - **等价 pin 2 例**：CRC 不符仍退 2；空 expected-payload 退 2（参数错误，不并入 1 —— 这一条同时钉住 P31 的空载荷拒绝在 CLI 上的归属）。
+  - 三条 workflow 已 grep 复核：`docker.yml` 只走 `--payload-bytes`（退 3 断言）与盲检，无 `--expected-payload` 断言 → **无 CI 断言需同步**。README 退出码表已拆写「无信封 / CRC 不符」。
+- **P31**：`pack_payload` 与 `embed` 拒绝空载荷；新增 `_require_bgr` 并接入 `embed`/`extract`/`extract_envelope`/`find_envelope`。
+  - **先红 4 例**：空载荷 ×2（曾为 13 字符信封与 `ZeroDivisionError`）、2 维 ×2 路径。**等价 pin 1 例**：1 字节载荷的信封长度仍 = 梯子首级 17，且仍可被 `find_envelope` 发现。
+  - **审计更正（重要）**：§10.1 初稿写「2 维或 4 通道输入抛 `cv2.error`」——实测**只有 2 维**如此；**4 通道（BGRA）在 `embed` 上被 cv2 静默接受**（`cvtColor` 的 `Set<3,4>` 允许 4 通道输入），额外通道被忽略、无任何报错。这不是更轻的问题：它意味着「带 alpha 的图」会被静默当 3 通道处理（与 G4 的 alpha 契约同族）。现统一拒绝。
+  - **范围注记**：`find_envelope` 不在 §10.1 原列的三个入口内，但同属「层① 入口」，一并接入 `_require_bgr`（否则 `discover_payload` 遇 2 维输入仍逃出 exit-2 映射）。此为**显式登记的范围扩展**，非静默扩大。
+  - 新校验一律追加在既有门之后，既有错误优先级（面积 → 方法；容量 → 面积 → 方法）逐条不变；`_dwt_dct_svd.decode_bits` 的上游 `ZeroDivisionError` 契约未动。
+- **P32**：删 `resources.model_dir`（落地前 `grep -rn` 复核：仅定义处命中；模型路径唯一来源仍是 `config.PHOTOGUARD_MODELS_DIR`）；`InterruptedError` 从 except 元组移除（`OSError` 子类，语义等价）；末尾 `return 2` 加注释（新子命令漏接时的防御网）；`pipeline.verify` 标注「测试专用薄封装」并保留。
+- **批次门槛实测**：`uv run --no-sync pytest -m 'not slow' -q` **230 passed**；`--collect-only -q` 实测 **230 collected**（落地前 221；+9 = 先红 6 + 等价 pin 3）；合规门 + 四条 fail-loud 回归锁 **31 passed**；改动面 = README + 4 个 src 文件 + 3 个测试文件。
+- **风险登记**：① P27 是 P19 之后第二次退出码口径变更，本次只改**一条分支的 1/2 归属**（无新码、无码值回收），README 与 §4.3 已同步，四条用例钉住含两条反向 pin；② `_require_bgr` 仅作用于层① 直连接口，`pipeline` 侧输入经 `convert("RGB")` 保证 3 通道，GUI/CLI 路径行为不变（fast 230 覆盖）；③ 本批无 CI/Docker/tag 依赖项，**无需等待外部取证**。
