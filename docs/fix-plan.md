@@ -23,10 +23,10 @@
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [x] 批次 D1 已落地（`22ce170` 先红 + `fbeed66` 转绿，2026-09-29）；G5/G2/P15/P19 属同批 D2/D3，未开工 |
-| G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [ ] 未开始 |
+| G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；S1 已验，S2/S3 待 CI/Windows |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
-| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [ ] 未开始 |
+| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1/A2/A7/A8 本机实测，A3/A4/A5/A6 待推送与 Windows |
 | P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
 | P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
 | P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [x] 批次 A 已落地（`def0a80`） |
@@ -40,7 +40,7 @@
 | P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
 | P22 | Dockerfile 无 USER/HEALTHCHECK、base/uv/apt tag 浮动 | low | S | F | 默认 root 运行、镜像 tag 未钉；补非 root 与健康探针、固定 tag。 | [ ] 未开始 |
 | P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [ ] 未开始 |
-| G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [ ] 未开始 |
+| G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [x] 批次 D2 已落地（`ecdb59d`，并入 G5，不单独立项） |
 | G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] 未开始 |
 | P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
@@ -59,7 +59,7 @@
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
-| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1 已落地（`22ce170`+`fbeed66`，验收逐条见 §6 G1 落地记录）；D2=G2+G5/G6、D3=P15+P19 待开工。** |
+| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1 已落地（`22ce170`+`fbeed66`+`a155b97`）；D2=G2+G5/G6 已落地（`ecdb59d`，验收见 §6 G2、§6 G5 与 §7 G6 的落地记录）；D3=P15+P19 待开工。** |
 | E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
 | F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
 
@@ -937,7 +937,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **断言强度逐条标注**：`test_carrier.py` 的 `_library_embed`/`WatermarkDecoder` 两处、`test_watermark_discovery.py` 的 `_embed` 与用例右臂 —— **等价（oracle 由外部库换成已证逐位相同的仓内转录稿；编码器替换，`cA` 不变）**，用例名与 `n=1..66 × 两载体` 范围未缩；`test_output_integrity.py` 的 torch 探针 —— **等价（仅 docstring 文案）**，断言一行未动；其余既有用例零改动。本项**无放宽**，也无断言被删。
 - **文档缺口补记（四条）**：① 本节「触及文件」原表**缺** `tests/test_carrier.py` 与 `tests/test_watermark_discovery.py`——它们是「以库为 oracle」的两处（全仓 grep 仅此两文件 + `watermark_invisible.py` 导入 imwatermark），删依赖后会整体 collection error，本次一并迁移；② `test_tiny_image_verify_exits_two` 的 CLI 分支按实测修正：doc 写「照 `test_cli_exits.py:54-58` `cli.main([...])==2`」，但 `verify --payload-bytes` 走 `extract_legacy`（有 P14 容量检查、无 256 守卫）会退 1，故改由 `protect` 钉「过小图 → 2 且不落文件」，属修正而非放宽；③ doc 中 `CLAUDE.md:NN` 的引用**无落点**（该文件已并入 AGENTS.md/README.md），本节第 8 步实际只改了 `config.py` 注释、`download.py` 文案、`README.md` 结构树与参考行；④ 验收第 1 条「仅两类差异」与「回 revision 3」在锁文件上不可同时字面成立，已按上文改口径（语义两类 + 格式一类）并点名。
 - **跨批提示（批 E 落地前必读）**：`_require_method` 落地后「把 `WATERMARK_METHOD` 改成 `dwtDct`」不再是可用的自证失败法（会抛 `ValueError` 而不是产出低分）——P6 的 `manual | dwtDct 校准` 与 `bench/README.md` 的「自证失败法」（§6 P6 内）须换一个手法（例如改载体参数或注入损坏 fixture），落地批 E 时同步改本节与那里。
-- **AGENTS.md 未改**（`git diff --stat AGENTS.md` 空）。因本项而失真的 AGENTS.md 行（本次不自行改，上报用户）：§8.6 末「torch 目前不在 extra 隔离之内」、§10「torch 仍会随 `imwatermark` 链被导入」、§10 回归锁 #4 括注、§8.2/§8.3 的 `_CarrierEmbed` 措辞与模块表缺 `_dwt_dct_svd.py`。
+- **AGENTS.md 未改**（D1 结束时 `git diff --stat AGENTS.md` 为空；**D2 按用户裁定同步了 §十一 一句**——合规门不再排除 `.github/`，见 §6 G5 落地记录）。因 G1 而失真的 AGENTS.md 行（仍未自行改，上报用户）：§8.6 末「torch 目前不在 extra 隔离之内」、§10「torch 仍会随 `imwatermark` 链被导入」、§10 回归锁 #4 括注、§8.2/§8.3 的 `_CarrierEmbed` 措辞与模块表缺 `_dwt_dct_svd.py`。
 - **待 CI 才成立的项**：全新 core-only 环境（CI 第一步跑的就是它）、CI 新步在两腿上的实际结果、`docker.yml` 两 smoke 在真镜像内的结果。
 
 **风险与未知**
@@ -1024,15 +1024,26 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 | 同上 | test_packaging_wires_license_material | fast | 参数＋`LicenseFile=` |
 
 **验收标准**
-- [ ] `git ls-files` 含 LICENSE、notices、licenses/。
-- [ ] `pytest -m 'not slow'` 全绿；新用例各做「破坏→变红」。
-- [ ] `README.md:238`/`CLAUDE.md:71` 无数字。
-- [ ] 两条 `uv sync --frozen`（dev；extra＋package）通过。
-- [ ] 全量 extra `--check` 退 0；macOS＋Windows 构建 `--smoke-test` 退 0。
+- [x] `git ls-files` 含 LICENSE、notices、licenses/。—— 本机实测：四个路径（`LICENSE`、`THIRD_PARTY_NOTICES.md`、`licenses/GPL-3.0.txt`、`licenses/LGPL-3.0.txt`）均已在版本控制内。
+- [x] `pytest -m 'not slow'` 全绿；新用例各做「破坏→变红」。—— 本机实测：fast 215 passed（`--collect-only -q` 实测 215；D1 后 202，+13）；12 项破坏自检全部变红（明细见落地记录），其中「转录稿阈值微调」与「安装态元数据」两项由**已有的等价/新增用例**捕获而非 fixture 用例，已在记录中点名。
+- [x] `README.md:238`/`CLAUDE.md:71` 无数字。—— README 结构树只增行、未写任何聚合数字；`CLAUDE.md` 无落点（该文件已并入 AGENTS.md/README.md）。
+- [x] 两条 `uv sync --frozen`（dev；extra＋package）通过。—— 本机实测两条均通过（`--group dev`；`--extra photoguard --extra desktop --group package`）。
+- [x] 全量 extra `--check` 退 0。—— 本机实测：`packaging/generate_notices.py --check` 在完整 shipping 环境退 0（`Darwin / arm64`，51 行）；`--check` 只比当前平台段，缺与多都判 1。
+- [ ] macOS＋Windows 构建 `--smoke-test` 退 0。—— **待 CI/Windows**：本机无 Nuitka 构建条件（需 `models/` + 目标平台）、无 ISCC。`--smoke-test` 的许可材料校验（缺 → 4）已在本机以 `spec_from_file_location` + `PHOTO_GUARD_RESOURCE_DIR` 覆盖。
+
+**落地记录（2026-09-29，批次 D2 的 G2 部分，commit `ecdb59d`）**
+
+- **S1（PEP 639 落点）已跑、通过**：`uv build --wheel` 产出的 `METADATA` 为 `Metadata-Version: 2.4`，含 `License-Expression: MIT` 与 4 条 `License-File`（LICENSE / THIRD_PARTY_NOTICES.md / licenses/GPL-3.0.txt / licenses/LGPL-3.0.txt）；安装态 dist-info 同值。该断言已固化为 `test_installed_distribution_carries_license_metadata`（破坏该字段后重装即红）。
+- **S2（Nuitka 数据落点）与 S3（ISCC `LicenseFile`）未跑**——需 macOS bundle 构建与 Windows ISCC，均属 runner 侧。设计上：bundle 内的 `--smoke-test` 就是 S2 的判定器（材料经 `resources.application_root()` 定位，缺则退 4），upload 前另加「产物树内含三材料」的路径断言兜底；S3 的向导页显示只能在 Windows 上验。
+- **notices 的实现口径**（写清以免误读）：行来自 `importlib.metadata` 的**当前环境**，按平台分节；`--check` 只比当前平台段且缺/多都判 1；手写件（LICENSE、notices、licenses/*.txt）只读不写。**首次 bootstrap 的后果**：Windows 与 Linux 段需各自平台上跑一次生成器并提交，在此之前那两平台的 `--check` 会响亮失败（失败即零产物，属设计而非缺陷）——已写进 `THIRD_PARTY_NOTICES.md` 头段。
+- **一处对方案的偏离（已裁定）**：Dockerfile 的许可材料用**独立 `COPY` 层**（放在 `download-models` 之后），而非追加到两阶段 sync 的第一层——避免改许可文本打爆 torch/diffusers 大层。`COPY` 不触 §九 规则 1（联网三类不变）。
+- **依赖面零变化**：生成器只用 stdlib（`argparse`/`importlib.metadata`/`pathlib`/`platform`），`pyproject.toml` 只多了 `license`/`license-files` 两个字段，`uv.lock` 无 diff（`uv lock --offline` 后 `git diff --exit-code -- uv.lock` 为空）。
+- **既有用例改动一处，判「加强」**：`tests/test_desktop_entry.py::test_smoke_test_passes_with_an_existing_model_directory` 增加「许可材料就位」前置（monkeypatch `PHOTO_GUARD_RESOURCE_DIR`），`== 0` 与输出断言逐字未变；另新增两例（缺 LICENSE / 缺 notices → 4）。
+- **破坏自检明细**（12 项，全部变红）：LICENSE 缺版权行 → `test_license_file_is_complete_mit_text`；GPL 正文改一字节 → `test_copyleft_texts_are_canonical_and_hashes_match`；pyproject 去 `licenses/*.txt` → `test_pyproject_declares_license_and_files`；安装态元数据去 `licenses/*.txt`（重装后）→ `test_installed_distribution_carries_license_metadata`；notices 里 numpy 版本错 / SD VAE 来源换 → 对应用例；build_desktop 漏 `licenses` / 混回版本字面量 → 对应用例；`.iss` 守卫拿掉 → `test_iss_has_no_version_literal_and_still_uses_the_define`；desktop_entry 不再拒绝缺材料 → 新用例；转录稿块判定阈值微调 → **由 G1 的 `test_reconstruction_is_byte_exact_for_every_length` 捕获**（fixture 解码用例对阈值微调不敏感，只因干净图的块票远离判定边界，它的职责是粗粒度解码回归）；`extract` 的字节组装截断 → `test_legacy_fixture_decodes_exact_payload`。
 
 **风险与未知**
 - LGPL 残余不确定性：Qt 独立共享库且未签名，「可替换义务」属法律判断。
-- `download.py:44-50` 未固定 revision；notices 是锁定环境清单；`--check` 在 build/upload 前 ⇒ 失败即零产物。
+- `download.py:44-50` 未固定 revision（归 D3/P15）；notices 是锁定环境清单；`--check` 在 build/upload 前 ⇒ 失败即零产物（含上面说的首轮 bootstrap 代价）。
 
 **spike**
 - **S1 PEP 639 落点**——假设：写 `License-Expression`。实验：副本内 `uv build --wheel`。通过判据：两处有该字段。失败判据：无则改 legacy。
@@ -1040,7 +1051,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **S3 ISCC 的 LicenseFile**——假设：接受无扩展名文件。实验：编译 `.iss` 验向导页。通过判据：退 0、显示正文。失败判据：改 `.txt`。
 
 **开放问题**
-- 【阻塞】项目许可与版权行：holder、year、是否用 `pyproject.toml:7` 的邮箱。
+- **已裁定（2026-09-29，批次 D 开工前）**：项目许可与版权行 = MIT 正文 + `Copyright (c) 2026 INORI-LIN`；邮箱只留在 `pyproject.toml` 作者字段，不进 LICENSE。SD VAE 继续随包再分发，notices 钉死 configured repo + `--check` 门，AGENTS.md 本次不改（仅 §十一 因合规门变更同步一句）。
 - **AGENTS.md 冲突，需用户裁定**：许可正文若命中 §6.4 字面量，须同改 `test_compliance.py:13-14` 与 `ci.yml:31-38`。
 - **AGENTS.md 冲突，需用户裁定**：是否把「许可与署名」写进 AGENTS.md；是否继续随包再分发 SD VAE 权重。
 
@@ -1264,14 +1275,25 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 | `test_version_consistency.py`(新) | test_packaging_reader_matches_pyproject、test_build_desktop_has_no_version_literal、test_iss_has_no_version_literal_and_still_uses_the_define、test_version_is_nuitka_compatible | fast | tomllib 机制、无点分数字面量、`.iss` 无字面量且含 `AppVersion` 定义 |
 
 **验收标准**
-- [ ] A1 版本 grep 恰 1 行；`uv lock --check` 绿（改版本不 lock 必红）。
-- [ ] A2 /tmp 先 dev sync 再跑 smoke 退 0；两负控分别红。
-- [ ] A3 Windows ISCC 带 `/D` 产物 VersionInfo 正确、不带非零退出。
-- [ ] A4 verify 三分支退出码正确；授权推送后 verify 红、两构建 job 未启动。
-- [ ] A5 第二次（热缓存）≤6 分钟、arm64 红则回滚矩阵行；A6 包 VersionInfo == tag；A7 计数不变（+4）；A8 gui 0 skipped。
+- [x] A1 版本 grep 恰 1 行；`uv lock --check` 绿（改版本不 lock 必红）。—— 本机实测：`git grep -n "0\.1\.0"` 除 `uv.lock` 外恰 1 行（`pyproject.toml:3`）；`uv lock --offline && git diff --exit-code -- uv.lock` 无输出（round-trip 无漂移，比 `--check` 强——旧格式锁也能过 `--check`）。
+- [x] A2 /tmp 先 dev sync 再跑 smoke 退 0；两负控分别红。—— 本机实测：`packaging/smoke_wheel.sh` 正控退 0（sdist+wheel 构建、从 sdist 重建 wheel、隔离 venv 落 `$TMP`、`photo-guard 0.1.0` 一致、console script 可跑）；负控 a（`SMOKE_EXPECTED_VERSION_OVERRIDE=0.0.0`）打印版本不符后退 1；负控 b（`SMOKE_VENV=$PWD/.venv`）在**任何 sync 之前**被拒绝退 1。
+- [ ] A3 Windows ISCC 带 `/D` 产物 VersionInfo 正确、不带非零退出。—— **待 Windows runner**：本机无 ISCC。文本层已钉：`.iss` 无版本字面量、`AppVersion={#MyAppVersion}`、`#ifndef`/`#error` 必填守卫（`test_version_consistency.py` 覆盖）；缺 `/D` 时即便某 ISPP 版本不认 `#error`，裸 `{#MyAppVersion}` 引用也会中止编译。
+- [ ] A4 verify 三分支退出码正确；授权推送后 verify 红、两构建 job 未启动。—— 本机已复跑**三分支逻辑**（dispatch → 0；`GITHUB_REF_NAME=v0.1.0` → 0；`v9.9.9` → 1 且打印 `::error::`）；「verify 红时两构建 job 未启动」只能推送后由 CI 证。
+- [ ] A5 第二次（热缓存）≤6 分钟、arm64 红则回滚矩阵行；A6 包 VersionInfo == tag；A7 计数不变（+4）；A8 gui 0 skipped。—— **A7/A8 本机已验**：`--collect-only -q` 实测 215（D1 后 202，**+13** 而非方案预估的 +4——新增的是 G2 的 7 例、`test_version_consistency.py` 4 例与 `test_desktop_entry.py` 2 例）；`QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、**0 skipped**；`photo-guard-gui --help` 0.98 s 退 0。**A5/A6 待 CI/Windows**（热缓存时长、`arm64 红则回滚矩阵行`、安装包 VersionInfo）。
+
+**落地记录（2026-09-29，批次 D2 的 G5/G6 部分，commit `ecdb59d`）**
+
+- **版本单源**：`build_desktop.py` 新增 `project_version()` 与 `main(argv=None)` 的 `--print-version`（早于平台/模型 guard，任何 runner 都能问版本）；三处字面量改 f-string；`.iss` 删字面量改 `/DMyAppVersion` 注入。版本字面量在仓内（除 `uv.lock`）只剩 `pyproject.toml:3` 一处。
+- **verify 闸门**：`release-desktop.yml` 新增 `verify` job（锁 round-trip → dev sync → fast 档 → tag 与 pyproject 版本闸门），两个构建 job `needs: verify`；构建期把 `$V` 传给 ISCC；tag 推送时用 `gh release upload --clobber`（先 `gh release view` 或 `create`）把产物附到 Release——该步带 `if: startsWith(github.ref, 'refs/tags/')`，只在 tag 推送时执行，且两个构建 job 的 `permissions` 提升为 `contents: write`。
+- **CI**：矩阵加 `macos-15`（发布目标，每 PR）；Linux-only 跑 `packaging/smoke_wheel.sh`；新增 **gui job**（apt 装 `libgl1/libegl1/libxkbcommon0/libglib2.0-0/libdbus-1-3` → `--extra desktop` → offscreen `-m gui` → `timeout 60 photo-guard-gui --help`）。**不得**声称覆盖字体回退或 frozen `.app`。
+- **合规门变更（按用户裁定执行）**：两道门一起改——`ci.yml` 的 grep 与 `test_compliance.py` 的 `_EXCLUDE_DIRS` 都**去掉 `.github/`**，正则由字面量改为 `pip[[:space:]]+install`（可命中多空格写法）；含被禁字面量的 4 行重写（`ci.yml` 三处 + `docker.yml` 一处）；`AGENTS.md §十一` 的白名单同步为「仅 `AGENTS.md` 与 `README.md`」，README 的命令示例同步。本机复跑两门均干净（`.github/` 已被扫）。
+- **断言强度**：本项全部为新增用例；被改的既有用例只有 `test_desktop_entry.py` 的那一例（标「加强」，见 §6 G2 落地记录）。无放宽。
+- **待 CI/Windows/Docker**：A3/A5/A6、S2/S3、`docker.yml` 的镜像冒烟（本机无 Docker）、Windows/Linux 的 notices 首轮生成。
+- **副作用记录**：破坏自检期间执行过 `uv sync --frozen --reinstall-package photo-guard`，它会**连坐剪掉 extras**（gui 档退化为 2 skipped、notices `--check` 报 extra 行）；已用完整同步复原并复跑（215 passed / gui 15 passed 0 skipped / `--check` 退 0）。
 
 **风险与未知**
-- torch 必装：arm64 wheel 88 MB（`uv.lock:1389`）；ISPP `/D` 缺 define 若不响亮失败 → 空 AppVersion 而 CI 全绿。
+- torch 必装：arm64 wheel 88 MB（`uv.lock:1389`）；ISPP `/D` 缺 define 若不响亮失败 → 空 AppVersion 而 CI 全绿（已有双保险，见 A3）。
+- 新增风险（G5 已落实）：gui job 依赖 Linux 上的 apt 包名与 Qt 6.11 的运行时需求，若发行版换包名需同步维护；`gh release` 的 `contents: write` 只加在两个构建 job 上，verify job 保持只读。
 
 **spike（如需）**
 - 隔离+sdist：假设 `UV_PROJECT_ENVIRONMENT` 隔离、`uv build <sdist>` 需 `--wheel`／实验 /tmp smoke+负控／通过 退 0、负控红／失败 提前 export 仍绿。
@@ -1721,14 +1743,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 4. `release-desktop.yml` 前置 `verify`（tag 与 `pyproject` 版本一致、`pytest -m 'not slow'` 通过），并在 workflow 内产出 Release 产物（与 README 声明对齐）。
 
 **测试与验收**
-- [ ] `photo-guard-gui --help` 在有限时间内退 0（不再被 kill）。
-- [ ] `--smoke-test` 在模型目录缺失时红、存在时绿。
-- [ ] CI gui job 装 desktop extra 后 `uv run --no-sync pytest -m gui -q` 全过、0 skip。
-- [ ] release：verify 红时两个构建 job 未启动；tag 与版本不一致时红。
+- [x] `photo-guard-gui --help` 在有限时间内退 0（不再被 kill）。—— 本机实测：0.98 s 退 0（批次 C 已改 argparse 先于 QApplication；本次加了 CI 侧 `timeout 60` 守卫与本机计时取证）。
+- [x] `--smoke-test` 在模型目录缺失时红、存在时绿。—— 本机实测（`spec_from_file_location` 加载）：模型目录缺失 → 2；空 model id → 2；齐备 → 0；**G2 新增**：许可材料缺失 → 4（`tests/test_desktop_entry.py` 五例）。
+- [x] CI gui job 装 desktop extra 后 `uv run --no-sync pytest -m gui -q` 全过、0 skip。—— 本机等价复跑：`QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、0 skipped；`ci.yml` 的 gui job 已建（apt 装 Qt 运行时 + `--extra desktop`），其 CI 侧结果待首次运行。
+- [ ] release：verify 红时两个构建 job 未启动；tag 与版本不一致时红。—— tag 闸门三分支的逻辑已在本机等价复跑（dispatch → 0、`v0.1.0` → 0、`v9.9.9` → 1 并打印 `::error::`）；「verify 红时两构建 job 未启动」需推送后由 CI 证。
 - 命令：`uv run --no-sync photo-guard-gui --help`；`uv run --no-sync pytest -m gui -q`（workflow 侧以 CI 结果为准）
 
 **spike / 裁定与开放问题**
-- 无 spike。开放：落地顺序与 G5 一致（批次 D）。
+- 无 spike。落地顺序与 G5 一致（批次 D）。**已落地（2026-09-29，`ecdb59d`，并入 G5 不单独立项）**：四点全部实现（`--help`、`--smoke-test` 目录+许可材料校验、CI gui job、release verify 闸门 + Release 产物）；本机验收 3/4 已取证，第 4 点的一半（tag 闸门逻辑）本机等价复跑、另一半待推送。
 
 ---
 
