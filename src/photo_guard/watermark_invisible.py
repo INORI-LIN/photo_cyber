@@ -11,10 +11,13 @@ Two read paths, deliberately unequal in authority:
   the bands overlap completely, and a corrupted real product sits inside the true band at
   0.2567. This path therefore returns a *clue* (:class:`LegacyExtraction`), never a proof.
 
-The block layout below is a transcription of ``imwatermark.dwtDctSvd`` with its defaults
-(``scales=[0, 36, 0]``, ``block=4`` and the ``//4*4`` crop) and was proven byte-for-byte
-equal to ``WatermarkDecoder("bytes", n * 8).decode(..., "dwtDctSvd")`` on 264/264 cases
-(4 images x n = 1..66; spike P3-B). Re-check it if those library defaults ever change.
+The block layout below is a transcription of the DWT-DCT-SVD method with its upstream
+defaults (``scales=[0, 36, 0]``, ``block=4`` and the ``//4*4`` crop). It was proven
+byte-for-byte equal to the library's ``WatermarkDecoder("bytes", n * 8).decode(...,
+"dwtDctSvd")`` on 264/264 cases (4 images x n = 1..66; spike P3-B), and since G1 the
+arithmetic itself lives in-repo (:mod:`photo_guard._dwt_dct_svd`, a verbatim transcription of
+``imwatermark/dwtDctSvd.py`` 0.2.0, oracle sha256 ``221c856e…``) so the core install no longer
+carries torch. Re-check it if those defaults ever change.
 """
 from __future__ import annotations
 
@@ -27,10 +30,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 import pywt
-from imwatermark import WatermarkDecoder
-from imwatermark.dwtDctSvd import EmbedDwtDctSvd
 
-from . import config
+from . import _dwt_dct_svd, config
 
 _MAGIC = "PG1"
 
@@ -79,16 +80,18 @@ def carrier_candidates() -> tuple[tuple[int, int], ...]:
     return tuple(ordered)
 
 
-class _CarrierEmbed(EmbedDwtDctSvd):
-    """Embedder that fixes the library's H/V detail-band swap (P11).
+class _CarrierEmbed(_dwt_dct_svd.EmbedDwtDctSvd):
+    """Embedder that fixes the upstream H/V detail-band swap (P11).
 
-    ``imwatermark`` 0.2.0 unpacks ``dwt2`` as ``(h1, v1, d1)`` but hands ``idwt2``
-    ``(v1, h1, d1)`` (``dwtDctSvd.py:27`` vs ``:30``), swapping the horizontal and vertical
-    detail bands on the way back. Extraction only reads ``cA``, so the swap is invisible to
-    decoding — but it injects an unintended image distortion: negligible while the carrier was
-    chroma (mean 0.50 / max 19 of 255) and clearly visible once the carrier moved to luma
-    (mean 10.3–12.8 / max 106). AGENTS.md forbids editing the dependency, hence a subclass.
-    ``cA`` itself is bit-identical to the library's, so images stay mutually readable.
+    The upstream 0.2.0 code (now transcribed byte-for-byte in :mod:`photo_guard._dwt_dct_svd`)
+    unpacks ``dwt2`` as ``(h1, v1, d1)`` but hands ``idwt2`` ``(v1, h1, d1)``
+    (``dwtDctSvd.py:27`` vs ``:30``), swapping the horizontal and vertical detail bands on the
+    way back. Extraction only reads ``cA`` — the sum of the bands that feed the next ``LL`` is
+    unchanged — so the swap is invisible to decoding, but it injects an unintended image
+    distortion: negligible while the carrier was chroma (mean 0.50 / max 19 of 255) and clearly
+    visible once the carrier moved to luma (mean 10.3–12.8 / max 106). The transcription must
+    stay verbatim (G1), hence a subclass. ``cA`` itself is bit-identical to the upstream
+    encoder's, so images stay mutually readable.
     """
 
     def encode(self, bgr: np.ndarray) -> np.ndarray:
@@ -222,10 +225,26 @@ def boundary_margin(scores: np.ndarray, nbytes: int) -> float:
 
 
 # ------------------------------------------------------------------ layer ① ---
+def _require_method() -> None:
+    """Only ``dwtDctSvd`` is implemented in-repo; anything else must fail loudly (G1).
+
+    The constant used to select a method from the third-party library. Since the arithmetic is
+    transcribed, there is no second implementation to select, and silently accepting another
+    name would mean "the watermark you asked for did not happen" — the exact failure mode the
+    ``dwtDct``/``dwtDctSvd`` note in ``config`` warns about.
+    """
+    if config.WATERMARK_METHOD != "dwtDctSvd":
+        raise ValueError(
+            f"unsupported watermark method {config.WATERMARK_METHOD!r}: this build only "
+            "implements 'dwtDctSvd' (see config.WATERMARK_METHOD)"
+        )
+
+
 def embed(image_bgr: np.ndarray, payload: str) -> np.ndarray:
     """Embed ``payload`` in the carrier named by ``config.CARRIER_*``."""
     if image_bgr.shape[0] * image_bgr.shape[1] < 256 * 256:
         raise RuntimeError("image too small, should be larger than 256x256")
+    _require_method()
     bits = list(np.unpackbits(np.frombuffer(payload.encode("utf-8"), dtype=np.uint8)))
     encoder = _CarrierEmbed(
         watermarks=bits,
@@ -244,12 +263,18 @@ def extract(
     Permissive about its *output* (undecodable bytes become ``errors="replace"``), strict
     about the *request*: a length beyond the image's capacity is a parameter error (P14).
     """
+    # Order is contract: capacity first (a parameter error), then the 256x256 floor the
+    # removed decoder raised, then the method gate. Reordering would change which error a
+    # 255x255 + over-capacity request gets.
     _require_capacity(image_bgr, payload_bytes)
+    if image_bgr.shape[0] * image_bgr.shape[1] < 256 * 256:
+        raise RuntimeError("image too small, should be larger than 256x256")
+    _require_method()
     channel, scale = carrier or (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
-    decoder = WatermarkDecoder("bytes", payload_bytes * 8)
-    raw = decoder.decode(
-        image_bgr, config.WATERMARK_METHOD, scales=_scales_for(channel, scale)
+    bits = _dwt_dct_svd.decode_bits(
+        image_bgr, payload_bytes * 8, scales=_scales_for(channel, scale), block=_BLOCK
     )
+    raw = np.packbits(np.asarray(bits, dtype=np.uint8)).tobytes()[:payload_bytes]
     return raw.decode("utf-8", errors="replace")
 
 

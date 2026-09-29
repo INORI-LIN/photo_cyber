@@ -79,7 +79,7 @@ RUN uv sync --frozen --extra photoguard --no-dev
 # cv2 / torch wheel adds a new shared-library dependency, this fails right
 # here with a clear message instead of poisoning the much slower
 # download-models step a few layers later.
-RUN uv run --no-sync python -c "import cv2, numpy, PIL, torch, diffusers, imwatermark"
+RUN uv run --no-sync python -c "import cv2, numpy, PIL, pywt, torch, diffusers, huggingface_hub"
 
 # Bake the SD VAE into the image. This is the only build step that
 # reaches the network; the result is a fully self-contained model dir at

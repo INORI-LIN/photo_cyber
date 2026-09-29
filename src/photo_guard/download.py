@@ -29,7 +29,7 @@ def download_sd_vae(
     except ImportError as exc:
         raise RuntimeError(
             "Model download needs the optional `photoguard` extra "
-            "(provides huggingface_hub via diffusers). Install with: "
+            "(provides huggingface_hub). Install with: "
             "`uv sync --extra photoguard`"
         ) from exc
 

@@ -1,10 +1,12 @@
 """P3 — blind discovery of the CRC envelope, and the rebuilt decoder underneath it.
 
-The block scan in ``watermark_invisible`` is a transcription of ``imwatermark.dwtDctSvd``.
-These tests pin it against the library's own decoder, so an "optimisation" that silently
-diverges fails loudly instead of returning a wrong payload. Equivalence was proven for
-4 images x n = 1..66 in spike P3-B; the fast tier keeps one 256x256 image (the library's
-floor) and the full n range, which is what actually catches a mapping slip.
+Two independent read paths exist in ``watermark_invisible``: the per-block scan behind
+``_block_scores``/``_reconstruct_bytes`` and the verbatim transcription in
+``photo_guard._dwt_dct_svd``. G1 pinned them against each other byte for byte (which is also
+how the transcription was pinned to the removed library, spike P3-B / A), so an
+"optimisation" that silently diverges fails loudly instead of returning a wrong payload.
+The fast tier keeps one 256x256 image (the upstream floor) and the full n range, which is
+what actually catches a mapping slip.
 """
 from __future__ import annotations
 
@@ -12,17 +14,16 @@ import base64
 
 import numpy as np
 import pytest
-from imwatermark import WatermarkDecoder, WatermarkEncoder
 from PIL import Image
 
-from photo_guard import pipeline, watermark_invisible as wi
+from photo_guard import _dwt_dct_svd, pipeline, watermark_invisible as wi
 
-MIN_SIDE = 256  # the library refuses r*c < 256*256
+MIN_SIDE = 256  # the upstream floor: r*c < 256*256 is refused
 
 
 @pytest.fixture(scope="module")
 def probe_bgr() -> np.ndarray:
-    """256x256 textured BGR: at the library's floor and cheap enough for 66 round trips."""
+    """256x256 textured BGR: at the upstream floor and cheap enough for 66 round trips."""
     rng = np.random.default_rng(42)
     arr = rng.integers(60, 200, (MIN_SIDE, MIN_SIDE, 3), dtype=np.uint8)
     yy, xx = np.mgrid[0:MIN_SIDE, 0:MIN_SIDE]
@@ -37,42 +38,50 @@ CARRIERS = ((1, 36), (0, 72))
 
 
 def _embed(bgr: np.ndarray, payload: bytes, carrier: tuple[int, int] = (1, 36)) -> np.ndarray:
-    encoder = WatermarkEncoder()
-    encoder.set_watermark("bytes", payload)
-    return encoder.encode(bgr, "dwtDctSvd", scales=wi._scales_for(*carrier))
+    """Embed with the shipped encoder; its ``cA`` is bit-identical to the upstream one."""
+    bits = list(np.unpackbits(np.frombuffer(payload, dtype=np.uint8)))
+    encoder = wi._CarrierEmbed(
+        watermarks=bits, wmLen=len(bits), scales=wi._scales_for(*carrier), block=wi._BLOCK
+    )
+    return encoder.encode(bgr)
+
+
+def _transcribed_decode(marked: np.ndarray, nbytes: int, carrier: tuple[int, int]) -> bytes:
+    """The bit-level transcription's reader, packed back into bytes (G1's other read path)."""
+    channel, scale = carrier
+    bits = _dwt_dct_svd.decode_bits(
+        marked, nbytes * 8, scales=wi._scales_for(channel, scale), block=wi._BLOCK
+    )
+    return np.packbits(np.asarray(bits, dtype=np.uint8)).tobytes()[:nbytes]
 
 
 @pytest.mark.parametrize("carrier", CARRIERS)
 def test_reconstruction_is_byte_exact_for_every_length(
     probe_bgr: np.ndarray, carrier: tuple[int, int]
 ) -> None:
-    """n = 1..66 must equal ``WatermarkDecoder`` byte for byte (spike P3-B), per carrier."""
+    """n = 1..66: the block scan and the transcription's decoder must agree byte for byte."""
     channel, scale = carrier
     mismatches = []
     for nbytes in range(1, 67):
         payload = bytes(((i * 37 + 16) % 256) for i in range(nbytes))
         marked = _embed(probe_bgr, payload, carrier=carrier)
-        library = bytes(
-            WatermarkDecoder("bytes", nbytes * 8).decode(
-                marked, "dwtDctSvd", scales=wi._scales_for(channel, scale)
-            )
-        )
+        transcribed = _transcribed_decode(marked, nbytes, carrier)
         mine = bytes(
             wi._reconstruct_bytes(
                 wi._block_scores(marked, channel=channel, scale=scale), nbytes
             )
         )
-        if mine != library:
-            mismatches.append((nbytes, library.hex(), mine.hex()))
+        if mine != transcribed:
+            mismatches.append((nbytes, transcribed.hex(), mine.hex()))
     assert not mismatches, (
-        f"reconstruction diverged from the library on carrier {carrier}: {mismatches}"
+        f"reconstruction diverged from the transcription on carrier {carrier}: {mismatches}"
     )
 
 
 def test_block_geometry_and_capacity() -> None:
     assert wi.total_blocks(1200, 1600) == 30000
     assert wi.max_stored_bytes(1200, 1600) == 3750
-    # The pipeline's default long edge, and the smallest image the library accepts.
+    # The pipeline's default long edge, and the smallest image the upstream floor accepts.
     assert wi.max_stored_bytes(1080, 810) == 1704
     assert wi.max_stored_bytes(256, 256) == 128
 

@@ -244,6 +244,7 @@ src/photo_guard/
 ├── pipeline.py              # 固定顺序编排和参数校验
 ├── outputs.py               # 原子写盘与批量命名（绝不写输入文件）
 ├── device.py                # CPU / CUDA / MPS 检测与选择
+├── _dwt_dct_svd.py         # 上游 dwtDctSvd 的仓内逐字转录（MIT，见文件头）
 ├── watermark_invisible.py   # DWT-DCT-SVD + CRC 信封盲检 + 旧版线索路径
 ├── watermark_visible.py     # subject / tile / center
 ├── subject.py               # Haar → Sobel 显著性 → 中心降级
@@ -350,5 +351,5 @@ uv run python packaging/build_desktop.py
 ## 参考
 
 - `AGENTS.md`：三层方案与 uv 规范，另含 §八–§十一 仓库实现约定；
-- `invisible-watermark`：频域水印实现；
+- `src/photo_guard/_dwt_dct_svd.py`：频域水印算式（源自 MIT 许可的 invisible-watermark 0.2.0，逐字转录，含完整许可证正文）；
 - MIT PhotoGuard：对抗图像编辑思路。

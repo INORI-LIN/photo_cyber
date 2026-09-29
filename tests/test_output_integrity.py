@@ -339,8 +339,8 @@ def test_sanitize_suffix_accepts_normal_values(raw: str, expected: str) -> None:
 
 # --- module hygiene -----------------------------------------------------------------
 def test_outputs_module_import_does_not_pull_qt_or_torch() -> None:
-    """Loaded by path so the package ``__init__`` — which does pull torch through the
-    watermark chain — cannot mask a stray import in this module."""
+    """Loaded by path so the package ``__init__`` — which pulls in the whole pipeline
+    (and, since G1, still no torch) — cannot mask a stray import in this module."""
     probe = (
         "import importlib.util, sys\n"
         "spec = importlib.util.spec_from_file_location('outputs_probe', r'%s')\n"

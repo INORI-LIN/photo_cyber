@@ -5,19 +5,22 @@ chroma carrier (31/66 and 17/66 round trips over payload lengths 1..66). The car
 rides luma at step 72, and the read path tries the legacy carrier too so released images
 stay readable.
 
-P11: ``imwatermark`` hands ``idwt2`` the detail bands in the wrong order, injecting an
-unintended distortion that scales with how much detail the image has. Measured on a noisy
+P11: the upstream arithmetic hands ``idwt2`` the detail bands in the wrong order, injecting
+an unintended distortion that scales with how much detail the image has. Measured on a noisy
 image at the new luma carrier: mean |d| 17.09 / PSNR 19.37 dB unfixed versus 2.82 / 37.42 dB
 fixed.
+
+G1: the upstream code is no longer a dependency — it is transcribed verbatim in
+``photo_guard._dwt_dct_svd`` (spike A proved the two bit-identical). The "unfixed" arm below
+therefore calls the transcription, which still reproduces the swap bug byte for byte.
 """
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from imwatermark import WatermarkDecoder, WatermarkEncoder
 from PIL import Image
 
-from photo_guard import config, pipeline, watermark_invisible as wi
+from photo_guard import _dwt_dct_svd, config, pipeline, watermark_invisible as wi
 
 LEGACY = (1, 36)
 CURRENT = (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
@@ -30,10 +33,18 @@ def _detailed(size: int = 256) -> np.ndarray:
     return rng.integers(60, 200, (size, size, 3), dtype=np.uint8)
 
 
-def _library_embed(bgr: np.ndarray, payload: bytes, carrier: tuple[int, int]) -> np.ndarray:
-    encoder = WatermarkEncoder()
-    encoder.set_watermark("bytes", payload)
-    return encoder.encode(bgr, "dwtDctSvd", scales=wi._scales_for(*carrier))
+def _unfixed_embed(bgr: np.ndarray, payload: bytes, carrier: tuple[int, int]) -> np.ndarray:
+    """Embed with the upstream (H/V-swapping) arithmetic, now transcribed in-repo."""
+    bits = np.unpackbits(np.frombuffer(payload, dtype=np.uint8))
+    return _dwt_dct_svd.embed_bits(bgr, bits, scales=wi._scales_for(*carrier), block=wi._BLOCK)
+
+
+def _unfixed_decode(bgr: np.ndarray, nbytes: int, carrier: tuple[int, int]) -> bytes:
+    """Decode with the same transcription, mirroring the removed ``WatermarkDecoder``."""
+    bits = _dwt_dct_svd.decode_bits(
+        bgr, nbytes * 8, scales=wi._scales_for(*carrier), block=wi._BLOCK
+    )
+    return np.packbits(np.asarray(bits, dtype=np.uint8)).tobytes()[:nbytes]
 
 
 def test_the_carrier_is_luma_at_step_72() -> None:
@@ -72,9 +83,9 @@ def test_the_embeddable_channels_are_not_rejected(monkeypatch) -> None:
 
 
 def test_swap_fix_reduces_distortion_on_detailed_content() -> None:
-    """The library's H/V swap costs an 18 dB PSNR drop on detailed content; ours does not."""
+    """The upstream H/V swap costs an 18 dB PSNR drop on detailed content; ours does not."""
     bgr = _detailed()
-    unfixed = _library_embed(bgr, PAYLOAD.encode(), CURRENT)
+    unfixed = _unfixed_embed(bgr, PAYLOAD.encode(), CURRENT)
     fixed = wi.embed(bgr, PAYLOAD)
 
     d_unfixed = np.abs(unfixed.astype(int) - bgr.astype(int))
@@ -86,15 +97,13 @@ def test_swap_fix_reduces_distortion_on_detailed_content() -> None:
 def test_swap_fix_keeps_images_mutually_readable() -> None:
     """cA is untouched by the fix, so old code can read new images and vice versa."""
     bgr = _detailed()
-    unfixed = _library_embed(bgr, PAYLOAD.encode(), CURRENT)
+    unfixed = _unfixed_embed(bgr, PAYLOAD.encode(), CURRENT)
     fixed = wi.embed(bgr, PAYLOAD)
 
     assert wi.extract(unfixed, len(PAYLOAD.encode())) == PAYLOAD
     assert wi.extract(fixed, len(PAYLOAD.encode())) == PAYLOAD
     for image in (unfixed, fixed):
-        decoded = WatermarkDecoder("bytes", len(PAYLOAD.encode()) * 8).decode(
-            image, "dwtDctSvd", scales=wi._scales_for(*CURRENT)
-        )
+        decoded = _unfixed_decode(image, len(PAYLOAD.encode()), CURRENT)
         assert decoded.decode("utf-8") == PAYLOAD
 
 
@@ -112,7 +121,7 @@ def released_image_legacy(tmp_path_factory) -> Path:
     rng = np.random.default_rng(7)
     bgr = rng.integers(60, 200, (810, 1080, 3), dtype=np.uint8)
     stored = wi.pack_payload(RELEASED_PAYLOAD)
-    marked = _library_embed(bgr, stored.encode("utf-8"), LEGACY)
+    marked = _unfixed_embed(bgr, stored.encode("utf-8"), LEGACY)
     path = tmp_path_factory.mktemp("carrier") / "released.jpg"
     Image.fromarray(marked[:, :, ::-1], "RGB").save(path, quality=85)
     return path
@@ -158,7 +167,7 @@ def legacy_raw_image(tmp_path_factory) -> Path:
     """
     rng = np.random.default_rng(11)
     bgr = rng.integers(60, 200, (810, 1080, 3), dtype=np.uint8)
-    marked = _library_embed(bgr, RELEASED_PAYLOAD.encode("utf-8"), LEGACY)
+    marked = _unfixed_embed(bgr, RELEASED_PAYLOAD.encode("utf-8"), LEGACY)
     path = tmp_path_factory.mktemp("carrier-raw") / "old_raw.jpg"
     Image.fromarray(marked[:, :, ::-1], "RGB").save(path, quality=85)
     return path

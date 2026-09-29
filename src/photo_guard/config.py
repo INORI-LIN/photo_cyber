@@ -9,8 +9,9 @@ from __future__ import annotations
 # Layer ① invisible watermark
 # AGENTS.md 三①: 频域方案 (DWT-DCT 系) — dwtDctSvd is the SVD-augmented variant
 # from the same family; in practice it survives JPEG q≥75 reliably while plain
-# dwtDct collapses below q≈95. Use SVD by default; switch to dwtDct only when
-# encoder/decoder must both be the lighter variant.
+# dwtDct collapses below q≈95. Since G1 the arithmetic is transcribed in-repo
+# (`_dwt_dct_svd.py`), so dwtDctSvd is the only implemented method: any other
+# value is rejected loudly by `watermark_invisible._require_method`.
 WATERMARK_METHOD = "dwtDctSvd"
 DEFAULT_PAYLOAD = "photo-guard"
 # Layer ① carrier (P10, 2026-09-23). The payload used to ride channel 1 (the Cb/U chroma

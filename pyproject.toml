@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "invisible-watermark>=0.2.0",
     "numpy>=2.4.6",
     "opencv-python-headless>=4.13.0.92",
     "pillow>=12.2.0",
@@ -23,7 +22,9 @@ photo-guard-gui = "photo_guard.gui:main"
 photoguard = [
     "accelerate>=1.14.0",
     "diffusers>=0.38.0",
+    "huggingface-hub>=1.19.0",
     "safetensors>=0.8.0",
+    "torch>=2.12.1",
 ]
 desktop = [
     "pyside6>=6.11.1",
