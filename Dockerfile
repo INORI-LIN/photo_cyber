@@ -73,6 +73,13 @@ RUN uv sync --frozen --extra photoguard --no-dev --no-install-project
 
 COPY src /app/src
 
+# G2: the licence material must be in place *before* the second sync, because that sync
+# builds the project and uv validates the `license-files` globs while reading its metadata
+# (measured on CI: without these files the build fails with "Invalid project metadata /
+# `project.license-files` glob `LICENSE` did not match any files"). Placed after the heavy
+# dependency sync so a licence-text edit does not invalidate the torch/diffusers layer.
+COPY LICENSE THIRD_PARTY_NOTICES.md licenses/ /app/
+
 RUN uv sync --frozen --extra photoguard --no-dev
 
 # Sanity check: import every native-extension dep we rely on. If a future
@@ -85,11 +92,6 @@ RUN uv run --no-sync python -c "import cv2, numpy, PIL, pywt, torch, diffusers, 
 # reaches the network; the result is a fully self-contained model dir at
 # /app/models/sd-vae-ft-mse, matching config.PHOTOGUARD_MODEL_ID.
 RUN uv run --no-sync photo-guard download-models
-
-# Licence material travels with the image (G2). Kept as its own layer on purpose: editing a
-# licence text must not invalidate the torch/diffusers layer above, which is the whole reason
-# the two syncs are split.
-COPY LICENSE THIRD_PARTY_NOTICES.md licenses/ /app/
 
 # Lock runtime to offline mode — matches the os.environ.setdefault calls
 # in photoguard.py, but applied unconditionally so users can't accidentally
