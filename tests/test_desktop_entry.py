@@ -9,6 +9,7 @@ because ``packaging/`` is not an importable package.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -65,3 +66,50 @@ def test_smoke_test_rejects_a_bundle_without_licence_material(
     monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(root))
     assert entry._smoke_test() == 4
     assert missing in capsys.readouterr().err
+
+
+def test_smoke_test_resolves_the_macos_bundle_layout(monkeypatch, tmp_path, capsys) -> None:
+    """P33: Nuitka keeps data-dirs in ``Contents/Resources`` and data-files in
+    ``Contents/MacOS``, so a frozen bundle must pass even though the licence material is not
+    in the root the model came from."""
+    entry = _load_entry()
+    contents = tmp_path / "App.app" / "Contents"
+    macos = contents / "MacOS"
+    macos.mkdir(parents=True)
+    (macos / "desktop_entry").write_text("", encoding="utf-8")
+    (macos / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    (macos / "THIRD_PARTY_NOTICES.md").write_text("# notices\n", encoding="utf-8")
+    model_dir = contents / "Resources" / "models" / "sd-vae-ft-mse"
+    model_dir.mkdir(parents=True)
+
+    monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "executable", str(macos / "desktop_entry"))
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(model_dir))
+
+    assert entry._smoke_test() == 0
+    assert "smoke test passed" in capsys.readouterr().out
+
+
+def test_smoke_test_lists_the_roots_it_looked_in(monkeypatch, tmp_path, capsys) -> None:
+    """The failure message must name every candidate root: that diagnostic is what turns a
+    40-minute build round into a one-look diagnosis (P33)."""
+    entry = _load_entry()
+    contents = tmp_path / "App.app" / "Contents"
+    macos = contents / "MacOS"
+    macos.mkdir(parents=True)
+    (macos / "desktop_entry").write_text("", encoding="utf-8")
+    model_dir = contents / "Resources" / "models"
+    model_dir.mkdir(parents=True)
+
+    monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "executable", str(macos / "desktop_entry"))
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(model_dir))
+
+    assert entry._smoke_test() == 4
+    err = capsys.readouterr().err
+    assert "LICENSE" in err and "THIRD_PARTY_NOTICES.md" in err
+    assert str(contents / "Resources") in err and str(macos) in err

@@ -194,7 +194,7 @@ uv run photo-guard protect input.jpg
 | `device.py` | CPU/CUDA/MPS 懒发现与显式选择 | 是 |
 | `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程 | 是 |
 | `gui_logic.py` | GUI 的 Qt-free 逻辑（`SETTINGS_KEYS`、勾选→层集合、设置强转/回落）；禁 Qt 导入 | 是 |
-| `resources.py` | 源码树与打包布局（Nuitka / macOS bundle）下的资源定位 | 否 |
+| `resources.py` | 源码树与打包布局（Nuitka / macOS bundle）下的资源定位。bundle 内按**候选根**探测（`Contents/Resources` 与 `Contents/MacOS`）：Nuitka 对 data-dir 与 data-files 的落点不同（P33，证据 `docs/fix-plan.md` §9.9），故 `find_resource` 逐根查、`application_root` 只作主根 | 否 |
 
 ### 8.4 可选 extra 的懒加载契约
 

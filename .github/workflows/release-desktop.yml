@@ -69,9 +69,24 @@ jobs:
           New-Item -ItemType Directory -Force release | Out-Null
           $V = (uv run --no-sync python packaging\build_desktop.py --print-version).Trim()
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$V" packaging\windows-installer.iss
-      - name: Checksums
+      - name: Checksums (SHA256, sha256sum-compatible)
         shell: powershell
-        run: Get-FileHash release\* -Algorithm SHA256 | Format-Table | Out-File release\SHA256SUMS.txt
+        run: |
+          # Enumerate first, write second. PowerShell opens the redirection target *before*
+          # it runs the pipeline, so the old `Get-FileHash release\* | … | Out-File
+          # release\SHA256SUMS.txt` tried to hash the very file it was writing: measured on
+          # windows-latest 2026-09-29 — "The file '…\SHA256SUMS.txt' cannot be read: … being
+          # used by another process" → exit 1, and the upload + release steps were skipped.
+          $sums = Get-ChildItem -LiteralPath release -File |
+            Where-Object { $_.Name -notlike 'SHA256SUMS*' } |
+            ForEach-Object {
+              "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+            }
+          # Explicit ASCII + LF: `Out-File` defaults to UTF-16 with CRLF and a table layout,
+          # which nothing else can parse. Platform-suffixed name so the macOS leg's file
+          # cannot be clobbered by this one in the shared release.
+          [System.IO.File]::WriteAllText("$PWD\release\SHA256SUMS-Windows-x64.txt",
+            (($sums -join "`n") + "`n"), [System.Text.Encoding]::ASCII)
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoGuard-Windows-x64
@@ -140,7 +155,17 @@ jobs:
             exit 1
           fi
       - run: packaging/create_dmg.sh
-      - run: shasum -a 256 release/* > release/SHA256SUMS.txt
+      - name: Checksums (SHA256, sha256sum-compatible)
+        # Same self-inclusion trap as the Windows leg: the shell opens the redirection
+        # target before the loop runs, so enumerate inside release/ and skip SHA256SUMS*.
+        # Quoted "$f" keeps names with spaces safe (the DMG currently has none, the
+        # licence-material staging in create_dmg.sh shows how fast that can change).
+        run: |
+          ( cd release && for f in *; do
+              [ -f "$f" ] || continue
+              case "$f" in SHA256SUMS*) continue;; esac
+              shasum -a 256 "$f"
+            done ) > release/SHA256SUMS-macOS-arm64.txt
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoGuard-macOS-arm64

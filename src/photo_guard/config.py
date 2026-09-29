@@ -51,7 +51,13 @@ NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 from . import resources as _resources
 
 PHOTOGUARD_MODEL_NAME = "sd-vae-ft-mse"
-PHOTOGUARD_MODELS_DIR = _resources.application_root() / "models"
+# P33: probe the bundle's candidate roots before falling back to a single path, so a macOS
+# bundle that keeps data-dirs in Contents/Resources and data-files in Contents/MacOS resolves
+# either layout. The `or` fallback deliberately yields a non-existent path when the model was
+# never shipped — the is_dir() checks (G6) must fail loudly, not silently succeed.
+PHOTOGUARD_MODELS_DIR = _resources.find_resource("models") or (
+    _resources.application_root() / "models"
+)
 PHOTOGUARD_REMOTE_REPO = "stabilityai/sd-vae-ft-mse"
 # P15: the immutable commit the download and the loader both pin to, so the Docker bake and
 # the desktop bundles are reproducible. Measured 2026-09-29 (last modified 2023-06-06).
