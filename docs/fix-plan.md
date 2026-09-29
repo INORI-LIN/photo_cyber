@@ -2044,9 +2044,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - `release-desktop` **#4 = `36553114743`**（`workflow_dispatch`，sha `f23c428`，2026-09-29 10:03Z 发起）。`verify` 已 **success**；`windows` 与 `macos-arm64` 在跑。
 - **已可确认的一点**：两个平台 job 的步骤名都变成了 `Checksums (SHA256, sha256sum-compatible)` —— 旧名只是 `Checksums` —— 说明**新的 workflow 文本确实被这一轮用上了**（否则无从谈起验证）。
 - **待回写（结论产生后一次补）**：
-  1. Windows：`Checksums` 是否 success；`upload-artifact` 与 `gh release` 步是否不再 skipped；`release/` 里是否出现 `SHA256SUMS-Windows-x64.txt`（sha256sum 兼容格式）。
-  2. macOS：`Smoke test app bundle` 是否退 0；`create_dmg.sh`、`Checksums (macOS)`、`upload-artifact` 是否不再 skipped。
-  3. 同一次 push 触发的 `ci` **#35** 与 `docker` **#34** 的逐腿/冒烟关键行（另有 `docker` #33 因缓存偏冷仍在建，一并记录）。
+  1. Windows：`Checksums` 是否 success；`upload-artifact` 与 `gh release` 步是否不再 skipped；`release/` 里是否出现 `SHA256SUMS-Windows-x64.txt`（sha256sum 兼容格式）。（记录时仍在 Nuitka 构建，约 10:40Z 后出结论。）
+  2. macOS：`Smoke test app bundle` 是否退 0；`create_dmg.sh`、`Checksums (macOS)`、`upload-artifact` 是否不再 skipped。（记录时仍在构建，约 12:40Z。）
+  3. ~~同一次 push 触发的 `ci` #35 与 `docker` #34、以及迟到的 `docker` #33~~ → **已回，见下**。
+- **已到手的证据（2026-09-29 ~10:15Z）**：
+  - `ci` **#35**（`f23c428`）**success**：test 三腿（ubuntu / windows-latest / macos-15）各 **228 passed, 2 skipped**；`gui` job success。**计数对账**：本机 `--collect-only -q` = **243**，CI 三腿 = 228 + 2 = **230**，差额 **13** = 需要 PySide6 的用例在 test 腿收集期跳过 —— 与前两轮（221→206、230→217）**同一口径**。这条同时证明**本批 13 个新用例**（`test_resources.py` 7 + `test_release_workflow.py` 4 + `test_desktop_entry.py` 2）**在三 OS 全绿**，即 workflow 静态 pin 在 CI 侧也成立（真机 pwsh/macOS 行为仍需第 1/2 条）。
+  - `docker` **#33**（`26e11ed`，迟到的绿）**success**：`recovered: 线索（未验证）: ci-test`（`clue_rc == 3` 断言通过）；SD 冒烟 `protected: /work/out_sd.jpg size=384x288 layers=invisible+perturb+visible perturber=sd payload_bytes=7`；P15 拒载 `refusal rc=2`。
+  - `docker` #34（`f23c428`，同一次 push 触发）记录时仍在跑。
 - 若仍有红：按 §9.2/§9.3 的既例定位（先判断是否为新独立问题），**不 amend 已推送历史**。
 - **同轮 Windows 腿也红了（另一处，归 G9①）**：`Build installer`（ISCC）成功 —— `Successful compile (421.140 sec). Resulting Setup program filename is: …\release\PhotoGuard-Windows-x64-Setup.exe` —— 但紧随的 `Checksums` 步失败：
   ```
@@ -2135,7 +2139,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   - macOS 步同构（在 `release/` 内枚举、`case "$f" in SHA256SUMS*) continue`、引号安全），写 `release/SHA256SUMS-macOS-arm64.txt`；
   - 两个文件名按平台分开，覆盖风险消除。
   **验收**：`tests/test_release_workflow.py` 四条静态 pin 先红后绿；`git diff` 仅 workflow；**真实验证需一次 dispatch（待 CI 取证）**。②（`gh release create` 竞态）与 ③（tag 链 GUI 门）只在 tag 推送时执行，本轮不动、仍留批 J。
-  **验证中（2026-09-29 10:03Z）**：`release-desktop` #4 = `36553114743` 已发起（sha `f23c428`），两平台的步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`（新文本生效的旁证）；Windows 的 `Checksums`/`upload-artifact` 结论待回写，见 §9.10 第 11 小节。
+  **验证中（2026-09-29 10:03Z）**：`release-desktop` #4 = `36553114743` 已发起（sha `f23c428`），两平台的步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`（新文本生效的旁证）；同一次 push 的 `ci` #35 已绿（三腿各 228 passed/2 skipped，**含本批四条静态 pin**），但 **Windows 的 `Checksums`/`upload-artifact` 结论仍待回写**，见 §9.10 第 11 小节。
 
 #### G10 — `smoke_wheel.sh` 假绿：wheel 从未被安装/导入（med，批 J）
 
@@ -2175,7 +2179,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验收**：macOS dispatch 的 smoke 退 0、`create_dmg.sh` 与 DMG staging 不再 skipped（**待 CI 取证**，与 G9 合并成一次 dispatch）；缺材料负控仍退 4。Windows 腿的既有 green 不得变红。
 - **2026-09-29 修法落地（待 dispatch 复验）**：`resources.py` 新增 `candidate_roots()`（darwin 冻结态 → `(Contents/Resources, Contents/MacOS)`；`PHOTO_GUARD_RESOURCE_DIR` 覆盖时单根）与 `find_resource(*parts)`（逐根探测、返回首个存在者），`application_root()` 保留为主根；`config.PHOTOGUARD_MODELS_DIR` 改为 `find_resource("models") or application_root()/"models"`（缺失时仍落到不存在的路径，让 G6 的 `is_dir()` 响亮失败）；`packaging/desktop_entry.py` 的许可检查改用 `find_resource` 并把**试过的根**打进失败信息；AGENTS.md §8.3 的 `resources.py` 行同步。
   测试：`tests/test_resources.py` 七例（混合布局 / 全在 Resources / 全在 MacOS / 缺失 → None / 覆盖单根 / 源码树不变 / 候选根顺序）+ `test_desktop_entry.py` 两例（冻结 bundle 的混合布局 → 0；缺材料 → 4 且信息里出现两个候选根）。**先红记录**：`find_resource` 不存在时新用例全部报 `AttributeError`（TDD 起点），落地后 243 passed。
-  **验证中（2026-09-29 10:03Z）**：同一次 `release-desktop` #4 = `36553114743`；macOS 的 `Smoke test app bundle` 退码与 DMG staging 是否不再 skipped 待回写，见 §9.10 第 11 小节。
+  **验证中（2026-09-29 10:03Z）**：同一次 `release-desktop` #4 = `36553114743`；`ci` #35 已绿（三腿各 228 passed/2 skipped，含 `test_resources.py` 七例，`test_desktop_entry.py` 两例在三 OS 全绿），但 **macOS 的 `Smoke test app bundle` 退码与 DMG staging 是否不再 skipped 仍待回写**，见 §9.10 第 11 小节。
 
 ### 10.2 P1 追加与残留收口
 
