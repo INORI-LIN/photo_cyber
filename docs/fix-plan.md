@@ -938,7 +938,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **文档缺口补记（四条）**：① 本节「触及文件」原表**缺** `tests/test_carrier.py` 与 `tests/test_watermark_discovery.py`——它们是「以库为 oracle」的两处（全仓 grep 仅此两文件 + `watermark_invisible.py` 导入 imwatermark），删依赖后会整体 collection error，本次一并迁移；② `test_tiny_image_verify_exits_two` 的 CLI 分支按实测修正：doc 写「照 `test_cli_exits.py:54-58` `cli.main([...])==2`」，但 `verify --payload-bytes` 走 `extract_legacy`（有 P14 容量检查、无 256 守卫）会退 1，故改由 `protect` 钉「过小图 → 2 且不落文件」，属修正而非放宽；③ doc 中 `CLAUDE.md:NN` 的引用**无落点**（该文件已并入 AGENTS.md/README.md），本节第 8 步实际只改了 `config.py` 注释、`download.py` 文案、`README.md` 结构树与参考行；④ 验收第 1 条「仅两类差异」与「回 revision 3」在锁文件上不可同时字面成立，已按上文改口径（语义两类 + 格式一类）并点名。
 - **跨批提示（批 E 落地前必读）**：`_require_method` 落地后「把 `WATERMARK_METHOD` 改成 `dwtDct`」不再是可用的自证失败法（会抛 `ValueError` 而不是产出低分）——P6 的 `manual | dwtDct 校准` 与 `bench/README.md` 的「自证失败法」（§6 P6 内）须换一个手法（例如改载体参数或注入损坏 fixture），落地批 E 时同步改本节与那里。
 - **AGENTS.md 未改**（D1 结束时 `git diff --stat AGENTS.md` 为空；**D2 按用户裁定同步了 §十一 一句**——合规门不再排除 `.github/`，见 §6 G5 落地记录）。因 G1 而失真的 AGENTS.md 行（仍未自行改，上报用户）：§8.6 末「torch 目前不在 extra 隔离之内」、§10「torch 仍会随 `imwatermark` 链被导入」、§10 回归锁 #4 括注、§8.2/§8.3 的 `_CarrierEmbed` 措辞与模块表缺 `_dwt_dct_svd.py`。
-- **待 CI 才成立的项**：全新 core-only 环境（CI 第一步跑的就是它）、CI 新步在两腿上的实际结果、`docker.yml` 两 smoke 在真镜像内的结果。
+- **待 CI 才成立的项 —— 已回执（2026-09-29）**：全新 core-only 环境与 CI 新步**在 ubuntu / windows / macos-15 三条腿上全部通过**（`core-only contract OK`），`docker.yml` 的两条既有 smoke 与新增的 P15 拒载冒烟待 docker 工作流重跑后回执。详见 §9「CI 实测（2026-09-29）」。
 
 **风险与未知**
 
@@ -1029,7 +1029,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - [x] `README.md:238`/`CLAUDE.md:71` 无数字。—— README 结构树只增行、未写任何聚合数字；`CLAUDE.md` 无落点（该文件已并入 AGENTS.md/README.md）。
 - [x] 两条 `uv sync --frozen`（dev；extra＋package）通过。—— 本机实测两条均通过（`--group dev`；`--extra photoguard --extra desktop --group package`）。
 - [x] 全量 extra `--check` 退 0。—— 本机实测：`packaging/generate_notices.py --check` 在完整 shipping 环境退 0（`Darwin / arm64`，51 行）；`--check` 只比当前平台段，缺与多都判 1。
-- [ ] macOS＋Windows 构建 `--smoke-test` 退 0。—— **待 CI/Windows**：本机无 Nuitka 构建条件（需 `models/` + 目标平台）、无 ISCC。`--smoke-test` 的许可材料校验（缺 → 4）已在本机以 `spec_from_file_location` + `PHOTO_GUARD_RESOURCE_DIR` 覆盖。
+- [ ] macOS＋Windows 构建 `--smoke-test` 退 0。—— **部分取证（2026-09-29）**：macOS job 的 notices `--check` 与 `download-models` 已在真 runner 通过（说明本机生成的 `Darwin / arm64` 段与 runner 环境一致），Nuitka 构建本身仍在跑（>85 分钟，见 §9）；Windows 的 `--check` 曾红（缺段），**平台段已按 §9 的 bootstrap 法补齐**，待下一次 dispatch 验证。本机无 Nuitka/ISCC 条件；`--smoke-test` 的许可材料校验（缺 → 4）已在本机以 `spec_from_file_location` + `PHOTO_GUARD_RESOURCE_DIR` 覆盖。
 
 **落地记录（2026-09-29，批次 D2 的 G2 部分，commit `ecdb59d`）**
 
@@ -1276,10 +1276,10 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 **验收标准**
 - [x] A1 版本 grep 恰 1 行；`uv lock --check` 绿（改版本不 lock 必红）。—— 本机实测：`git grep -n "0\.1\.0"` 除 `uv.lock` 外恰 1 行（`pyproject.toml:3`）；`uv lock --offline && git diff --exit-code -- uv.lock` 无输出（round-trip 无漂移，比 `--check` 强——旧格式锁也能过 `--check`）。
-- [x] A2 /tmp 先 dev sync 再跑 smoke 退 0；两负控分别红。—— 本机实测：`packaging/smoke_wheel.sh` 正控退 0（sdist+wheel 构建、从 sdist 重建 wheel、隔离 venv 落 `$TMP`、`photo-guard 0.1.0` 一致、console script 可跑）；负控 a（`SMOKE_EXPECTED_VERSION_OVERRIDE=0.0.0`）打印版本不符后退 1；负控 b（`SMOKE_VENV=$PWD/.venv`）在**任何 sync 之前**被拒绝退 1。
+- [x] A2 /tmp 先 dev sync 再跑 smoke 退 0；两负控分别红。—— 本机实测：`packaging/smoke_wheel.sh` 正控退 0（sdist+wheel 构建、从 sdist 重建 wheel、隔离 venv 落 `$TMP`、`photo-guard 0.1.0` 一致、console script 可跑）；负控 a（`SMOKE_EXPECTED_VERSION_OVERRIDE=0.0.0`）打印版本不符后退 1；负控 b（`SMOKE_VENV=$PWD/.venv`）在**任何 sync 之前**被拒绝退 1。**真 CI 已验（2026-09-29，ubuntu 腿）**：`pyproject version: 0.1.0` → `wheel + sdist built` → `wheel rebuilt from sdist` → `smoke OK: /tmp/… reports photo-guard 0.1.0 and its console script runs`。
 - [ ] A3 Windows ISCC 带 `/D` 产物 VersionInfo 正确、不带非零退出。—— **待 Windows runner**：本机无 ISCC。文本层已钉：`.iss` 无版本字面量、`AppVersion={#MyAppVersion}`、`#ifndef`/`#error` 必填守卫（`test_version_consistency.py` 覆盖）；缺 `/D` 时即便某 ISPP 版本不认 `#error`，裸 `{#MyAppVersion}` 引用也会中止编译。
 - [ ] A4 verify 三分支退出码正确；授权推送后 verify 红、两构建 job 未启动。—— 本机已复跑**三分支逻辑**（dispatch → 0；`GITHUB_REF_NAME=v0.1.0` → 0；`v9.9.9` → 1 且打印 `::error::`）；「verify 红时两构建 job 未启动」只能推送后由 CI 证。
-- [ ] A5 第二次（热缓存）≤6 分钟、arm64 红则回滚矩阵行；A6 包 VersionInfo == tag；A7 计数不变（+4）；A8 gui 0 skipped。—— **A7/A8 本机已验**：`--collect-only -q` 实测 215（D1 后 202，**+13** 而非方案预估的 +4——新增的是 G2 的 7 例、`test_version_consistency.py` 4 例与 `test_desktop_entry.py` 2 例）；`QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、**0 skipped**；`photo-guard-gui --help` 0.98 s 退 0。**A5/A6 待 CI/Windows**（热缓存时长、`arm64 红则回滚矩阵行`、安装包 VersionInfo）。
+- [ ] A5 第二次（热缓存）≤6 分钟、arm64 红则回滚矩阵行；A6 包 VersionInfo == tag；A7 计数不变（+4）；A8 gui 0 skipped。—— **A7/A8 本机与真 CI 均已验**：本机 `--collect-only -q` 实测 215（D1 后 202，**+13** 而非方案预估的 +4——新增的是 G2 的 7 例、`test_version_consistency.py` 4 例与 `test_desktop_entry.py` 2 例）；本机 `QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、**0 skipped**、`photo-guard-gui --help` 0.98 s 退 0；**真 CI（2026-09-29）**：`gui` job `15 passed, 0 skipped` 且 `--help` 在 `timeout 60` 下打印 usage 退 0，三条测试腿各 `204 passed, 2 skipped`（与本地 219 的差额 = 13 例 PySide6 相关用例在 CI 侧收集期跳过，跳过集中的 2 例三腿一致属既有）。**A5/A6 仍未取证**（热缓存时长、`arm64 红则回滚矩阵行`、安装包 VersionInfo == tag）。
 
 **落地记录（2026-09-29，批次 D2 的 G5/G6 部分，commit `ecdb59d`）**
 
@@ -1770,7 +1770,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 **测试与验收**
 - [x] `photo-guard-gui --help` 在有限时间内退 0（不再被 kill）。—— 本机实测：0.98 s 退 0（批次 C 已改 argparse 先于 QApplication；本次加了 CI 侧 `timeout 60` 守卫与本机计时取证）。
 - [x] `--smoke-test` 在模型目录缺失时红、存在时绿。—— 本机实测（`spec_from_file_location` 加载）：模型目录缺失 → 2；空 model id → 2；齐备 → 0；**G2 新增**：许可材料缺失 → 4（`tests/test_desktop_entry.py` 五例）。
-- [x] CI gui job 装 desktop extra 后 `uv run --no-sync pytest -m gui -q` 全过、0 skip。—— 本机等价复跑：`QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、0 skipped；`ci.yml` 的 gui job 已建（apt 装 Qt 运行时 + `--extra desktop`），其 CI 侧结果待首次运行。
+- [x] CI gui job 装 desktop extra 后 `uv run --no-sync pytest -m gui -q` 全过、0 skip。—— 本机等价复跑：`QT_QPA_PLATFORM=offscreen pytest -m gui -q` → 15 passed、0 skipped；`ci.yml` 的 gui job 已建（apt 装 Qt 运行时 + `--extra desktop`）。**真 CI 已验（2026-09-29）**：`gui` job success，`15 passed, 0 skipped`，且 `photo-guard-gui --help` 在 `timeout 60` 内退 0。
 - [ ] release：verify 红时两个构建 job 未启动；tag 与版本不一致时红。—— tag 闸门三分支的逻辑已在本机等价复跑（dispatch → 0、`v0.1.0` → 0、`v9.9.9` → 1 并打印 `::error::`）；「verify 红时两构建 job 未启动」需推送后由 CI 证。
 - 命令：`uv run --no-sync photo-guard-gui --help`；`uv run --no-sync pytest -m gui -q`（workflow 侧以 CI 结果为准）
 
@@ -1898,3 +1898,64 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 | G5 | feasibility + regression | sound-with-fixes | sound-with-fixes | 41（25 + 16） |
 
 结论分布：14 项 × 2 视角 = 28 份判词，其中 **27 份 `sound-with-fixes`、1 份 `flawed`**（P5 的 regression 视角，共 9 条 refutations + 9 条 corrections + 6 条 missedRegressions；其修正项已并入第 6 节 P5 正文，`flawed` 表示该稿需按修正重写，而非条目被否决）。全部 513 条验证意见在四份 `AUDIT-*.md` 中逐条核对了处置落点，被驳回或部分采纳的少数条目已在各项「被驳回或部分采纳的验证者意见」小节显式记录原因。
+
+---
+
+## 9 CI 实测（2026-09-29）
+
+> 批次 D 的全部 commit 推送后（sha `4067447`、修复 `f6e74e7`），两个工作流的实测记录与本轮暴露的两个事故。
+> 这一节是**取证记录**，各项的验收勾选已就地更新在 §6/§7。工作流侧的现状：`ci` 有 test(ubuntu/windows/macos-15) + gui 四个 job，`docker` 一个 build job，`release-desktop` 有 verify/windows/macos-arm64 三个 job。
+
+**1. `ci` 全绿（sha `f6e74e7`）**
+
+| job | 结果 | 关键证据 |
+|---|---|---|
+| test (ubuntu-latest) | success | `204 passed, 2 skipped`；`core-only contract OK`；wheel/sdist 冒烟 `smoke OK … reports photo-guard 0.1.0` |
+| test (windows-latest) | success | `204 passed, 2 skipped`（修复 CRLF 后） |
+| test (macos-15) | success | `204 passed, 2 skipped`（新腿首跑即绿） |
+| gui | success | `15 passed, 0 skipped`；`photo-guard-gui --help` 在 `timeout 60` 内退 0 |
+
+- **基线对照**：推送前（sha `8aa38c1`）ubuntu 腿 `178 passed, 2 skipped` → 现在 `204 passed, 2 skipped`（**+26**）。
+- **计数对账口径**（避免以后误判）：本机 `--collect-only -q` = 219，CI 三条腿 = 204 + 2 skipped = 206。差额 13 = 需要 PySide6 的用例在 CI 侧**收集期跳过**（test leg 不装 desktop extra）；被 `-m 'not slow'` 选中但跳过的 2 例在三腿完全一致，属既有，不是本批引入。
+- **G1 的关键验收首次在真 CI 成立**：core-only 契约步（无 torch、单份 cv2、Haar 级联、`--help` 退 0）在三条腿上全部通过。
+
+**2. 事故一：`docker.yml` 被写成非法 YAML（已修）**
+
+- 症状：run 秒失败、`jobs` 返回 `total_count: 0`，且 GitHub 把工作流名显示成**文件路径**（`.github/workflows/docker.yml`）而不是 `name: docker`。
+- 根因：P15 的新冒烟写成多行 `python -c "` 块，正文落在**第 0 列**，YAML 块标量被提前终止。
+- 修法：改成既有步骤的风格——`--entrypoint /bin/sh` + 单行 `mkdir -p … && cp …`（base 是 `python:3.11-slim`，dash 可用）。
+- 回归护栏：本地用 PyYAML 过一遍三个 workflow 文件（`ci.yml` / `release-desktop.yml` 本来就 OK）；**这一课已写进约定——改 workflow 后先本地解析再推**。
+
+**3. 事故二：Windows 腿 CRLF 导致许可哈希断言失败（已修）**
+
+- 症状：windows 腿 `1 failed, 203 passed, 2 skipped`，唯一失败是 `test_copyleft_texts_are_canonical_and_hashes_match`；哈希与期望值不同（本机用 CRLF 副本复现出**与 CI 完全相同**的 `230184f60bae…`，LF 版为 `3972dc97…`）。
+- 根因：git 在 Windows 上按 `core.autocrlf` 把 `licenses/GPL-3.0.txt` 以 CRLF 检出。
+- 修法：新增 `.gitattributes`，把 `LICENSE` / `THIRD_PARTY_NOTICES.md` / `licenses/*.txt` 标为 `text eol=lf`——既固定哈希，也保证随包分发的法律文本字节不随平台变化。断言同时加了诊断：哈希不符且 CRLF 归一后能对上时，直接提示检查 `.gitattributes`。
+
+**4. 事故三：Docker 镜像构建被 `license-files` 校验挡住（已修）**
+
+- 症状：`docker` 的 Build image 红，失败行 `[runtime 8/12] RUN uv sync --frozen --extra photoguard --no-dev` → `Invalid project metadata / project.license-files glob LICENSE did not match any files`。
+- 根因（**新的构建期约束，以后改 Dockerfile 必读**）：`uv` 在**真正安装项目本体**的那次 sync 上校验 `license-files` 的 glob 是否命中文件；`--no-install-project` 的第一次 sync 不校验。原设计把许可材料的 `COPY` 放在 `download-models` 之后（即两次 sync 都之后），于是第二次 sync 必然失败。
+- 修法：`COPY LICENSE THIRD_PARTY_NOTICES.md licenses/ /app/` 挪到第二次 sync **之前**，仍留在重的依赖 sync 之后——改许可文本只会重跑「项目安装 + 冒烟 + 下载模型」，不会打爆 torch/diffusers 层。
+
+**5. Windows 平台段的首轮 bootstrap（已完成）**
+
+- `release-desktop` 的 windows job 红在 `generate_notices.py --check`：`Windows / AMD64` 段不存在，失败信息逐行打印 `missing: | name | version | license | source |`（52 条）。
+- 做法：把这 52 行从 job 日志里解析出来，用 **生成器自己的 `render_section`** 渲染成段写回 `THIRD_PARTY_NOTICES.md`，因此与生成器输出格式一致；再用生成器同款 `compare_section` 自检 `0 missing / 0 extra`。**不需要手动登 Windows 机器**。
+- 未做：**Linux 段不生成**——没有任何门禁在 Linux 上跑 `--check`（release 的 `verify` 作业只做锁 round-trip + fast + 版本闸门），已在 `THIRD_PARTY_NOTICES.md` 头段说明。
+
+**6. `release-desktop` 手动 dispatch（不带 tag）**
+
+- `verify` **success**：锁 round-trip（`uv lock --offline` 后 `git diff --exit-code -- uv.lock` 无漂移；空缓存下也退 0，已本机验证）、fast 档、以及版本闸门三分支（dispatch → 通过；`v0.1.0` → 通过；`v9.9.9` → 退 1 并打印 `::error::`，本机等价复跑）。
+- `windows` **failure**：仅卡在 notices `--check`（上面已 bootstrap）；因此**尚未走到** ISCC，A3（`/DMyAppVersion` 注入与缺 define 的退码）与 A6（安装包 VersionInfo == tag）**仍未取证**，需下一次 dispatch 或一次 tag 推送。
+- `macos-arm64`：notices `--check`（本机生成的 `Darwin / arm64` 段与 runner 安装集一致）与 `download-models`（钉住 revision、只取 json+safetensors）通过；Nuitka 构建步**长时间未结束**（03:24:19 起 >85 分钟，进行中日志 GitHub 不发布，无法判断是慢还是卡）。**S2（Nuitka 数据落点）与 DMG staging 因此仍未取证**——S2 的判定器就是 bundle 内的 `--smoke-test`（材料经 `resources.application_root()` 定位，缺则退 4）。
+- A4 的**负向分支**（verify 红时两个构建 job 未启动）仍未取证：它需要一次 tag 推送；正向上 `needs: verify` 已生效（两个构建 job 只有在 `verify` 绿后才启动）。
+
+**7. 本轮仍未取证清单（如实登记）**
+
+1. A3 / A6：ISCC `/D` 与 VersionInfo（需 Windows job 跑到那一步；段已补，待重跑）。
+2. A5：热缓存时长与 `arm64 红则回滚矩阵行`（需两次完整构建）。
+3. S2 与 DMG staging（macOS 构建未结束）。
+4. A4 的负向分支（需 tag 推送）。
+5. `docker` 重跑：三条冒烟（noise、SD 离线、P15 拒载）与线索路径 `rc=3` 断言——修复已提交，待重跑回执。
+6. Windows 的 `--smoke-test` / macOS 的 `--smoke-test`（依赖上面 1/3）。
