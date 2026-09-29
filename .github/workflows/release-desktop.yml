@@ -59,9 +59,9 @@ jobs:
         shell: powershell
         run: |
           foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "GPL-3.0.txt")) {
-            if (-not (Get-ChildItem -Recurse -File "dist\desktop_entry.dist" -Filter $name)) {
-              throw "$name is missing from dist\desktop_entry.dist"
-            }
+            $found = Get-ChildItem -Recurse -File "dist\desktop_entry.dist" -Filter $name | Select-Object -First 1
+            if (-not $found) { throw "$name is missing from dist\desktop_entry.dist" }
+            Write-Host "found: $($found.FullName)"
           }
       - name: Build installer
         shell: powershell
@@ -102,22 +102,43 @@ jobs:
         run: uv run --no-sync python packaging/generate_notices.py --check
       - run: uv run --no-sync photo-guard download-models
       - run: uv run --no-sync python packaging/build_desktop.py
-      - name: Smoke test app bundle
-        # This is also the layout assertion for the licence material: the entry point locates
-        # it through resources.application_root() and returns 4 when it is missing (G2).
-        run: |
-          APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
-          BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 -print -quit)
-          "$BIN" --smoke-test
       - name: Licence material is inside the app bundle (G2)
+        # Runs *before* the smoke test on purpose: this is a pure filesystem check, so when the
+        # smoke test fails the log still shows whether (and where) the material landed.
         run: |
           APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
+          echo "bundle: $APP"
           for name in LICENSE THIRD_PARTY_NOTICES.md GPL-3.0.txt; do
-            if ! find "$APP" -name "$name" -print -quit | grep -q .; then
+            found=$(find "$APP" -name "$name" -print -quit)
+            if [ -z "$found" ]; then
               echo "::error::$name is missing from $APP"
+              echo "--- Contents ---"
+              ls -la "$APP/Contents" || true
               exit 1
             fi
+            echo "found: $found"
           done
+      - name: Smoke test app bundle
+        # The entry point locates the licence material through resources.application_root()
+        # and returns 4 when it is missing (G2), so this is also the S2 layout check.
+        # NB: pick the app's own executable explicitly. The bundle's Contents/MacOS also holds
+        # Nuitka-frozen helpers (torch/bin/protoc, torch_shm_manager, …), and a bare
+        # `find … -perm +111 -print -quit` picked one of those — it answered
+        # "Missing value for flag: --smoke-test" and the real smoke test never ran.
+        run: |
+          APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
+          BIN="$APP/Contents/MacOS/desktop_entry"
+          if [ ! -x "$BIN" ]; then
+            BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print -quit)
+          fi
+          echo "running: $BIN"
+          if ! "$BIN" --smoke-test; then
+            echo "::error::smoke test failed — dumping layout for diagnosis"
+            ls -la "$APP/Contents" || true
+            find "$APP/Contents" -maxdepth 3 \
+              \( -name "config.json" -o -name "THIRD_PARTY_NOTICES.md" \) -print | head -10
+            exit 1
+          fi
       - run: packaging/create_dmg.sh
       - run: shasum -a 256 release/* > release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
