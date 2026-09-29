@@ -22,7 +22,7 @@
 | P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [ ] 未开始（仅余 subject.py 代码面；2026-09-28 批次 C 开工前裁定不并入，待排批次） |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
-| G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [ ] 未开始 |
+| G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [x] 批次 D1 已落地（`22ce170` 先红 + `fbeed66` 转绿，2026-09-29）；G5/G2/P15/P19 属同批 D2/D3，未开工 |
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [ ] 未开始 |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
@@ -59,7 +59,7 @@
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
-| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。 |
+| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1 已落地（`22ce170`+`fbeed66`，验收逐条见 §6 G1 落地记录）；D2=G2+G5/G6、D3=P15+P19 待开工。** |
 | E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
 | F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
 
@@ -83,7 +83,7 @@
   | 2 | 容量常数（`blocks//8` 是否远高于 q85+明水印+扰动后的可恢复上界） | P4 | P4（batch 2）；P6 的 `blocks_per_bit` | 上界 ≥29/11 字节；控制格（`+1`）全失败；安全系数 ≥ 最坏内容类 2 倍 |
   | 3 | S1 色度下采样 / S2 WebP 可用性 / S4 打包暴露面 | P6 | P6（batch 5） | S1 反推得 `(2,2,1,1,1,1)`；S2 `features.check('webp')` 为 True 则保留该格；S4 wheel/sdist 不含 `bench/` |
   | 4 | H1 Sobel 在恒定灰度上恰为 0 | P9 | P9（batch 3），进而 P2/P1 的文档步骤 | 输出 `0.0 0.0`；任一非 0 则显式传 `borderType=BORDER_REFLECT_101` 重跑 |
-  | 5 | 转录等价 spike A/B/C（旧库 vs `_dwt_dct_svd`） | G1 | G1（batch 4）；决定 P3 的 `'torch' in sys.modules` 断言、P6 的 core-only 分支、G5/G2 的 lock 差异面 | A 每对 `np.array_equal` 为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bits))==bits`、C 精确解出删依赖前产出的 fixture。**已执行 2026-09-28：A/A′/B/C/D/E/F 全绿** —— A 五组 `np.array_equal` 逐对为真（512×512 / 511×507 / 260×330；scales 覆盖 `[72,0,0]`（出货）、`[0,36,0]`（库默认，与 legacy 载体同）、`[0,72,0]`、`[36,36,0]`（双通道）、`[23,0,0]`；含非 ASCII `© 水印` 与 37-bit 非 8 倍数），两侧输出 sha256 逐对相同；A′ 仓库 P11 修复路径（`_CarrierEmbed`）与转录修复变体逐位相等，含出货路径 `wi.embed`；B 逐行字节/位回环为真、库 `WatermarkDecoder` 一致，`wi.extract(wi.embed(…))` 亦真；C 两份 fixture 候选与库均精确解出；D 子进程内候选独立加载时 `torch`/`imwatermark` 均不在 `sys.modules`；E 类区逐字相等（3192 字符）；F 256×256 守卫同型同消息。 |
+  | 5 | 转录等价 spike A/B/C（旧库 vs `_dwt_dct_svd`） | G1 | G1（batch 4）；决定 P3 的 `'torch' in sys.modules` 断言、P6 的 core-only 分支、G5/G2 的 lock 差异面 | A 每对 `np.array_equal` 为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bits))==bits`、C 精确解出删依赖前产出的 fixture。**已执行 2026-09-28：A/A′/B/C/D/E/F 全绿** —— A 五组 `np.array_equal` 逐对为真（512×512 / 511×507 / 260×330；scales 覆盖 `[72,0,0]`（出货）、`[0,36,0]`（库默认，与 legacy 载体同）、`[0,72,0]`、`[36,36,0]`（双通道）、`[23,0,0]`；含非 ASCII `© 水印` 与 37-bit 非 8 倍数），两侧输出 sha256 逐对相同；A′ 仓库 P11 修复路径（`_CarrierEmbed`）与转录修复变体逐位相等，含出货路径 `wi.embed`；B 逐行字节/位回环为真、库 `WatermarkDecoder` 一致，`wi.extract(wi.embed(…))` 亦真；C 两份 fixture 候选与库均精确解出；D 子进程内候选独立加载时 `torch`/`imwatermark` 均不在 `sys.modules`；E 类区逐字相等（3192 字符）；F 256×256 守卫同型同消息。**2026-09-29：转录稿已搬入 `src/photo_guard/_dwt_dct_svd.py`（`fbeed66`），搬运后 E 复跑仍为真（shipped == oracle == candidate、3192 字符）；`watermark_invisible` 的两处 imwatermark 导入已删，P3/P6 依赖的 core-only 分支自此成立（实测 `import photo_guard` 后 `sys.modules` 无 torch）。** |
   | 6 | S1 PEP 639 落点 / S2 Nuitka 数据落点 / S3 ISCC `LicenseFile` | G2 | G2（batch 4） | 两处出现 `License-Expression`；licenses/models 落 `Contents/Resources`；ISCC 退 0 且向导页显示正文 |
   | 7 | `uv sync --frozen --group dev` 的 prune 是否移除 desktop extra | G3 | G3（batch 1）的验收与 GUI 手工步骤次序 | `import PySide6` 成功 → 顺序执行；`ModuleNotFoundError` → gui 步骤显式 `--extra desktop`，uv sync 那条排最后 |
   | 8 | ISCC 缺 define / `UV_PROJECT_ENVIRONMENT` 隔离 / tag 闸门 | G5 | G5（batch 4） | 缺 `/D` define 须非零退出；smoke 退 0 且两负控分别红；verify 红时两构建 job 未启动 |
@@ -120,6 +120,8 @@
 | P15 的 `use_safetensors` 硬失败与 `revision` 钉法 | D | P15、photoguard、download |
 
 配套说明：批次 D 的 **G1 已裁定 (a)**（本条上方第 1 条已勾），**不在待定之列**；批次 2 遗留（P8/P4）与 P9 余项**仍未排批次**（§1 状态列已标注「待排」）。
+
+**批次 D 的分批与开工裁定（2026-09-29）**：用户裁定批次 D **拆三个子批顺序推进**：D1=G1（**已落地**，`22ce170`+`fbeed66`）→ D2=G2 + G5/G6 → D3=P15 + P19。上表中与 D 相关的五条**已按 §3 建议项裁定**，自本条起不再属「待定」：① G2 许可与版权行 = MIT 正文 + `Copyright (c) 2026 INORI-LIN`（邮箱只留 pyproject 作者字段）；② SD VAE 继续随包再分发，notices 钉死 configured repo + `--check` 门，**AGENTS.md 本次不改**（仅 G5 第 8 步若采纳 `.github/` 排除集变更时同步 §十一 一句）；③ G5 接受「项目外隔离 venv 跑 smoke」，macOS leg **每 PR 跑**（仓库 public）；④ P19 线索路径改**独立退码 3**，同步 README 退出码表与 `docker.yml` 断言；⑤ P15 用 `use_safetensors=True` **硬失败**，`revision` 待 spike 出结论后下载/加载两侧钉同一版。上表其余五行（P8/G4 的 ICC、非 JPEG 输出、G4 的 HEIC/上限、P5/P6 契约、P8 的损坏 EXIF）**仍在待定之列**，随各自批次开工前确认。
 
 ---
 
@@ -558,6 +560,8 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 - [ ] CSV 中 stored_payload_bytes==37 且 blocks_per_bit==((1080//4*4)//8)*((810//4*4)//8)/(8*37)==46.06…；summary.md 含 pass=false 的负向控制、artifact_subsampling、bits=296 与版本/sha。
 - [ ] uv run pytest -m 'not slow' -q 全绿且 collected 数相对落地前不变；git diff 无 pyproject.toml、uv.lock、src/、tests/、gpu_bench.py；git status 无 bench/results/；dwtDct 校准记录为 1→还原后 0。
 
+> **G1 后的修正（2026-09-29，批 E 落地前必读）**：上面第 9 步的「自证失败法（`WATERMARK_METHOD=dwtDct`⇒exit 1）」与测试清单里的 `manual | dwtDct 校准`（「改 `WATERMARK_METHOD` 后 exit 1 且 jpeg_q85<100%」）**已失效**：G1 之后 `WATERMARK_METHOD != "dwtDctSvd"` 由 `watermark_invisible._require_method` 直接抛 `ValueError`（CLI 落 exit 2），不会产出低分。批 E 落地时须改用一个仍能产出「签名不一致」的失败法（例如把载体参数改错或注入损坏 fixture），并同步改本节与 `bench/README.md` 的措辞；**不得**因为该手法失效而放宽 bench 的钉住断言。
+
 **风险与未知**
 - 指标误读（最重要）：rms_ratio 量「扰动还剩多少」≠「保护还剩多少」；一律写「扰动残存比例」，禁写「防护强度」。
 - 低纹理类首轮可能 <100%（QIM 依赖块 s[0]）：钉住限 textured_detail，不达即按 Q2 走产品决策，禁缩语料/降钉。
@@ -918,11 +922,23 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 
 **验收标准**
 
-- [ ] `uv.lock` 中 `photo-guard` core 可达集恰为 `{photo-guard, numpy, opencv-python-headless, pillow, pywavelets}`，`torch`/`opencv-python`/`nvidia-*`/`cuda-*` 不可达。
-- [ ] 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0、纹理图 protect+verify 退 0。
-- [ ] 删依赖**前**由旧库生成的 fixture 解出精确 payload；commit body 含 spike A/B/C 结果、SHA-256、三版本串、`cv2.__file__` 与 owning distribution。
-- [ ] `decode_bits` 与 P3 的 `_reconstruct_bytes(_block_scores(img), n)` 在 `1..2N` 逐字节相等、`max_stored_bytes` 未删、`test_rotating_a_protected_image_breaks_extraction` 仍绿；`pytest -m 'not slow'` 全绿且既有断言逐字未变。
-- [ ] 相对 P3 后 `pyproject.toml`/`uv.lock` 仅两类差异；`grep -c tool.uv`=0；`uv sync --frozen` 通过；`git diff --stat AGENTS.md` 空；无 `requirements.txt`；CI 新步改动前红、后绿；`docker.yml` 两 smoke 免改通过且不声称体积收益。
+- [x] `uv.lock` 中 `photo-guard` core 可达集恰为 `{photo-guard, numpy, opencv-python-headless, pillow, pywavelets}`，`torch`/`opencv-python`/`nvidia-*`/`cuda-*` 不可达。—— 本机实测：`tests/test_dependency_graph.py` 四例全绿（闭包恰等断言按「恰为」原样落地）；锁内 `opencv-python` 与 `invisible-watermark` 两个包整体消失，`nvidia-*`/`cuda-*` 仅作为 photoguard extra 侧 torch 的 linux-only 边存在、不在 core 闭包内。
+- [x] 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0、纹理图 protect+verify 退 0。—— 本机实测（core+dev+desktop 档，无 torch/imwatermark）：`import torch` → `ModuleNotFoundError: No module named 'torch'`；`import photo_guard` 成功且 `sys.modules` 无 torch/imwatermark；`--help` 退 0；`protect textured.jpg -o out.jpg --payload owner:alice#001 --visible-mode tile --payload-envelope` 退 0，盲检 stdout 恰为 `owner:alice#001`，`--expected-payload` 退 0。**「全新」以 CI 为准**（本机是既有 venv 被 sync 剪过一遍）。
+- [x] 删依赖**前**由旧库生成的 fixture 解出精确 payload；commit body 含 spike A/B/C 结果、SHA-256、三版本串、`cv2.__file__` 与 owning distribution。—— 本机实测：`tests/fixtures/dwtDctSvd_legacy_512.png`（旧库产出，payload `owner:alice#001`）由 `wi.extract` 精确解出；commit `22ce170` body 含 A/A′/B/C/D/E/F 全绿结论、三个 sha256、三行版本串、`cv2.__file__` 与 `['opencv-python-headless','opencv-python']`。
+- [x] `decode_bits` 与 P3 的 `_reconstruct_bytes(_block_scores(img), n)` 在 `1..2N` 逐字节相等、`max_stored_bytes` 未删、`test_rotating_a_protected_image_breaks_extraction` 仍绿；`pytest -m 'not slow'` 全绿且既有断言逐字未变。—— 本机实测：`test_watermark_discovery.py::test_reconstruction_is_byte_exact_for_every_length` 已把右臂换成 `decode_bits + np.packbits`，`n=1..66 × {(1,36),(0,72)}` 范围未缩、逐字节相等；`max_stored_bytes` 仍在（3750/1704/128 断言绿）；fast 202 passed（`--collect-only -q` 实测 202；基线 193，+9 = 依赖图谱 4 例 + 转录 5 例）。
+- [x] 相对 P3 后 `pyproject.toml`/`uv.lock` 仅两类差异；`grep -c tool.uv`=0；`uv sync --frozen` 通过；`git diff --stat AGENTS.md` 空；无 `requirements.txt`；CI 新步改动前红、后绿；`docker.yml` 两 smoke 免改通过且不声称体积收益。—— **改口径**（见落地记录缺口④）：语义上恰两类差异（实测包集合 diff：移除 `['invisible-watermark','opencv-python']`、新增 `[]`、版本变化 `[]`，74 → 72 包），外加**格式回写一类**（`revision = 1` → `3`，工具链项，约 1500 行）。`grep -c tool.uv` = 0/0；`uv sync --frozen` 通过；AGENTS.md 空 diff；无 `requirements.txt`；CI 新步与测试改动前 4/4 红（实测，非预估的 3/4）、改动后退 0；`docker.yml` 未改且本机以等价命令复跑两段断言通过（noise 段 stdout 恰为 `线索（未验证）: ci-test`）；未声称体积收益。
+
+**落地记录（2026-09-29，批次 D1）**
+
+- **两 commit 先红后绿**（用户 2026-09-29 裁定批次 D 拆三子批：D1=G1）。`22ce170`（先红）＝第 5/6 步的测试与 CI 步，实测 pytest 4 failed（**4/4 红**，非方案预估的「3 红 1 绿」——`photoguard` extra 今天也没声明 torch），CI 同段脚本本机复跑打印 `core env carries forbidden distributions: [('invisible-watermark','0.2.0'),('torch','2.12.1'),('opencv-python','4.13.0.92')]` 退 1；`fbeed66`（转绿）＝第 2/3/4/7/8 步 + 两个 oracle 迁移。两 commit body 均含 spike 结论、三个 sha256、版本串与 `cv2.__file__`。
+- **E 搬运后复跑**：`shipped == oracle == candidate`，类区仍 3192 字符（oracle 取自 `.venv` 内 imwatermark 0.2.0，趁删依赖前跑）；D 子进程探针 `__all__=embed_bits,decode_bits`、torch/imwatermark 均不在 `sys.modules`。
+- **工具链（本项「批次 1 新增发现」的落地）**：用缓存里的 uv 0.9.28（离线二进制）完成 `remove` / `add --optional`；`--offline` 因缓存缺件失败，去 flag 联网成功（已记 commit body）。锁 `revision` 由 `1` 回到 `3`。本机 brew 因未同意 Xcode 许可不可用，未做 `brew upgrade uv`。CI 侧「锁格式与 uv 版本一致」检查归 D2 的 verify job（`uv lock --offline && git diff --exit-code -- uv.lock`）。
+- **环境实测坑**：`uv sync --frozen --group dev --extra desktop` 卸掉 13 个包（torch 2.12.1 / invisible-watermark 0.2.0 / opencv-python 4.13.0.92 及 torch 传递依赖，desktop extra 的 PySide6 保留）；**卸 `opencv-python` 会连坐删掉与 headless 共享的 `cv2/` 目录**，需 `--reinstall-package opencv-python-headless` 修复——仅在「venv 曾同时装两份 cv2」的存量环境出现，全新环境不复现。
+- **断言强度逐条标注**：`test_carrier.py` 的 `_library_embed`/`WatermarkDecoder` 两处、`test_watermark_discovery.py` 的 `_embed` 与用例右臂 —— **等价（oracle 由外部库换成已证逐位相同的仓内转录稿；编码器替换，`cA` 不变）**，用例名与 `n=1..66 × 两载体` 范围未缩；`test_output_integrity.py` 的 torch 探针 —— **等价（仅 docstring 文案）**，断言一行未动；其余既有用例零改动。本项**无放宽**，也无断言被删。
+- **文档缺口补记（四条）**：① 本节「触及文件」原表**缺** `tests/test_carrier.py` 与 `tests/test_watermark_discovery.py`——它们是「以库为 oracle」的两处（全仓 grep 仅此两文件 + `watermark_invisible.py` 导入 imwatermark），删依赖后会整体 collection error，本次一并迁移；② `test_tiny_image_verify_exits_two` 的 CLI 分支按实测修正：doc 写「照 `test_cli_exits.py:54-58` `cli.main([...])==2`」，但 `verify --payload-bytes` 走 `extract_legacy`（有 P14 容量检查、无 256 守卫）会退 1，故改由 `protect` 钉「过小图 → 2 且不落文件」，属修正而非放宽；③ doc 中 `CLAUDE.md:NN` 的引用**无落点**（该文件已并入 AGENTS.md/README.md），本节第 8 步实际只改了 `config.py` 注释、`download.py` 文案、`README.md` 结构树与参考行；④ 验收第 1 条「仅两类差异」与「回 revision 3」在锁文件上不可同时字面成立，已按上文改口径（语义两类 + 格式一类）并点名。
+- **跨批提示（批 E 落地前必读）**：`_require_method` 落地后「把 `WATERMARK_METHOD` 改成 `dwtDct`」不再是可用的自证失败法（会抛 `ValueError` 而不是产出低分）——P6 的 `manual | dwtDct 校准` 与 `bench/README.md` 的「自证失败法」（§6 P6 内）须换一个手法（例如改载体参数或注入损坏 fixture），落地批 E 时同步改本节与那里。
+- **AGENTS.md 未改**（`git diff --stat AGENTS.md` 空）。因本项而失真的 AGENTS.md 行（本次不自行改，上报用户）：§8.6 末「torch 目前不在 extra 隔离之内」、§10「torch 仍会随 `imwatermark` 链被导入」、§10 回归锁 #4 括注、§8.2/§8.3 的 `_CarrierEmbed` 措辞与模块表缺 `_dwt_dct_svd.py`。
+- **待 CI 才成立的项**：全新 core-only 环境（CI 第一步跑的就是它）、CI 新步在两腿上的实际结果、`docker.yml` 两 smoke 在真镜像内的结果。
 
 **风险与未知**
 
@@ -953,6 +969,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - 批次 1 执行 `uv add pywavelets` 时，0.6.10 把锁整体重写为旧格式：**750 insertions / 748 deletions，但语义零变化**（74 个包，0 新增 / 0 移除 / 0 版本变化，差异仅在 `revision` 与 `upload-time`）。已实测用缓存中的 uv 0.9.28 以 `--frozen` 读该锁正常通过（`Audited 22 packages`，不改写），故降级是安全的。
 - 用户裁定（2026-09-23）：本批**接受降级**，作为本项发现记录，留待本项（批次 4）在工具链面一并处理。
 - 本项落地时的建议动作：`brew upgrade uv`（或固定一个 ≥0.11 的 uv）后跑一次 `uv lock`，格式即回到 `revision = 3`；并考虑在 CI 加一条「锁文件格式与所用 uv 版本一致」的检查，否则同一把锁会在新老 uv 之间来回抖动。
+- **已落地（2026-09-29，批次 D1）**：改用缓存里的 uv 0.9.28（离线二进制）执行 `remove`/`add --optional`，`uv.lock` 的 `revision` 已回到 `3`；本机 brew 因未同意 Xcode 许可不可用，未做 `brew upgrade uv`（系统 uv 仍是 0.6.10，只读不写）。CI 的锁格式检查排入 D2 的 `verify` job（`uv lock --offline && git diff --exit-code -- uv.lock`，比 `--check` 强：`--check` 对旧格式锁也退 0，实测）。
 - 附注：本机缓存已有 uv 0.9.28（`~/.cache/uv/archive-v0/…/uv-0.9.28.data/scripts/uv`），可离线直接执行；而 `uvx uv@0.9.28` 会尝试联网解析，网络受限时会挂住（实测 2 分 12 秒后放弃）。
 > 摘要：许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。
 
