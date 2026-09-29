@@ -46,5 +46,44 @@ jobs:
       - name: Sync (frozen, dev group)
         run: uv sync --frozen --group dev
 
+      - name: Core-only contract (no torch, one cv2, haar data)
+        # G1: the core install must not drag torch in, must not ship a second cv2 build,
+        # and must still find the Haar cascade that the subject path falls back to.
+        shell: bash
+        run: |
+          uv run --no-sync python - <<'PY'
+          import importlib.metadata as md
+          import importlib.util as iu
+          import sys
+          from pathlib import Path
+
+          heavy = {
+              "torch", "triton", "diffusers", "transformers", "accelerate",
+              "safetensors", "huggingface-hub", "imwatermark", "invisible-watermark",
+          }
+          offenders = []
+          for dist in md.distributions():
+              low = (dist.metadata["Name"] or "").strip().lower()
+              if low in heavy or low.startswith(("nvidia-", "cuda-")):
+                  offenders.append((low, dist.version))
+              elif low.startswith("opencv-") and low != "opencv-python-headless":
+                  offenders.append((low, dist.version))
+          if offenders:
+              print("core env carries forbidden distributions:", offenders)
+              sys.exit(1)
+          if iu.find_spec("torch") is not None:
+              print("torch is importable in the core-only environment")
+              sys.exit(1)
+
+          import cv2
+
+          cascade = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+          if not cascade.is_file() or cv2.CascadeClassifier(str(cascade)).empty():
+              print(f"haar cascade unusable: {cascade}")
+              sys.exit(1)
+          print("core-only contract OK")
+          PY
+          uv run --no-sync photo-guard --help >/dev/null
+
       - name: Run pytest (fast tier only)
         run: uv run pytest -m 'not slow' -v
