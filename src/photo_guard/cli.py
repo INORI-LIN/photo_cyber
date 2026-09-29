@@ -76,7 +76,25 @@ def _parse_layers(spec: str) -> frozenset[str]:
     return frozenset(parts)
 
 
+def _tolerate_legacy_console() -> None:
+    """Keep non-ASCII output from crashing on a legacy Windows code page.
+
+    The CLI prints Chinese text; on a cp1252/cp936 console an unencodable character raises
+    ``UnicodeEncodeError`` from inside ``print`` and the command exits 2 for what is really a
+    successful run (measured on the Windows release runner: ``download-models`` died on the
+    ``→`` in its own success message). Replacing unencodable characters keeps the exit-code
+    contract intact. Streams already decoded as UTF-8 — pytest's capture and any UTF-8 pipe —
+    are left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        encoding = (getattr(stream, "encoding", None) or "").lower()
+        if reconfigure is not None and encoding and "utf" not in encoding:
+            reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _tolerate_legacy_console()
     args = _build_parser().parse_args(argv)
     try:
         if args.cmd == "protect":
@@ -155,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             from . import download
             path = download.download_sd_vae(repo=args.repo, dest=args.dest)
             print(
-                f"downloaded {args.repo}@{config.PHOTOGUARD_REVISION} → {path} "
+                f"downloaded {args.repo}@{config.PHOTOGUARD_REVISION} -> {path} "
                 "(json + safetensors only)"
             )
             return 0

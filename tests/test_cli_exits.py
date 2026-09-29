@@ -14,18 +14,54 @@ output as a clue, which is why the payload only has to appear in stdout there.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from photo_guard.cli import main
+from photo_guard.cli import _tolerate_legacy_console, main
 
 
 def _seed_textured(path: Path) -> None:
     rng = np.random.default_rng(7)
     arr = rng.integers(60, 200, (1200, 1600, 3), dtype=np.uint8)
     Image.fromarray(arr, "RGB").save(path, quality=92)
+
+
+class _RecordingStream:
+    def __init__(self, encoding: str) -> None:
+        self.encoding = encoding
+        self.calls: list[dict] = []
+
+    def reconfigure(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+
+def test_a_legacy_console_encoding_is_tolerated(monkeypatch) -> None:
+    """Non-ASCII output must not crash on a cp1252/cp936 console (found on Windows CI).
+
+    The Windows release runner lost ``download-models`` to a ``UnicodeEncodeError`` raised by
+    the ``→`` in its own success message — a successful run reported as exit 2.
+    """
+    legacy = _RecordingStream("cp1252")
+    monkeypatch.setattr(sys, "stdout", legacy)
+    monkeypatch.setattr(sys, "stderr", legacy)
+
+    _tolerate_legacy_console()
+
+    assert legacy.calls == [{"errors": "replace"}, {"errors": "replace"}]
+
+
+def test_a_utf8_stream_is_left_alone(monkeypatch) -> None:
+    """UTF-8 streams (pytest's capture, Linux consoles, UTF-8 pipes) must not be touched."""
+    utf8 = _RecordingStream("utf-8")
+    monkeypatch.setattr(sys, "stdout", utf8)
+    monkeypatch.setattr(sys, "stderr", utf8)
+
+    _tolerate_legacy_console()
+
+    assert utf8.calls == []
 
 
 def test_protect_then_raw_verify_reports_a_clue(tmp_path: Path, capsys) -> None:

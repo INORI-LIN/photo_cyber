@@ -76,9 +76,13 @@ COPY src /app/src
 # G2: the licence material must be in place *before* the second sync, because that sync
 # builds the project and uv validates the `license-files` globs while reading its metadata
 # (measured on CI: without these files the build fails with "Invalid project metadata /
-# `project.license-files` glob `LICENSE` did not match any files"). Placed after the heavy
+# `project.license-files` glob … did not match any files"). Placed after the heavy
 # dependency sync so a licence-text edit does not invalidate the torch/diffusers layer.
-COPY LICENSE THIRD_PARTY_NOTICES.md licenses/ /app/
+# Two COPYs on purpose: a directory source copies its *contents*, so `licenses/` needs an
+# explicit destination to end up at `/app/licenses/`. Keep these paths in sync with
+# `license-files` in pyproject.toml.
+COPY LICENSE THIRD_PARTY_NOTICES.md /app/
+COPY licenses/ /app/licenses/
 
 RUN uv sync --frozen --extra photoguard --no-dev
 
