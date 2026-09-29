@@ -44,6 +44,18 @@
 | G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] 未开始 |
 | P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
+| P27 | verify 退码口径不一致 + `extract_envelope` 缺容量护栏 | med | S | I | 「整图找不到信封」在 `--expected-payload` 路径退 2，另两条 verify 路径同语义退 1；`extract_envelope` 未接 P14 的 `_require_capacity`。 | [ ] 未开始（批 I） |
+| P28 | 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口 | low-med | S | K | `-o` 指向目录要跑完 resize+embed（+PGD）才在 `os.replace` 炸；`save_image_atomic` 的 `mkdir`/`stat` 在 try 之外，报错不带 `failed to write <dest>`。 | [ ] 未开始（批 K） |
+| P29 | GUI 三处纪律缺口（导出 / 活动 output_dir / 模式白名单） | med | S | K | `export_csv` 裸 `open()` 可终止 GUI；活动 output_dir 绕过设置层的绝对路径校验；设置层无 `visible_mode` 白名单。 | [ ] 未开始（批 K；注入路径待复现） |
+| P30 | `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突 | low | S | K | 校验拒绝 `noop`+`{perturb}`，而 `protect` 会优先用调用方实例；编程调用方被误拒。 | [ ] 未开始（批 K） |
+| P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [ ] 未开始（批 I） |
+| P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [ ] 未开始（批 I） |
+| G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿未署名、opencv wheel 的 LGPL-2.1 组件无记、无 Linux notices 段且镜像不跑 `--check`、Python 合规门弱于 ci.yml 的正则。 | [ ] 未开始（批 J） |
+| G9 | release 三处高危（校验文件不可解析 / 发布竞态 / 缺 GUI 门） | **high** | M | J | Windows 校验文件是 UTF-16 表格却随 release 上传；两平台并发 `gh release create` 必有一方 422；tag 发布链不跑 GUI 档。 | [ ] 未开始（批 J） |
+| G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [ ] 未开始（批 J） |
+| G11 | CI/仓库硬化六条（tag 钉 / permissions / concurrency / ignore / eol / urls） | low-med | S | F′ | 六处相互独立的基础设施硬化，逐条可验。 | [ ] 未开始（批 F′） |
+| DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [ ] 未开始（批 H；§十一 正则句归 G8） |
+| DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [ ] 未开始（批 H） |
 
 ---
 
@@ -60,15 +72,24 @@
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
 | D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1（`22ce170`+`fbeed66`+`a155b97`）、D2=G2+G5/G6（`ecdb59d`+`1c7ebca`）、D3=P15+P19 三项全部落地；本行收口，仅剩「推送后由 CI 验」的条目（G5 的 A3/A4/A5/A6、G2 的两平台 smoke）与 D2 拆出后另行排期的 4 项：P1、P8、P4、P9 代码面。** |
-| E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
-| F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
+| ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
+| **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
+| **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。 |
+| **J** | G9 → G10 → G8（含 AGENTS §十一 正则句） | 三个 workflow 本地 PyYAML 过一遍；`packaging/smoke_wheel.sh` 实跑（真安装并 import 所建 wheel）；收紧后的合规门全绿；Windows 校验文件、发布竞态、ISCC 一律**待 CI 取证**。 |
+| **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
+| **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
+| **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
+| **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步**待 CI 取证**。 |
+| **O** | P7、P20 | 非 JPEG 输出策略先裁定；P20 先 spike 语义（内容已落盘 + `chmod` 抛错仍退 0 且内容完整）。 |
+| F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11） | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、三个 workflow 本地 PyYAML 解析；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
 
-四条硬定序，实施时不得调换：
+五条硬定序，实施时不得调换：
 
 1. **batch 3 内 P9 先于 P2/P1。** P9 撤销 `README.md:238` 与 `CLAUDE.md:71` 的聚合数字，并把「不写死用例数」定为唯一政策；若 P2/P1 先落地，两者会各自往文档里塞新数字，P9 再改即第二次返工，且 G1/G2/G5 的文档步骤都引用这条政策。
 2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P3 于批次 1 定义的 `watermark_invisible.max_stored_bytes(h, w)`（P4 只消费该函数；P4 本体属批次 2，尚未落地）。
 3. **G1 的 spike 必须在 batch 4 开工前完成，并按结论分支。** G1 的 spike A/B/C（`_dwt_dct_svd` 与 `invisible-watermark` 0.2.0 逐位等价）不通过就走兜底分支（core 继续声明 torch、撤回 `CLAUDE.md:12`），此时 G1/G5/G2 依赖的 core-only 闭包、extra 声明与 lock 差异面全部改写；G1 也是唯一能改变「fast 档仍经 `imwatermark` → `rivaGan.py:2` 引 torch」这一现状的条目——今天 P3 的 `'torch' in sys.modules` 断言仍为 `True`，只有 G1 落地后才应为 `False`。
 4. **P17 不早于 P2（同属 GUI 测试面）。** P17 的断言替换须落在 P2 收敛后的测试结构上，先落地 P2 再动 P17，避免同一测试面二次返工。
+5. **P28 先于 P8（2026-09-29 新增，同属输出面）。** 两者都改 `outputs.save_image_atomic`（P28 修 `mkdir`/`stat` 的报错包装与 `-o <dir>` 的早失败，P8 加 ICC 穿透与唯一 loader）；先落 P28 可避免 P8 在同一函数上二次返工，也避免 P8 的新用例钉在一个待改的报错形态上。
 
 ---
 
@@ -123,6 +144,13 @@
 
 **批次 D 的分批与开工裁定（2026-09-29）**：用户裁定批次 D **拆三个子批顺序推进**：D1=G1（**已落地**，`22ce170`+`fbeed66`）→ D2=G2 + G5/G6 → D3=P15 + P19。上表中与 D 相关的五条**已按 §3 建议项裁定**，自本条起不再属「待定」：① G2 许可与版权行 = MIT 正文 + `Copyright (c) 2026 INORI-LIN`（邮箱只留 pyproject 作者字段）；② SD VAE 继续随包再分发，notices 钉死 configured repo + `--check` 门，**AGENTS.md 本次不改**（仅 G5 第 8 步若采纳 `.github/` 排除集变更时同步 §十一 一句）；③ G5 接受「项目外隔离 venv 跑 smoke」，macOS leg **每 PR 跑**（仓库 public）；④ P19 线索路径改**独立退码 3**，同步 README 退出码表与 `docker.yml` 断言；⑤ P15 用 `use_safetensors=True` **硬失败**，`revision` 待 spike 出结论后下载/加载两侧钉同一版。上表其余五行（P8/G4 的 ICC、非 JPEG 输出、G4 的 HEIC/上限、P5/P6 契约、P8 的损坏 EXIF）**仍在待定之列**，随各自批次开工前确认。
 
+**三次审计的裁定（2026-09-29，落档同批，用户逐条采纳推荐项）**：
+
+① **新 ID 与批次重订**：采纳 §10.1 的 12 个新 ID（`P27–P32` / `G8–G11` / `DOC1–DOC2`）与 §10.4 的重切结果（新批 `H/I/J/K/L/M/O`，原批 F 扩为 `F′`）；**原批 E 作废**。理由：新发现里发布链两条高危（G9/G10）成本低而危害高，必须提前；旧批 E 的四个 ID 与 P20 按文件族重切，避免同一文件被两批改两遍。
+② **`verify --expected-payload` 的退码口径**：**整图找不到信封 → 1**（与另两条 verify 路径一致，符合 §4.3「1 = 未取回任何东西」），**找到信封但 CRC 不符 / payload 不符 → 2**。由 P27 落地，README 退出码表同步拆写并加用例钉住。这是 P19 之后第二次退出码口径变更；P24 在 README 上登记的「`--expected-payload` 不符 → 2」属**细分未拆**，非数值冲突，被本条取代。
+③ **P31 口径**：空载荷在 `embed`/`pack_payload` 一律抛 `ValueError`（不再 `ZeroDivisionError`，不再产出 `envelope_lengths` 永不可发现的 13 字符信封）；`embed`/`extract`/`extract_envelope` 增加「3 维且 3 通道」校验，把 `cv2.error` 纳入 `ValueError`→exit 2 映射；`extract_envelope` 接入 P14 的 `_require_capacity`（**P14 残留收口**）。`_dwt_dct_svd.decode_bits` 的 `ZeroDivisionError` 属上游逐字契约（其 docstring 已声明），**不动**。
+④ **仍待定**（随各自批次开工前集中确认）：批 L 的 ICC 归属 / 损坏 EXIF 语义 / HEIC 与像素上限；批 O 的非 JPEG 输出策略；批 M 的 P5/P6 契约与阈值；批 J 的发布者归属与 wheel 安装策略（本轮落档时只登记待定，不预先裁定）；批 N 的 ε 语义与慢档判据。
+
 ---
 
 ## 4 全局约定
@@ -130,6 +158,7 @@
 1. **uv 规范（AGENTS.md 六）**：禁止任何直接调用 pip 的安装形式（含 `pip3`、`python -m pip`）；依赖只写进 `pyproject.toml`，由 uv 生成并提交 `uv.lock`，仓库不得出现 `requirements.txt`；运行一律 `uv run`，新机器一律 `uv sync --frozen`。`tests/test_compliance.py` 与 CI 的 grep 门（注意排除 `.github`）把这条机械化；新增文档时不得把被禁字面量（pip + 空格 + install）抄进仓库——本文件正因此不写出该字面量。
 2. **推进顺序与 `--layers` 语义**：处理顺序固定为 resize → invisible → perturb → visible → JPEG，任何条目都不得调换；`--layers` 只控制成员（哪些层参与），不改变顺序、不改变数量语义、不新增层。AGENTS.md 只读——冲突一律在条目「开放问题」里标注并由用户裁定。
 3. **退出码契约**：0 = 成功（含 `verify` 取回**证据**：信封命中或盲检发现）；1 = 未取回任何东西（verify 无 payload）；2 = 参数或运行期错误；**3 = 只取回旧版线索（`--payload-bytes` 路径，无校验和，P19 起）**。所有新增的 `ValueError`/`OSError`/`RuntimeError` 必须经 `cli.py:132-137` 落到 2；新增一类 exit 2（如损坏 EXIF、不支持的输出扩展名）时须有测试钉住，`cli.py:135` 会掩盖。3 只出现在旧版线索路径，不得被其它分支复用。
+   - **P27 起的口径（2026-09-29 三次审计裁定）**：`verify --expected-payload` 的「整图找不到信封」归 **1**（与 `--payload-bytes`、盲检两条路径一致，即 1 统一为「三条 verify 路径共同的『未取回』」）；「信封在但 CRC 不符 / payload 不符」保持 **2**（取回了但校验不通过）。`cli.py:132-137`/`cli.py:135` 为 P3 时代的坐标，现对应 `cli.py:180`/`cli.py:183`。
 4. **断言强度纪律**：对既有用例只允许「加强」或「等价」两种改动（等价须逐字节/逐值相等，如半损坏 0→非 0 属加强、`n=1..66` 逐字节相等属等价）；放宽一律不允许。任何「把红改成绿」的诱因都改由 spike 或产品决策处理，不得改断言、不得加容差、不得缩语料。
 
 ---
@@ -1967,3 +1996,110 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   1. Dockerfile 的目录 COPY 语义：`COPY … licenses/ /app/` 只复制目录**内容**、没建出 `/app/licenses/`（CI 报错从 `glob LICENSE` 变成 `glob licenses/*.txt`）→ 拆成 `COPY LICENSE THIRD_PARTY_NOTICES.md /app/` + `COPY licenses/ /app/licenses/`。
   2. Windows 的 CLI 编码：`download-models` 的成功消息里那个 `→`（旧代码就有）在 cp1252 下抛 `UnicodeEncodeError`，一次成功运行被报成失败 → 新增 `cli._tolerate_legacy_console()`（仅对非 UTF-8 且支持 `reconfigure` 的流设 `errors="replace"`，UTF-8 流一律不碰），并把该行改成 ASCII `->`。本机以 `PYTHONIOENCODING=cp1252` 实测：`download-models` 退 0；线索路径打印 `???????: ci-test` 且**退码仍为 3**。
   3. release workflow 的 macOS 可执行文件选择（见 §9.6）：显式用 `$APP/Contents/MacOS/desktop_entry`，回退到 `-maxdepth 1` 的浅层搜索；并把「许可材料在包内」的路径断言**移到 smoke test 之前**（纯文件系统检查，smoke 失败时也能看到布局），smoke 失败时 dump `Contents/` 布局。
+
+---
+
+## 10 三次审计（2026-09-29）
+
+> **10.0 本轮口径与实测范围**：锚 `c3e3d2a`（= `origin/main`），工作树干净，审计日 2026-09-29。与 §7 的二次审计同体例但更严：每条标注证据等级 —— **实测**（本机跑出）、**读码**（只读源码/配置得出）、**待复现**（有机制推断、未跑出）。行号为写作时坐标，按内容定位。
+> 本机**未跑**：Windows、`docker build`、tag 推送；相关结论一律标「**待 CI 取证**」，不得当既成事实引用。**不写死用例数**（§十 政策），要取值现场跑 `--collect-only -q`。
+> 本轮**不改** §一–§七 与 AGENTS.md 正文：所有发现按新 ID 登记（AGENTS 的六条失实句归 DOC1，属 §八–§十一 的可同步范围；§十一 的正则句归 G8，因为正确解法是改代码）。
+
+### 10.1 新条目（12 项）
+
+#### P27 — verify 退码口径不一致 + `extract_envelope` 缺容量护栏（med，批 I）
+
+- **现象**（实测）：`verify 干净图.jpg --expected-payload x` 退 **2**，而「什么都没取回」在另两条路径（`--payload-bytes`、盲检）退 **1**；`extract_envelope` 收到超出 `max_stored_bytes(h,w)` 的长度时不早退，先跑完两轮载体的全块扫描再报错。
+- **证据**（读码）：`cli.py:134-138` 无 `NoPayloadError` 分支；`watermark_invisible.py:352-355` 只查 `<= 0`，而 `extract:269`/`extract_legacy:437` 都走 `_require_capacity`；`NoPayloadError`/`IntegrityUncertainError` 均 `ValueError` 子类（`:114,:118`），所以现状统一落 2。
+- **方案**：① `extract_envelope` 的 `<= 0` 换成 `_require_capacity(image_bgr, payload_bytes)`（同文案分支**等价**、超容量分支**加强**；P14 残留收口）；② `cli.py` 的 `--expected-payload` 分支内层捕获 `NoPayloadError` → stderr `no payload recovered: …` + **退 1**；`IntegrityUncertainError` 与 payload 不符**保持 2**。
+- **测试**：`tests/test_cli_exits.py` 新增三例（干净图 → 1；超容量 → 2 且 stderr 含 `capacity`；信封在但 CRC 不符 → 2），三例在旧实现上先红。
+- **验收**：先红后绿；全量 fast 全绿；`README.md:177` 退出码表把「无信封」与「CRC 不符」拆写；§4.3 已加脚注。
+
+#### P28 — 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口（low-med，批 K）
+
+- **现象**（读码）：`-o` 指向已存在的目录时，`os.replace(temp, dir)` 在**流程末尾**才抛 `IsADirectoryError`（resize + 隐水印，SD 档还要跑完整 PGD）；`save_image_atomic` 开头的 `destination.parent.mkdir(...)` 与 `destination.stat()` 在 `try` **之前**，父路径是文件或权限不足时的 `OSError` 不带 `failed to write <dest>` 前缀，与同函数其它失败路径不一致。
+- **证据**：`cli.py:117` 直接调 `protect`；`outputs.py:67-68` 对比 `try`（`:71`）与包装（`:107-108`）；`tests/test_output_integrity.py` 只钉了临时文件创建点。
+- **方案**：① `protect` 分支解析后立刻 `if args.output.is_dir(): raise ValueError(...)`（早失败、exit 2、不落文件）；② `mkdir`/`stat` 挪进 `try`（`previous_mode` 语义不变）。
+- **测试**：`test_cli_exits.py` 加 `-o <dir>` 例（退 2 + 目录内无新文件 + stderr 有提示）；`test_output_integrity.py` 加「父路径是文件」「父目录不可写」两例，断言错误串含 `failed to write`。
+- **验收**：先红后绿；fast 全绿。**硬定序：P28 先于 P8**（同改 `save_image_atomic`）。
+
+#### P29 — GUI 三处纪律缺口（med，批 K；注入路径待复现）
+
+- **现象**（读码 / 待复现）：① `export_csv` 在主线程槽里裸 `open()`，`OSError` 无人接（按 P25 的结论，PySide6 对未捕获槽异常会终止进程）；② 活动 output_dir 输入框的值不与设置层的「非空 + 绝对路径」校验对齐，手打相对路径会让产物落到进程 CWD；③ 设置层只强转数字键、`mode` 取任意字符串，而 `validate_options` 不校验 `visible_mode`，非法模式要深入 `watermark_visible.apply("")` 才暴露。**③ 的到达路径待复现**（见 §10.3），批内先跑离屏复现脚本再定改法。
+- **证据**：`gui.py:429-434`（导出）、`:443-445`（活动目录）、`gui_logic.load_settings`（数字键强转，无模式集合）、`pipeline.validate_options:60-77`（无 `visible_mode`）。
+- **方案**：① 导出包 `try/except OSError` → 走既有 `_error` 通道；② 目录校验抽一处供设置层与活动框共用；③ 设置层加 `{subject,tile,center}` 白名单回落，`validate_options` 补第二道同集合校验。
+- **测试**：`test_gui_logic.py` 白名单回落；`test_gui_lifecycle.py` 导出失败不崩溃（monkeypatch 权限/open）；离屏复现脚本结论写回本条。
+- **验收**：`-m gui -q` 全过、0 skip；fast 全绿。
+
+#### P30 — `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突（low，批 K）
+
+- **现象**（读码）：`ProtectOptions(perturber="noop", perturber_instance=<实例>, layers={perturb})` 被 `validate_options` 拒绝，但 `protect` 会优先用实例、根本不会用到 `noop` 工厂。
+- **证据**：`pipeline.py:76-77` 对比 `:102`（`opts.perturber_instance or perturb.get(...)`）。
+- **方案**：校验改为「仅当 `perturber_instance is None` 且 `perturber == "noop"` 时拒绝」。
+- **测试**：新例用记录调用的假 `Perturber` 证明实例路径可跑通；「不带实例的 `noop` 仍拒」既有断言不动（等价）。
+- **验收**：fast 全绿。
+
+#### P31 — 层① 入口校验：空载荷 / ndim / 通道（med，批 I）
+
+- **现象**（读码）：① `pack_payload("")` 返回 13 字符 `PG1:00000000:`，而 `envelope_lengths` 从 17 起（非空载荷的最小值）→ 该信封**结构上不可发现**；② `embed(bgr, "")` 构造 `wmLen=0`，在 `_dwt_dct_svd.py:149` 的 `num % self._wmLen` 抛 `ZeroDivisionError`（非 `ValueError`，接不上 exit 2 映射）；③ 三个入口都不校验数组形状，2 维灰度或 4 通道输入抛 `cv2.error`（同样不是 `ValueError`）。
+- **证据**：`watermark_invisible.py:281-285`（pack）、`:307-314`（梯子）、`:243-255`（embed）、`:352-355`（extract_envelope）；`_dwt_dct_svd.py:149/:112`；映射 `cli.py:180-185`。
+- **方案**：① `pack_payload` 空载荷 → `ValueError("payload must not be empty")`；② `embed` 同样拒绝空载荷，且**排在既有 256² 面积门与 `_require_method` 之后**（保持既有错误优先级）；③ `embed`/`extract`/`extract_envelope` 追加「`ndim == 3` 且 `shape[2] == 3`」校验，**追加在既有门之后**，抛 `ValueError`；④ 容量护栏归 P27（同一处改动不重复）。
+- **测试**：空载荷两例（`embed`/`pack_payload`）、2 维、4 通道、超容量（P27 已列）、「1 字节载荷仍可发现」的等价例（`envelope_lengths(64)` 的 17/+4 阶梯不变）。
+- **验收**：先红后绿；fast 全绿；`_dwt_dct_svd.decode_bits` 的上游 `ZeroDivisionError` 契约**不动**（其 docstring 已声明）。
+
+#### P32 — 死符号与冗余 handler 收口（low，批 I）
+
+- **证据**（读码）：`resources.model_dir:21-22` 全仓零调用方（`download.py:42` 走 `config.PHOTOGUARD_MODELS_DIR`）；`cli.py:180` 的 `InterruptedError` 是 `OSError` 子类、与同元组重复；`cli.py:186` 末尾 `return 2` 因 `subparsers(required=True)` 当前不可达；`pipeline.verify:139-141` 只被 `tests/test_pipeline_order.py`、`tests/test_pipeline_layers.py` 调用（**测试专用，保留**）。
+- **方案**：删 `resources.model_dir`（落地前再 `grep -rn` 复核）；去掉 `InterruptedError`（语义等价）；末尾 `return 2` 保留并加注释（新子命令漏接时的防御网）；`pipeline.verify` docstring 标注「测试专用薄封装」。
+- **测试**：无新用例；fast 全绿即验收。零覆盖面留 G7。
+
+#### G8 — 许可与合规门四处（med，批 J）
+
+- **现象**（读码）：① 仓内 vendored 的 `_dwt_dct_svd.py`（invisible-watermark 0.2.0，MIT）在 `THIRD_PARTY_NOTICES.md` 无记载，而 `generate_notices.py` 只枚举已安装发行版 → **结构上不可能**自动收录仓内文件；② `opencv-python-headless` 记作纯 Apache-2.0，而 wheel 随附组件含 LGPL-2.1（证据：`cv2/LICENSE-3RD-PARTY.txt` 明列 FFmpeg 等）；③ notices 只有 `Darwin / arm64` 与 `Windows / AMD64` 两段，镜像却随包携带该文件，`docker.yml` 从不跑 `--check` → Linux 段永无门禁；④ `tests/test_compliance.py:20,46` 用单空格字面量，`ci.yml:36` 用正则 → **文档承诺强于实现**。
+- **方案**：① notices 增手工维护的「仓内转录」条目（上游名称/版本/MIT/来源 URL）+ `test_compliance.py` 一条锁；② opencv 段补 LGPL-2.1 说明与对应文本（新增 `licenses/LGPL-2.1.txt` 或随附 `cv2/LICENSE-3RD-PARTY.txt`，二选一在批 J 开工时定）；③ `docker.yml` 加 `generate_notices.py --check` 步，Linux 段用 §9.5 的失败信息解析法 bootstrap（**待 CI 取证**）；④ 合规门改 `re.search(r"pip\s+install", line)`，AGENTS §十一 那句同步改为由两门保证。
+- **验收**：本机可验 ①②④ 与 macOS 段的 `--check`；③ 待 CI。
+
+#### G9 — release 三处高危（**high**，批 J）
+
+- **现象**（读码）：① `.github/workflows/release-desktop.yml` 的 Windows 校验文件用 `Get-FileHash … | Format-Table | Out-File`，`Out-File` 默认 UTF-16LE+BOM、内容是带表头的列宽表格 → `sha256sum -c`/`shasum -c` 均不可解析，却随 `gh release upload release/*` 一起发布；② windows 与 macos 两个 job 只 `needs: verify`，并发跑 `gh release view || gh release create` → 败者 HTTP 422 `already_exists`，在 `bash -e` 下变红；③ tag 发布链的 `verify` 只 sync `--group dev`，GUI 用例经 `importorskip` 静默跳过 → **未跑 GUI 档也能发版**（唯一的 GUI 档在 `ci.yml`，它不在 tag 上跑）。
+- **方案**：① 改 `… | ForEach-Object { "$($_.Hash.ToLower())  $($_.Name)" } | Set-Content -Encoding ascii release\SHA256SUMS.txt`（与 macOS 侧 `shasum -a 256` 同格式）；② 发布动作收敛到单一 job（`needs: [windows, macos-arm64]`）或给 create 加幂等处理，取哪条在批 J 开工时定（推荐单一发布 job）；③ release 链补装 desktop extra 的 `-m gui` 步骤并挂进 `needs` 链。
+- **验收**：本机只能静态验证（PyYAML + 逐行复读）；三条结论**待 CI/Windows/tag 取证**（Windows 校验文件格式与路径、发布竞态、tag 链 GUI 门）。
+
+#### G10 — `smoke_wheel.sh` 假绿：wheel 从未被安装/导入（med，批 J）
+
+- **现象**（读码）：`packaging/smoke_wheel.sh` 第 2 步只 grep 所建 wheel 的 `namelist()`；第 3 步从 sdist 再建 wheel 后不再使用；第 4 步 `uv sync --frozen --no-dev --no-editable` 装的是**源码树**，`$WHEEL`/`$SDIST` 其后成为死变量 → RECORD 损坏、入口点缺失、`license-files` 未随包的 wheel 都能过冒烟。
+- **方案**：第 4 步改为在临时 venv 内安装**所建 wheel**（用 uv 的 pip 子命令，不出现被禁字面量）并 `import photo_guard`、`photo-guard --help` 退 0、`importlib.metadata` 读 `License-Expression`；sdist 侧同验。
+- **验收**：本机实跑脚本退 0；再加负控（临时副本上破坏 wheel 元数据）确认变红。该脚本被 `ci.yml` 的 wheel 冒烟步调用，改动即抬高 CI 门槛。
+
+#### G11 — CI/仓库硬化六条（low-med，批 F′）
+
+- ① `docker.yml` 的 `jlumbroso/free-disk-space@main` 浮动分支 → 钉发布 tag/SHA（第三方代码带 token 执行）；② `ci.yml`/`docker.yml` 无顶层 `permissions:` → 加 `contents: read`；③ 三个 workflow 无 `concurrency:` → 加 `{group: <workflow>-<ref>, cancel-in-progress: true}`（release 用 `false`）；④ `.dockerignore` 缺 `release/` 与 `docs/`（**`dist/` 已有** —— 更正审计初稿）→ 补齐；⑤ `.gitattributes` 只盖三个许可路径 → 加 `*.sh text eol=lf`、`Dockerfile text eol=lf`（防 Windows 检出把 CRLF 写进脚本/Dockerfile，同 §9.3 事故类）；⑥ `pyproject.toml` 缺 `[project.urls]` → 补 Repository。
+- **验收**：`git check-attr` 验 ⑤、PyYAML 验 ①②③；镜像侧结论待 P22/G8 的 CI 取证。
+
+#### DOC1 — AGENTS.md §八–§十一 与代码脱节六条（med，批 H）
+
+1. `AGENTS.md` §8.6「**torch 目前不在 extra 隔离之内**：它由 core 依赖 `invisible-watermark` 传递引入（core 环境同样会装上 torch）。不要把「重依赖已隔离进 `photoguard` extra」写进任何文档。」→ **G1 后不成立**（实测）：`pyproject.toml` 的 `photoguard` extra 含 `torch`/`huggingface-hub`，`uv.lock` 中 torch 带 `extra == 'photoguard'` marker，`import photo_guard` 后 `sys.modules` 无 torch → 改为如实描述。
+2. §8.6 的 extra 清单缺 `torch`/`huggingface-hub` → 补齐。
+3. §十「（torch 仍会随 `imwatermark` 链被导入，但不走 SD 编码器路径）」→ 同因失效 → 改为「core 环境不含 torch；快速档不加载 diffusers/SD VAE」。
+4. §十「`ci.yml` 跑 ubuntu-latest + windows-latest 矩阵」→ 实为 `test(ubuntu/windows/macos-15)` 三腿 + 独立 `gui` job → 补全。
+5. §九 冒烟口径缺第三步（P15 的「不含 safetensors 的模型目录被拒、rc=2、不落成品」）→ 补为三步。
+6. §8.3 模块表缺 `_dwt_dct_svd.py` 行（仓内逐字转录，仅 cv2/numpy/pywt）；§8.2 仍写 `imwatermark`（现为仓内转录）→ 各补/改一处。
+
+#### DOC2 — README 两条失实（low，批 H）
+
+1. `README.md:179`「且成功路径不回贴原权限位，目标文件的写位会保留」→ **假**：`outputs.py:105-106` 在 `os.replace` 之后回贴 `previous_mode`（`tests/test_output_integrity.py` 已钉只读目标写后仍只读）→ 删掉「不回贴」，改为「成功路径会把原权限位回贴到目标文件」。
+2. `README.md:366`「许可正文与声明属手写件，生成器只读不写」→ **假**：`generate_notices.py:186-187` 会重写 `THIRD_PARTY_NOTICES.md` 的平台段 → 改为「`LICENSE` 与 `licenses/*.txt` 只读；notices 的平台段由生成器重写」。
+
+### 10.2 P1 追加与残留收口
+
+- **P1 追加一条**（不新增 ID）：SD-only 旗标（`--perturber-steps` / `-eps` / `-step-size`）应仅在 `perturb` 层参与时校验 —— `cli.py:104-107` 目前**无条件**校验，`--layers visible --perturber noop --perturber-steps 0` 会退 2（该旗标对本次运行无影响）。`--perturber-eps 0` 的静默 no-op（noise 变恒等、sd 的 delta 恒 0 却报成功）属 P1 既有范围。
+- **残留收口四处**：① P14 的「`extract_envelope` 未加护栏」→ 由 P27 收口；② P24 在 README 上登记的退出码说明 → 由 P27 取代（细分未拆，非数值冲突）；③ 原批 E 作废 → 重切 K/L/M/O；④ 批 D 的「待推送才可验」清单（§9.7）不变。
+
+### 10.3 待复现与非既成事实
+
+1. **GUI 非法 `visible_mode` 的到达路径待复现**：机制推断为「设置层取任意字符串 + `validate_options` 不查该字段」，但 `QComboBox.setCurrentText` 对非 editable 组合框遇未知文本的实际行为未实测（可能静默忽略，使 `currentText()` 保留旧值或变空串，两条后果不同）。P29 落地前先跑离屏复现脚本，结论写回本条。
+2. **`.dockerignore` 更正**：已含 `dist/`，只缺 `release/`、`docs/`（审计初稿的「缺 dist」有误）。
+
+### 10.4 批次重订
+
+§2 的批次表已就地重订：**原批 E 作废**，其四项与 P20 按文件族重切为 **K**（P28→P29→P30，P28 先于 P8）、**L**（P8→G4）、**M**（P4→P6→P5）、**O**（P7、P20）；新增 **H**（DOC1/DOC2）、**I**（P27→P31→P32，本轮执行）、**J**（G9→G10→G8，因发布链危害高而提前）；原批 F 扩为 **F′**（纳入 G11）。硬定序增至五条（新增：**P28 先于 P8**）。各批开工前的待定项清单见 §3 裁定段 ④。
