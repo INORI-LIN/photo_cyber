@@ -35,8 +35,8 @@
 | P18 | `gpu_bench.py` 首次调用即崩、产物写进 CWD、docstring 不实 | med | S | B | （重叠：P6）基线配置非法、临时目录与清理不健壮；修配置与 `finally`（P6 落地则改为删除）。 | [x] 批次 B 已落地（`d5fe104`） |
 | P17 | 空心测试：`test_photoguard_shape` 自证算术、`test_legacy_strictness` 常量自证 | med | S | C | （重叠：P2）用例抄实现自证、从不 import 被测逻辑；改为调用真实函数或行为断言。 | [x] 批次 C 已落地（`1162ac9`） |
 | P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [x] 批次 C 已落地（`af97a09`+`aadf27d`） |
-| P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [ ] 未开始 |
-| P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [ ] 未开始 |
+| P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [x] 批次 D3 已落地（2026-09-29）；spike 先出结论后改码 |
+| P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [x] 批次 D3 已落地（2026-09-29）：改独立退码 3 |
 | P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
 | P22 | Dockerfile 无 USER/HEALTHCHECK、base/uv/apt tag 浮动 | low | S | F | 默认 root 运行、镜像 tag 未钉；补非 root 与健康探针、固定 tag。 | [ ] 未开始 |
 | P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [ ] 未开始 |
@@ -59,7 +59,7 @@
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
-| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1 已落地（`22ce170`+`fbeed66`+`a155b97`）；D2=G2+G5/G6 已落地（`ecdb59d`，验收见 §6 G2、§6 G5 与 §7 G6 的落地记录）；D3=P15+P19 待开工。** |
+| D | G1、G5、G2（G6 并入 G5）、P15、P19（后两条须先按 §3 裁定） | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`photo-guard --help` 退 0；`photo-guard-gui --help` 在有限时间内退 0；`uv lock --check` 绿；release 的 verify 变红时两个构建 job 未启动；P15 的 spike 先出结论再改码。**批次 D 拆分推进（2026-09-29 用户裁定）：D1=G1（`22ce170`+`fbeed66`+`a155b97`）、D2=G2+G5/G6（`ecdb59d`+`1c7ebca`）、D3=P15+P19 三项全部落地；本行收口，仅剩「推送后由 CI 验」的条目（G5 的 A3/A4/A5/A6、G2 的两平台 smoke）与 D2 拆出后另行排期的 4 项：P1、P8、P4、P9 代码面。** |
 | E | P6→P5、G4、P7、P20 | `uv run --no-sync pytest -m 'not slow' -q` 全绿；P20 按 §7 的 spike 先确认语义，随后用例钉住「写已落盘但 `chmod` 抛 `OSError`」仍退 0 且内容完整；P6 的 bench 门槛见批 5。 |
 | F | P22、P23、G7 | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本轮未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
 
@@ -102,7 +102,7 @@
 - [ ] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。
 - [x] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。 → **已裁定（2026-09-28，批次 B 开工前）：改 2**；护栏只落在 `extract` 与 `extract_legacy`，`extract_envelope`（`--expected-payload` 路径）未动——加它会把该路径从 exit 1 变 2，属另一项契约变更，登记为同类残留。
 
-**本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（唯一的退出码映射变更）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
+**本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（当时唯一的退出码映射变更；**P19 之后该措辞作废**：线索路径由 0 改 3，见 §4.3 与 §7 P19）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
 
 **待定登记（2026-09-28）**：用户指示「剩下的先待定」。以下条目**保持未裁定**，各自随所影响批次开工前集中确认，不在此前落地（列主题而非行号，避免行号漂移）：
 
@@ -129,7 +129,7 @@
 
 1. **uv 规范（AGENTS.md 六）**：禁止任何直接调用 pip 的安装形式（含 `pip3`、`python -m pip`）；依赖只写进 `pyproject.toml`，由 uv 生成并提交 `uv.lock`，仓库不得出现 `requirements.txt`；运行一律 `uv run`，新机器一律 `uv sync --frozen`。`tests/test_compliance.py` 与 CI 的 grep 门（注意排除 `.github`）把这条机械化；新增文档时不得把被禁字面量（pip + 空格 + install）抄进仓库——本文件正因此不写出该字面量。
 2. **推进顺序与 `--layers` 语义**：处理顺序固定为 resize → invisible → perturb → visible → JPEG，任何条目都不得调换；`--layers` 只控制成员（哪些层参与），不改变顺序、不改变数量语义、不新增层。AGENTS.md 只读——冲突一律在条目「开放问题」里标注并由用户裁定。
-3. **退出码契约**：0 = 成功；1 = 未取回旧版 payload（verify 无 payload）；2 = 参数或运行期错误。所有新增的 `ValueError`/`OSError`/`RuntimeError` 必须经 `cli.py:132-137` 落到 2；新增一类 exit 2（如损坏 EXIF、不支持的输出扩展名）时须有测试钉住，`cli.py:135` 会掩盖。
+3. **退出码契约**：0 = 成功（含 `verify` 取回**证据**：信封命中或盲检发现）；1 = 未取回任何东西（verify 无 payload）；2 = 参数或运行期错误；**3 = 只取回旧版线索（`--payload-bytes` 路径，无校验和，P19 起）**。所有新增的 `ValueError`/`OSError`/`RuntimeError` 必须经 `cli.py:132-137` 落到 2；新增一类 exit 2（如损坏 EXIF、不支持的输出扩展名）时须有测试钉住，`cli.py:135` 会掩盖。3 只出现在旧版线索路径，不得被其它分支复用。
 4. **断言强度纪律**：对既有用例只允许「加强」或「等价」两种改动（等价须逐字节/逐值相等，如半损坏 0→非 0 属加强、`n=1..66` 逐字节相等属等价）；放宽一律不允许。任何「把红改成绿」的诱因都改由 spike 或产品决策处理，不得改断言、不得加容差、不得缩语料。
 
 ---
@@ -354,7 +354,7 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 
 - **spike 门槛**：**Spike B 通过** —— 自研 `_block_scores`/`_reconstruct_bytes` 与 `WatermarkDecoder` 在 264/264 例逐字节相等（4 图 × n=1..66，含 643×482 奇数尺寸路径），320×320 单次 12.05 ms（预算 1.0 s），66 候选盲搜 48 ms（逐候选调库需 781 ms，快 16.3×）。**Spike A 未通过**：真实产物 `mean_margin` 仅 0.2567–0.3247（0.40 目标超出该统计量可达范围，其天花板约 0.5020），可打印垃圾达 0.2005–0.5000，两带完全重叠；且存在一个真实产物在**正确长度上解错**（`'laxers-test'`，mm=0.2567、R=154）。结论：**无阈值可分**。
 - **按文档的失败分支落地**：旧版 raw 降为「仅线索」——stdout 输出 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin`（`LegacyExtraction`），`notes` 恒含 `clue, not proof`；新增结构性**反重复规则**（拒绝 K/m 周期，杀掉 `m·N` 家族）；`LEGACY_MIN_MEAN_MARGIN=0.20` 与 `LEGACY_MIN_BLOCKS_PER_BIT=16` 仅作杀垃圾的辅助门（实测能杀非倍数错长、q50、q70、干净纹理、70% 粘贴）。**K=N/2 的不可分辨性未「解决」而是显式披露**（代码注释与本文档都写明）。
-- **决策落实**：`verify` 不带 flag 由「缺参退 2」改为 0/1 盲检（本项唯一的退出码映射变更）；`max_stored_bytes(h, w)` 由 P3 定义（`(((h//4*4)//8) * ((w//4*4)//8)) // 8`；1080×810 → 1704、1200×1600 → 3750、256×256 → 128），P4 只消费。
+- **决策落实**：`verify` 不带 flag 由「缺参退 2」改为 0/1 盲检（本项当时的唯一退出码映射变更；**P19 后的语义修正**：本文及 P3 各处的「线索路径退 0」应读作退 3，历史记录不改写，见 §4.3 与 §7 P19）；`max_stored_bytes(h, w)` 由 P3 定义（`(((h//4*4)//8) * ((w//4*4)//8)) // 8`；1080×810 → 1704、1200×1600 → 3750、256×256 → 128），P4 只消费。
 - **C2 落实**：未新建任何 loader；三个新读图点沿用既有 `Image.open → load() → _pil_rgb_to_bgr` 写法，留给 P8 的 `_load_oriented_rgb` 统一。
 - **文档漏列的连带影响**：stdout 增加「线索（未验证）」前缀后，`.github/workflows/docker.yml:85` 的 `[ "$recovered" = "ci-test" ]` 会失败 —— 已改为断言整行 `线索（未验证）: ci-test`（强度不降，反而更严）。`docker.yml` 因此进入本项触及文件；CLAUDE.md 中同款示例注释已同步。
 - **测试与断言强度**：新增 `tests/test_watermark_discovery.py`（11 例）与 `tests/test_legacy_strictness.py`（21 例），`tests/test_cli_exits.py` 追加 4 例。fast 档收集数 **58 → 94**，全绿（10.9 s）。既有断言**零放宽**：
@@ -1617,13 +1617,33 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 4. `cli.py` 提示文案与 `docs` 同步说明模型来源与信任边界。
 
 **测试与验收**
-- [ ] spike 有结论并回写本节；代码改动晚于结论。
-- [ ] 加载侧：无 safetensors 的目录按 §3 裁定被拒或警告；带 `revision` 的下载路径可复现。
-- 命令：本项需 `uv sync --extra photoguard` + 本地模型环境（本轮未跑，列为待办）；先跑 `uv run --no-sync pytest -m 'not slow' -q` 确认未破坏 fast 档。
+- [x] spike 有结论并回写本节；代码改动晚于结论。—— 本机实测：结论已先落本节（含 `.bin`-only 走 `torch.load` 的插桩证据、拒载消息、revision 取值），随后才改码。
+- [x] 加载侧：无 safetensors 的目录按 §3 裁定被拒或警告；带 `revision` 的下载路径可复现。—— 本机实测：**硬失败**（`use_safetensors=True` → `OSError: Error no file named diffusion_pytorch_model.safetensors found in directory …`）；真实模型目录（含 `.bin` 与 `.safetensors`）经改后的 `_load()` 加载成功（83,653,863 参数），端到端 `protect --perturber sd --perturber-steps 2 --long-edge 384` 退 0 并写出成品；`download-models` 重跑只取 2 个文件（`config.json` + `.safetensors`）并打印钉住的 revision。
+- 命令：本项需 `uv sync --extra photoguard` + 本地模型环境（本轮已跑）；先跑 `uv run --no-sync pytest -m 'not slow' -q` 确认未破坏 fast 档。
+
+**落地记录（2026-09-29，批次 D3，代码与 §7 P19 同一批提交）**
+
+- **加载侧**：`photoguard.py::_SDEncoderAttack._load()` 加 `use_safetensors=True, revision=config.PHOTOGUARD_REVISION`；注释写明「本地目录是信任边界，`--perturber-model` 接受任意路径，加载器不得执行它找到的任何东西」，并说明本地目录下 `revision` 只作意图声明（真正起作用在下载侧）。
+- **下载侧**：`config.PHOTOGUARD_REVISION = "31f26fdeee1355a5c34592e401dd41e45d25a493"` 单一常量；`download_sd_vae()` 新增 `revision` 形参（默认取该常量）并传 `snapshot_download`；**删除 `local_dir_use_symlinks`**（huggingface_hub 1.19 的签名里已无此参数，原调用被 `**kwargs` 吞掉、无效果）；新增 `allow_patterns=("*.json", "*.safetensors")`（可选加强已采纳：repo 的另一半是 335 MB 的 pickle `.bin`，镜像与 bundle 结构上不再包含它）。
+- **文案**：`cli.py` 的 `--perturber-model` help 与 `download-models` 输出（打印 `repo@revision`）、`photoguard.py` 注释、README 的「模型来源与信任边界」段同步；notices 的 SD VAE 行补 revision。
+- **新增测试**（`tests/test_model_pinning.py`，3 例，core 环境可跑、不引真 torch/diffusers/hub——用 stub 模块钉契约）：加载侧 `use_safetensors=True` + `revision` + `local_files_only`、缺目录报 `download-models` 提示、下载侧 `revision`/`repo_id`/`allow_patterns` 且 `local_dir_use_symlinks` 不再出现。`test_compliance.py::test_sd_vae_notice_is_mit_and_pinned_to_the_configured_repo` 追加 revision 断言（**加强**）。
+- **真栈验证（本机）**：高成本路径不再有 `@pytest.mark.slow` 用例（AGENTS.md §十 的「全仓无 slow 标记」保持为真），改为 ①本机手工跑通真加载与真 SD protect（上面两条命令）、②`docker.yml` 新增「目录无 safetensors 即被拒」冒烟（挂载只含 `config.json` 的目录 → 期望非 0、stderr 含 safetensors、且不落成品文件）。
+- **破坏自检**：去掉加载侧 `use_safetensors`、去掉下载侧 `revision`、改掉 notices 的 revision 三处 → 对应用例分别变红。
+- **待 CI/Docker**：`docker.yml` 的拒载冒烟（本机无 Docker）；`download-models` 的可复现性已记「同 revision 只取 2 文件」，两次产物 sha256 对比仍建议在 Docker 构建时留档（本轮未跑 Docker）。
 
 **spike / 裁定与开放问题**
 - spike：真 diffusers + 只放 `.bin` 的加载分支。
 - 裁定：`use_safetensors=True` 是否硬失败、`revision` 钉哪一版 —— 见 §3。
+
+**spike 结论（2026-09-29，批次 D3 开工前先落结论，代码改动晚于此）**
+
+环境：`torch 2.12.1` / `diffusers 0.38.0` / `huggingface_hub 1.19.0`；模型 `stabilityai/sd-vae-ft-mse` 已用 `photo-guard download-models` 下到 `models/sd-vae-ft-mse`（该 repo 同时提供 `diffusion_pytorch_model.bin` 334,707,217 B 与 `diffusion_pytorch_model.safetensors` 334,643,276 B）。
+
+- **假设 1 成立（.bin-only 确实走 pickle）**：把 `config.json` + `diffusion_pytorch_model.bin` 单独复制到临时目录、不传 `use_safetensors`，`AutoencoderKL.from_pretrained(dir, local_files_only=True)` 打出 `Error no file named diffusion_pytorch_model.safetensors found in directory …` 后紧接 **`Defaulting to unsafe serialization. Pass `allow_pickle=False` to raise an error instead.`**，而插桩的 `torch.load` **恰好被调用一次**、参数正是那个 `.bin`（`decoder params = 83,653,863` 证明加载成功）。即：任意本地目录里放一个 `.bin` 就足以让进程执行 pickle。
+- **硬失败可行**：同一 `.bin`-only 目录加 `use_safetensors=True` → `OSError: Error no file named diffusion_pytorch_model.safetensors found in directory …`（响亮、消息自带目录）；完整目录加同一开关 → 正常加载。**只放 `config.json`（无任何权重）也失败于同一条消息**，因此校验不需要真的准备 `.bin` 文件。
+- **`revision` 取值**：`HfApi.model_info` 给出不可变 commit **`31f26fdeee1355a5c34592e401dd41e45d25a493`**（last_modified 2023-06-06，之后未变）。下载与加载两侧钉同一值。
+- **附带发现（回答本节开放点）**：`huggingface_hub 1.19.0` 的 `snapshot_download` **签名里已没有 `local_dir_use_symlinks`**，现有 `download.py` 传的这个参数被 `**kwargs` 吞掉、无任何效果 → 本次直接删除（行为不变，`local_dir` 早已不用软链）。
+- **可选加强的记录**：下载侧可用 `allow_patterns` 只取 `*.json` + `*.safetensors`（repo 的另一半是 `.bin`，335 MB 且是 pickle 载体）。本次采用该加强，Docker 烘焙内容随之变小且**结构上不再包含 `.bin`**；若该 repo 未来只发 `.bin`，下载会取不到可用权重、加载侧随即响亮失败（失败模式可接受）。
 
 ---
 
@@ -1649,12 +1669,17 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 3. 若维持现状：须在 README 显式写明「线索路径退 0 不等于验真通过」，并在 CI 断言里不把该分支当证据。
 
 **测试与验收**
-- [ ] 裁定结论落文档并写进该批 PR 描述（按推荐执行 X）。
-- [ ] 契约变更（若发生）由新用例钉住；未变更则 README 补警示。
-- 命令：`uv run --no-sync pytest tests/test_cli_exits.py -q`（用例名以落地时为准）
+- [x] 裁定结论落文档并写进该批 PR 描述（按推荐执行 X）。—— 用户裁定（2026-09-29，批次 D 开工前）：**采纳独立退出码 3**；已写进 §4.3 退出码契约，并在 §3 的批次 D 裁定段留痕。
+- [x] 契约变更（若发生）由新用例钉住；未变更则 README 补警示。—— 本机实测：`tests/test_cli_exits.py` 两个既有用例的断言 0→3（`test_protect_then_raw_verify_reports_a_clue` 为用例改名，语义随之修正）、新增 `test_legacy_clue_path_exits_three_not_zero`（同一文件上盲检 0 vs 线索 3，并断言 `3 not in (0,1,2)`）；README 退出码表补 `3`；`docker.yml` 的线索断言加 rc 检查。
+- 命令：`uv run --no-sync pytest tests/test_cli_exits.py -q`（用例名以落地时为准）→ 15 passed。
 
-**spike / 裁定与开放问题**
-- 裁定：线索路径是否改独立退出码（如 3）—— 见 §3。
+**落地记录（2026-09-29，批次 D3）**
+
+- **代码**：`cli.py` 的 `--payload-bytes` 分支 `return 0` → `return 3`（stdout「线索（未验证）」与 stderr 的 advisory 两行一字未动，注释改写为「Exit 3 keeps "clue" machine-readably distinct from "verified" (0)」）。
+- **同步面**：README 退出码表补 `3 = 旧版线索路径取回内容但无校验和`；`docker.yml` 的噪声冒烟改为先 `set +e` 捕获 rc、断言 `rc == 3`，**保留**整行字节精确比较与 `od -c` 字节 dump（§九 规则 3）；docs 的 §4.3、§3 批次 1 裁定、§6 P3「决策落实」三处补语义修正注（**历史记录不改写**，只加「P19 后应读作退 3」）。
+- **断言强度**：0→3 属**契约变更（已裁定）**，不是放宽；README 表格与 `docker.yml` 的 rc 断言属加强；GUI 文案（`gui.py` 的「线索（未验证）」）按计划未动。
+- **破坏自检**：把 `return 3` 改回 `return 0` → 三个用例（含新增那例）同时变红。
+- **待 CI/Docker**：`docker.yml` 的 rc 断言与整行比较只能在真镜像里跑（本机以同参数在 /tmp 复跑过同一条输出，见 D2 记录）。
 
 ---
 
