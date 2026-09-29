@@ -56,6 +56,7 @@
 | G11 | CI/仓库硬化六条（tag 钉 / permissions / concurrency / ignore / eol / urls） | low-med | S | F′ | 六处相互独立的基础设施硬化，逐条可验。 | [ ] 未开始（批 F′） |
 | DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [ ] 未开始（批 H；§十一 正则句归 G8） |
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [ ] 未开始（批 H） |
+| P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [ ] 未开始（批 J；证据 §9.9） |
 
 ---
 
@@ -75,7 +76,7 @@
 | ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。** |
-| **J** | G9 → G10 → G8（含 AGENTS §十一 正则句） | 三个 workflow 本地 PyYAML 过一遍；`packaging/smoke_wheel.sh` 实跑（真安装并 import 所建 wheel）；收紧后的合规门全绿；Windows 校验文件、发布竞态、ISCC 一律**待 CI 取证**。 |
+| **J** | G9 → G10 → G8（含 AGENTS §十一 正则句）→ P33（macOS 落点） | 三个 workflow 本地 PyYAML 过一遍；`packaging/smoke_wheel.sh` 实跑（真安装并 import 所建 wheel）；收紧后的合规门全绿；P33 用 monkeypatch 单测钉住两种 bundle 布局；Windows 校验文件、发布竞态、ISCC 与 macOS smoke/DMG 一律**待 CI 取证**（P33 与 G9 合并成**一次** macOS dispatch，省一轮 ≈2.6h）。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
@@ -105,7 +106,7 @@
   | 3 | S1 色度下采样 / S2 WebP 可用性 / S4 打包暴露面 | P6 | P6（batch 5） | S1 反推得 `(2,2,1,1,1,1)`；S2 `features.check('webp')` 为 True 则保留该格；S4 wheel/sdist 不含 `bench/` |
   | 4 | H1 Sobel 在恒定灰度上恰为 0 | P9 | P9（batch 3），进而 P2/P1 的文档步骤 | 输出 `0.0 0.0`；任一非 0 则显式传 `borderType=BORDER_REFLECT_101` 重跑 |
   | 5 | 转录等价 spike A/B/C（旧库 vs `_dwt_dct_svd`） | G1 | G1（batch 4）；决定 P3 的 `'torch' in sys.modules` 断言、P6 的 core-only 分支、G5/G2 的 lock 差异面 | A 每对 `np.array_equal` 为真（≥3 组，含非 ASCII 与非 8 倍数）、B `decode_bits(embed_bits(bits))==bits`、C 精确解出删依赖前产出的 fixture。**已执行 2026-09-28：A/A′/B/C/D/E/F 全绿** —— A 五组 `np.array_equal` 逐对为真（512×512 / 511×507 / 260×330；scales 覆盖 `[72,0,0]`（出货）、`[0,36,0]`（库默认，与 legacy 载体同）、`[0,72,0]`、`[36,36,0]`（双通道）、`[23,0,0]`；含非 ASCII `© 水印` 与 37-bit 非 8 倍数），两侧输出 sha256 逐对相同；A′ 仓库 P11 修复路径（`_CarrierEmbed`）与转录修复变体逐位相等，含出货路径 `wi.embed`；B 逐行字节/位回环为真、库 `WatermarkDecoder` 一致，`wi.extract(wi.embed(…))` 亦真；C 两份 fixture 候选与库均精确解出；D 子进程内候选独立加载时 `torch`/`imwatermark` 均不在 `sys.modules`；E 类区逐字相等（3192 字符）；F 256×256 守卫同型同消息。**2026-09-29：转录稿已搬入 `src/photo_guard/_dwt_dct_svd.py`（`fbeed66`），搬运后 E 复跑仍为真（shipped == oracle == candidate、3192 字符）；`watermark_invisible` 的两处 imwatermark 导入已删，P3/P6 依赖的 core-only 分支自此成立（实测 `import photo_guard` 后 `sys.modules` 无 torch）。** |
-  | 6 | S1 PEP 639 落点 / S2 Nuitka 数据落点 / S3 ISCC `LicenseFile` | G2 | G2（batch 4） | 两处出现 `License-Expression`；licenses/models 落 `Contents/Resources`；ISCC 退 0 且向导页显示正文 |
+  | 6 | S1 PEP 639 落点 / S2 Nuitka 数据落点 / S3 ISCC `LicenseFile` | G2 | G2（batch 4） | 两处出现 `License-Expression`；licenses/models 落 `Contents/Resources`；ISCC 退 0 且向导页显示正文。**2026-09-29 更正：半对** —— models 确落 `Contents/Resources`，但 `--include-data-files` 带进去的 `LICENSE`/`THIRD_PARTY_NOTICES.md` 落在 `Contents/MacOS/`（证据见 §9.9），该假设使 macOS 的 smoke 门恒退 4；已登记为 P33（批 J），修法取「候选根解析」。 |
   | 7 | `uv sync --frozen --group dev` 的 prune 是否移除 desktop extra | G3 | G3（batch 1）的验收与 GUI 手工步骤次序 | `import PySide6` 成功 → 顺序执行；`ModuleNotFoundError` → gui 步骤显式 `--extra desktop`，uv sync 那条排最后 |
   | 8 | ISCC 缺 define / `UV_PROJECT_ENVIRONMENT` 隔离 / tag 闸门 | G5 | G5（batch 4） | 缺 `/D` define 须非零退出；smoke 退 0 且两负控分别红；verify 红时两构建 job 未启动 |
   | 9 | Spike A 1×1 进真 VAE / C 64×64 步进 `max|Δ|` 与 objective / D 镜像内字节可复现 / E SD-cell 门控 / F 手工 docker preflight+慢档 | P1 | P1（batch 3）的第 2/4/5 步与验收第 3 条；E 失败路由 P3/P6 | A 同形 u8；C `max|Δ|<=8` 且 ratio<1；D 两次同 seed 逐位相同；E `verify out_sd.jpg --payload-bytes 7` == `ci-test`；F 四条真 + passed>0 |
@@ -1984,7 +1985,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 1. A3 / A6：ISCC `/D` 与 VersionInfo（Windows job 已能走过 notices `--check`，但下一道门是 `download-models` 的 Windows 编码问题——见 §9.8，修复后待重跑）。
 2. A5：热缓存时长与 `arm64 红则回滚矩阵行`（需两次完整构建；已测得单次 macOS 冷构建 ≈ 2 小时 36 分）。
-3. S2 与 DMG staging（macOS 构建已成功、但 smoke step 因 workflow 的选错可执行文件而失败，see §9.8；材料确已进包，落点待下一轮判定）。
+3. S2 与 DMG staging（**2026-09-29 更新，见 §9.9**：选错可执行文件已由 `3c5ed54` 修掉，第四轮 dispatch 证明失败点已变为**落点分歧**——`LICENSE`/`THIRD_PARTY_NOTICES.md` 在 `Contents/MacOS/`、而 `application_root()` 指向 `Contents/Resources/`，smoke 退 4 → DMG 与 S2 仍跳过；已登记为 P33，归批 J，需与 G9 合并后一次 dispatch 取证）。
 4. A4 的负向分支（需 tag 推送）。
 5. ~~`docker` 重跑~~ —— **已取证，见 §9.8**。
 6. Windows 的 `--smoke-test` / macOS 的 `--smoke-test`（依赖上面 1/3）。
@@ -1996,6 +1997,30 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   1. Dockerfile 的目录 COPY 语义：`COPY … licenses/ /app/` 只复制目录**内容**、没建出 `/app/licenses/`（CI 报错从 `glob LICENSE` 变成 `glob licenses/*.txt`）→ 拆成 `COPY LICENSE THIRD_PARTY_NOTICES.md /app/` + `COPY licenses/ /app/licenses/`。
   2. Windows 的 CLI 编码：`download-models` 的成功消息里那个 `→`（旧代码就有）在 cp1252 下抛 `UnicodeEncodeError`，一次成功运行被报成失败 → 新增 `cli._tolerate_legacy_console()`（仅对非 UTF-8 且支持 `reconfigure` 的流设 `errors="replace"`，UTF-8 流一律不碰），并把该行改成 ASCII `->`。本机以 `PYTHONIOENCODING=cp1252` 实测：`download-models` 退 0；线索路径打印 `???????: ci-test` 且**退码仍为 3**。
   3. release workflow 的 macOS 可执行文件选择（见 §9.6）：显式用 `$APP/Contents/MacOS/desktop_entry`，回退到 `-maxdepth 1` 的浅层搜索；并把「许可材料在包内」的路径断言**移到 smoke test 之前**（纯文件系统检查，smoke 失败时也能看到布局），smoke 失败时 dump `Contents/` 布局。
+
+**9. 第四轮 dispatch（sha `c3e3d2a`，run 36531496752）：macOS 的落点分歧（P33 的证据）**
+
+- 触发：推送批 I 时该 dispatch 仍在跑（批次 D 收口的第四次 dispatch）。`verify` **success**（锁 round-trip + fast + 版本闸门三分支）。
+- **Windows**：`notices --check`、`download-models`、Nuitka 构建、`--smoke-test`、许可材料检查**全部 success**——首次走到 `Build installer`（ISCC）一步 → **A3/A6 的结论取决于该步**（当时仍在跑）。
+- **macOS**：`Licence material is inside the app bundle` **success**（该步是**递归** `find`，只判「在不在包内」，判不出落点），随后的 `Smoke test app bundle` **failure**，`create_dmg.sh`、DMG staging、checksums 全部 **skipped** → **S2 仍未取证**。
+- 失败文本（关键两行）：
+  ```
+  running: dist/desktop_entry.app/Contents/MacOS/desktop_entry
+  licence material missing from the bundle: …/dist/desktop_entry.app/Contents/Resources/LICENSE
+  ```
+  （注意第一行：`3c5ed54` 的「选对可执行文件」修法**已生效**，所以这不再是上次那个失败点。）
+- 落点判定（由同 job 的 `ls -la "$APP/Contents"` 与两处 `find` 输出得出）：
+
+  | 内容 | 实际落点 | 由谁带进去 |
+  |---|---|---|
+  | `LICENSE`、`THIRD_PARTY_NOTICES.md` | `Contents/MacOS/`（紧挨可执行文件） | `--include-data-files=…=LICENSE` |
+  | `models/sd-vae-ft-mse/`（及 `licenses/`） | `Contents/Resources/` | `--include-data-dir=…` |
+  | `application_root()` 的 darwin 冻结分支 | `Contents/Resources/` | `src/photo_guard/resources.py` |
+
+  佐证：`Contents/Resources/` 非空，且**模型检查先于许可检查**（smoke 退 **4** 而非 2）。
+- **更正**：§3 spike 表第 6 行的「licenses/models 落 `Contents/Resources`」**只对了一半** —— `--include-data-files` 的产物落 `Contents/MacOS`。
+- **对照**：Windows 腿同一套代码与参数**通过**（扁平布局，`application_root()` = `dist/desktop_entry.dist`）→ 这是**布局假设**问题，不是 G2 的落包问题。
+- **处置**（2026-09-29 用户裁定）：登记为 **P33**（high，批 J），修法取**候选根解析**（bundle 内同时接受 `Contents/Resources` 与 `Contents/MacOS`，licence 与 model 各自解析），与 G9 合并成**一次** dispatch 验证。
 
 ---
 
@@ -2096,6 +2121,18 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 1. `README.md:179`「且成功路径不回贴原权限位，目标文件的写位会保留」→ **假**：`outputs.py:105-106` 在 `os.replace` 之后回贴 `previous_mode`（`tests/test_output_integrity.py` 已钉只读目标写后仍只读）→ 删掉「不回贴」，改为「成功路径会把原权限位回贴到目标文件」。
 2. `README.md:366`「许可正文与声明属手写件，生成器只读不写」→ **假**：`generate_notices.py:186-187` 会重写 `THIRD_PARTY_NOTICES.md` 的平台段 → 改为「`LICENSE` 与 `licenses/*.txt` 只读；notices 的平台段由生成器重写」。
 
+#### P33 — macOS bundle 许可材料落点与 `application_root()` 不一致（**high**，批 J）
+
+> **来源**：2026-09-29 推送批 I 之后，仍在跑的 `release-desktop`（run `36531496752`，sha `c3e3d2a`）macOS 腿的取证。证据等级：**实测（CI 日志）**，完整记录见 §9.9。本项不在 §10.0 的审计范围内，是推送后的迟到发现。
+
+- **现象**（实测）：macOS 腿的 `Smoke test app bundle` 失败 —— `running: …/Contents/MacOS/desktop_entry` 之后紧跟 `licence material missing from the bundle: …/Contents/Resources/LICENSE`，smoke 退 **4**；`create_dmg.sh`、DMG staging、checksums 全被 skip。
+- **根因**（读码 + 实测）：Nuitka 的 macOS app bundle 对两类数据的落点不同 —— `--include-data-dir` 的产物落 `Contents/Resources/`，而 `--include-data-files` 的产物落 `Contents/MacOS/`（紧挨可执行文件）；`resources.application_root()` 的 darwin 冻结分支只认 `Contents/Resources/`，于是 `LICENSE`/`THIRD_PARTY_NOTICES.md` 永远查不到。
+- **为什么之前没发现**：workflow 的「Licence material is inside the app bundle」用**递归** `find`，只判「在不在包内」（这一步是 success），落点分歧要等 smoke 才暴露；且 §3 spike 表第 6 行记的落点是错的（见该行 2026-09-29 更正）。
+- **对照**：Windows 腿同一逻辑通过（扁平布局，`application_root()` = `dist/desktop_entry.dist`）→ 属**布局假设**缺陷，非 G2 的落包缺陷；G2 的两处成功项（材料进包、Windows 可读）**不受影响、不回退**。
+- **方案**（2026-09-29 用户裁定：候选根解析）：`resources` 增加 bundle 内的候选根解析 —— 同时接受 `Contents/Resources/` 与 `Contents/MacOS/`，**licence 与 model 各自解析**（避免两处落点不同时互相拖累），不修改 Nuitka 参数语义、不赌 `dest` 的相对基准。
+- **测试**：与 G7 的 `tests/test_resources.py` 合并落地 —— ① 两种完整布局各命中；② 混合布局（材料只在 `MacOS`、models 只在 `Resources`）下两个查找各自命中；③ 材料缺失时 `desktop_entry --smoke-test` 仍退 4（G2 的响亮失败不得被解析逻辑吞掉）。本机用 monkeypatch（`sys.frozen`/`sys.executable`/`sys.platform` + 假目录树）即可钉住，无需 macOS。
+- **验收**：macOS dispatch 的 smoke 退 0、`create_dmg.sh` 与 DMG staging 不再 skipped（**待 CI 取证**，与 G9 合并成一次 dispatch）；缺材料负控仍退 4。Windows 腿的既有 green 不得变红。
+
 ### 10.2 P1 追加与残留收口
 
 - **P1 追加一条**（不新增 ID）：SD-only 旗标（`--perturber-steps` / `-eps` / `-step-size`）应仅在 `perturb` 层参与时校验 —— `cli.py:104-107` 目前**无条件**校验，`--layers visible --perturber noop --perturber-steps 0` 会退 2（该旗标对本次运行无影响）。`--perturber-eps 0` 的静默 no-op（noise 变恒等、sd 的 delta 恒 0 却报成功）属 P1 既有范围。
@@ -2105,10 +2142,11 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 1. **GUI 非法 `visible_mode` 的到达路径待复现**：机制推断为「设置层取任意字符串 + `validate_options` 不查该字段」，但 `QComboBox.setCurrentText` 对非 editable 组合框遇未知文本的实际行为未实测（可能静默忽略，使 `currentText()` 保留旧值或变空串，两条后果不同）。P29 落地前先跑离屏复现脚本，结论写回本条。
 2. **`.dockerignore` 更正**：已含 `dist/`，只缺 `release/`、`docs/`（审计初稿的「缺 dist」有误）。
+3. **§3 spike 表第 6 行的落点结论被证伪（半对，2026-09-29）**：`--include-data-files` 带进 bundle 的 `LICENSE`/`THIRD_PARTY_NOTICES.md` 落 `Contents/MacOS`，只有 `--include-data-dir` 的产物落 `Contents/Resources`。证据见 §9.9，处置见 P33；此前一切「材料落 `Contents/Resources`」的推断（含 S2 的验收口径与 macOS 侧的排查方向）都按本条更新。
 
 ### 10.4 批次重订
 
-§2 的批次表已就地重订：**原批 E 作废**，其四项与 P20 按文件族重切为 **K**（P28→P29→P30，P28 先于 P8）、**L**（P8→G4）、**M**（P4→P6→P5）、**O**（P7、P20）；新增 **H**（DOC1/DOC2）、**I**（P27→P31→P32，本轮执行）、**J**（G9→G10→G8，因发布链危害高而提前）；原批 F 扩为 **F′**（纳入 G11）。硬定序增至五条（新增：**P28 先于 P8**）。各批开工前的待定项清单见 §3 裁定段 ④。
+§2 的批次表已就地重订：**原批 E 作废**，其四项与 P20 按文件族重切为 **K**（P28→P29→P30，P28 先于 P8）、**L**（P8→G4）、**M**（P4→P6→P5）、**O**（P7、P20）；新增 **H**（DOC1/DOC2）、**I**（P27→P31→P32，本轮执行；**已完成**）、**J**（G9→G10→G8→P33，因发布链危害高而提前；P33 为推送后新增，见 §9.9）；原批 F 扩为 **F′**（纳入 G11）。硬定序增至五条（新增：**P28 先于 P8**）。各批开工前的待定项清单见 §3 裁定段 ④。
 
 ### 10.5 批 I 落地记录（2026-09-29，`a3fffbd`）
 
