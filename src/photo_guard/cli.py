@@ -133,7 +133,15 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.cmd == "verify":
             if args.expected_payload is not None:
-                result = pipeline.verify_expected(args.suspect, args.expected_payload)
+                try:
+                    result = pipeline.verify_expected(args.suspect, args.expected_payload)
+                except watermark_invisible.NoPayloadError as exc:
+                    # P27: "no envelope anywhere in the image" is the same event as on the
+                    # other two verify branches, so it exits 1. An envelope that *is* found
+                    # but fails its CRC (IntegrityUncertainError) stays exit 2 — it is a
+                    # mismatch, not an absence, and must not be conflated with it.
+                    print(f"no payload recovered: {exc}", file=sys.stderr)
+                    return 1
                 print(result["payload"])
                 return 0
             if args.payload_bytes is not None:
@@ -177,10 +185,13 @@ def main(argv: list[str] | None = None) -> int:
                 "(json + safetensors only)"
             )
             return 0
-    except (OSError, ValueError, RuntimeError, InterruptedError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         print(f"{args.cmd} failed: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
         print(f"{args.cmd} failed: {exc}", file=sys.stderr)
         return 2
+    # Defensive: `subparsers(required=True)` makes this unreachable today, but a future
+    # subcommand added without a branch above should still fail loudly (exit 2) rather than
+    # fall off the end returning None.
     return 2

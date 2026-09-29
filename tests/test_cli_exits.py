@@ -14,6 +14,7 @@ output as a clue, which is why the payload only has to appear in stdout there.
 """
 from __future__ import annotations
 
+import base64
 import sys
 from pathlib import Path
 
@@ -318,6 +319,61 @@ def test_verify_with_an_impossible_payload_bytes_exits_two(tmp_path: Path, capsy
     assert main(["verify", str(src), "--payload-bytes", "100000"]) == 2
     err = capsys.readouterr().err
     assert "capacity" in err and "100000" in err
+
+
+# --- P27: the --expected-payload branch joins the same "nothing recovered" contract ------
+
+
+def test_verify_expected_without_an_envelope_exits_one(tmp_path: Path, capsys) -> None:
+    """P27: "no envelope anywhere in the image" is the *same* event as on the other two
+    verify branches, so it must exit 1 — not 2, which is reserved for parameter errors and
+    for "recovered but the checksum did not hold"."""
+    src = tmp_path / "clean.jpg"
+    Image.new("RGB", (800, 600), (200, 220, 240)).save(src, quality=92)
+
+    assert main(["verify", str(src), "--expected-payload", "owner:alice"]) == 1
+    assert "no payload recovered" in capsys.readouterr().err
+
+
+def test_verify_expected_with_an_impossible_length_exits_two(tmp_path: Path, capsys) -> None:
+    """P27 (P14 residual): an expected payload whose stored length exceeds the image's
+    capacity is a parameter error, refused before any block scan — the same rule
+    ``extract``/``extract_legacy`` already follow."""
+    src = tmp_path / "small.jpg"
+    Image.new("RGB", (300, 300), (200, 220, 240)).save(src, quality=92)
+
+    # 300x300 holds 171 stored bytes; a 200-char payload needs 13 + 4*67 = 281.
+    assert main(["verify", str(src), "--expected-payload", "x" * 200]) == 2
+    err = capsys.readouterr().err
+    assert "capacity" in err
+
+
+def test_verify_expected_with_a_crc_mismatch_stays_exit_two(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """The negative control for P27: an envelope *is* found but its CRC32 fails, so the
+    branch must keep exiting 2 (uncertain, not "nothing recovered"). Without this pin a
+    careless fix could sweep every ``ValueError`` into exit 1."""
+    from photo_guard import watermark_invisible as wi
+
+    src = tmp_path / "clean.jpg"
+    Image.new("RGB", (800, 600), (200, 220, 240)).save(src, quality=92)
+
+    stored = "PG1:deadbeef:" + base64.urlsafe_b64encode(b"owner:alice").decode("ascii")
+    monkeypatch.setattr(wi, "_reconstruct_bytes", lambda scores, nbytes: stored.encode("ascii"))
+
+    assert main(["verify", str(src), "--expected-payload", "owner:alice"]) == 2
+    assert "CRC32 failed" in capsys.readouterr().err
+
+
+def test_verify_expected_with_an_empty_payload_exits_two(tmp_path: Path, capsys) -> None:
+    """P31: an empty *expected* payload is an argument error (2), not the "nothing
+    recovered" case (1) — the two must not be conflated now that both exit paths exist."""
+    src = tmp_path / "clean.jpg"
+    Image.new("RGB", (800, 600), (200, 220, 240)).save(src, quality=92)
+
+    assert main(["verify", str(src), "--expected-payload", ""]) == 2
+    assert "must not be empty" in capsys.readouterr().err
 
 
 def test_protect_with_an_out_of_range_carrier_exits_two(tmp_path: Path, monkeypatch, capsys) -> None:

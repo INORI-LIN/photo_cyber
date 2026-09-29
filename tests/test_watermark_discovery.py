@@ -93,6 +93,18 @@ def test_envelope_lengths_are_the_13_plus_4k_ladder() -> None:
     assert lengths[-1] <= 64
 
 
+def test_the_shortest_envelope_is_still_discoverable(probe_bgr: np.ndarray) -> None:
+    """P31 equivalence pin: refusing the *empty* payload must not disturb the shortest real
+    one. A 1-byte payload stores as exactly the ladder's first rung (17), and it stays
+    discoverable end to end."""
+    stored = wi.pack_payload("x")
+    assert len(stored.encode("utf-8")) == 17
+    assert wi.envelope_lengths(wi.max_stored_bytes(256, 256))[0] == 17
+
+    marked = wi.embed(probe_bgr, stored)
+    assert wi.find_envelope(marked) == ("x", 17)
+
+
 def test_discover_finds_the_envelope_without_the_length(textured_jpg, tmp_path) -> None:
     """The P0 capability: notarise, forget the payload length, still recover it."""
     out = tmp_path / "enveloped.jpg"

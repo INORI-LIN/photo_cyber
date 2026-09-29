@@ -137,7 +137,12 @@ def verify_legacy(suspect_path: Path, payload_bytes: int) -> watermark_invisible
 
 
 def verify(suspect_path: Path, payload_bytes: int) -> str:
-    """Text view of :func:`verify_legacy`; raises ``NoPayloadError`` on garbage."""
+    """Text view of :func:`verify_legacy`; raises ``NoPayloadError`` on garbage.
+
+    Test-only thin wrapper (P32): no production caller — the CLI uses ``verify_legacy`` for
+    the clue path and ``discover_payload``/``verify_expected`` for evidence. Kept because
+    the round-trip tests read the recovered text through it.
+    """
     return verify_legacy(suspect_path, payload_bytes).text
 
 

@@ -184,3 +184,36 @@ def test_embed_keeps_the_library_size_floor() -> None:
     """The library refuses r*c < 256*256; our own embed must keep that guarantee."""
     with pytest.raises(RuntimeError, match="too small"):
         wi.embed(np.zeros((200, 300, 3), dtype=np.uint8), PAYLOAD)
+
+
+# --- P31: the layer-① entry contract ----------------------------------------------------
+
+
+def test_embed_refuses_an_empty_payload() -> None:
+    """P31: ``wmLen == 0`` used to surface as a ``ZeroDivisionError`` from inside the
+    transcribed loop — neither a ``ValueError`` nor a message a caller can act on."""
+    with pytest.raises(ValueError, match="must not be empty"):
+        wi.embed(_detailed(), "")
+
+
+def test_pack_payload_refuses_an_empty_payload() -> None:
+    """P31: the empty envelope (``PG1:00000000:``) is 13 characters, which the 13+4k ladder
+    can never reach — it would be embedded and then be structurally undiscoverable."""
+    with pytest.raises(ValueError, match="must not be empty"):
+        wi.pack_payload("")
+
+
+@pytest.mark.parametrize("bad_shape", [(300, 300), (300, 300, 4)])
+def test_layer_one_readers_refuse_a_non_bgr_array(bad_shape: tuple[int, ...]) -> None:
+    """P31: 2-D grayscale and 4-channel arrays used to die inside cv2 with ``cv2.error``,
+    which the CLI's exit-2 mapping does not catch. Every public entry point must say
+    ``ValueError`` instead. 300x300 keeps the 256x256 floor out of the way."""
+    image = np.zeros(bad_shape, dtype=np.uint8)
+    with pytest.raises(ValueError, match="3-channel BGR"):
+        wi.embed(image, PAYLOAD)
+    with pytest.raises(ValueError, match="3-channel BGR"):
+        wi.extract(image, len(PAYLOAD.encode()))
+    with pytest.raises(ValueError, match="3-channel BGR"):
+        wi.extract_envelope(image, len(wi.pack_payload(PAYLOAD).encode()))
+    with pytest.raises(ValueError, match="3-channel BGR"):
+        wi.find_envelope(image)

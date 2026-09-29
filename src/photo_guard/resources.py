@@ -16,7 +16,3 @@ def application_root() -> Path:
             return executable.parent.parent / "Resources"
         return executable.parent
     return Path(__file__).resolve().parents[2]
-
-
-def model_dir(name: str) -> Path:
-    return application_root() / "models" / name

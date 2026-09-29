@@ -142,6 +142,23 @@ def max_stored_bytes(height: int, width: int) -> int:
     return total_blocks(height, width) // 8
 
 
+def _require_bgr(image_bgr: np.ndarray) -> None:
+    """P31: every layer-① entry point takes a 3-channel BGR array.
+
+    Two failure modes motivated this: a 2-D array dies inside ``cv2.cvtColor``/``cv2.dct``
+    with ``cv2.error`` (which the CLI's exit-2 mapping does not catch, since it handles only
+    ``ValueError``/``OSError``/``RuntimeError``) and a 4-channel array is quietly accepted
+    with its extra channel ignored. Both are refused here instead, as ``ValueError``.
+
+    Called *after* each function's pre-existing gates on purpose: the error precedence the
+    existing tests pin (area → method, capacity → floor → method) stays exactly as measured.
+    """
+    if image_bgr.ndim != 3 or image_bgr.shape[2] != 3:
+        raise ValueError(
+            f"image must be a 3-channel BGR array, got shape {tuple(image_bgr.shape)}"
+        )
+
+
 def _require_capacity(image_bgr: np.ndarray, payload_bytes: int) -> None:
     """Reject a stored length the image can never carry, before any block loop (P14).
 
@@ -245,6 +262,11 @@ def embed(image_bgr: np.ndarray, payload: str) -> np.ndarray:
     if image_bgr.shape[0] * image_bgr.shape[1] < 256 * 256:
         raise RuntimeError("image too small, should be larger than 256x256")
     _require_method()
+    if not payload:
+        # P31: wmLen == 0 used to surface as a ZeroDivisionError from inside the
+        # transcribed loop, and the empty envelope is undiscoverable by construction.
+        raise ValueError("payload must not be empty")
+    _require_bgr(image_bgr)
     bits = list(np.unpackbits(np.frombuffer(payload.encode("utf-8"), dtype=np.uint8)))
     encoder = _CarrierEmbed(
         watermarks=bits,
@@ -270,6 +292,7 @@ def extract(
     if image_bgr.shape[0] * image_bgr.shape[1] < 256 * 256:
         raise RuntimeError("image too small, should be larger than 256x256")
     _require_method()
+    _require_bgr(image_bgr)
     channel, scale = carrier or (config.CARRIER_CHANNEL, config.CARRIER_SCALE)
     bits = _dwt_dct_svd.decode_bits(
         image_bgr, payload_bytes * 8, scales=_scales_for(channel, scale), block=_BLOCK
@@ -279,6 +302,11 @@ def extract(
 
 
 def pack_payload(payload: str) -> str:
+    if not payload:
+        # P31: ``PG1:00000000:`` is 13 characters, and the recoverable ladder starts at 17
+        # (one byte of base64), so an empty payload would embed fine and then be
+        # undiscoverable. Refuse it instead of producing a dead envelope.
+        raise ValueError("payload must not be empty")
     raw = payload.encode("utf-8")
     encoded = base64.urlsafe_b64encode(raw).decode("ascii")
     crc = zlib.crc32(raw) & 0xFFFFFFFF
@@ -327,6 +355,7 @@ def find_envelope(
         max_bytes = config.DEFAULT_MAX_PAYLOAD_BYTES
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
+    _require_bgr(image_bgr)
     height, width = image_bgr.shape[:2]
     ceiling = min(max_bytes, max_stored_bytes(height, width))
     lengths = envelope_lengths(ceiling)
@@ -350,9 +379,14 @@ def find_envelope(
 
 
 def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
-    """Decode an envelope at a known stored length. CRC is the only authority."""
-    if payload_bytes <= 0:
-        raise ValueError("payload_bytes must be positive")
+    """Decode an envelope at a known stored length. CRC is the only authority.
+
+    P27 closed the last gap in P14's rule: an impossible length is a parameter error on
+    every read path, so this one runs the same capacity gate as ``extract``/
+    ``extract_legacy`` instead of scanning every block and then claiming "no envelope".
+    """
+    _require_capacity(image_bgr, payload_bytes)
+    _require_bgr(image_bgr)
     saw_envelope = False
     for channel, scale in carrier_candidates():
         raw = _reconstruct_bytes(
