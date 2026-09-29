@@ -130,14 +130,10 @@ jobs:
       # the same guard that rejects a `.bin`-only directory.
       - name: Smoke test — a model directory without safetensors is refused
         run: |
-          docker run --rm --entrypoint /app/.venv/bin/python \
+          docker run --rm --entrypoint /bin/sh \
               -v "$PWD/fixtures:/work" \
-              photo-guard:ci -c "
-import pathlib, shutil
-dst = pathlib.Path('/work/no-safetensors')
-dst.mkdir(parents=True, exist_ok=True)
-shutil.copy('/app/models/sd-vae-ft-mse/config.json', dst / 'config.json')
-"
+              photo-guard:ci \
+              -c "mkdir -p /work/no-safetensors && cp /app/models/sd-vae-ft-mse/config.json /work/no-safetensors/config.json"
           set +e
           refusal=$(docker run --rm \
               --network none \

@@ -1,0 +1,7 @@
+# Licence material whose exact bytes are asserted: the copyleft texts are pinned by sha256
+# and ship as legal text, so git must not re-encode them on checkout. Without this, a Windows
+# runner with core.autocrlf=true checks them out with CRLF and
+# tests/test_compliance.py::test_copyleft_texts_are_canonical_and_hashes_match fails.
+/LICENSE text eol=lf
+/THIRD_PARTY_NOTICES.md text eol=lf
+/licenses/*.txt text eol=lf

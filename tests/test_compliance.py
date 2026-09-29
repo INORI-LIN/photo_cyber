@@ -90,7 +90,17 @@ def test_license_file_is_complete_mit_text() -> None:
 def test_copyleft_texts_are_canonical_and_hashes_match() -> None:
     for relative, digest in COPYLEFT_TEXTS.items():
         raw = (REPO_ROOT / relative).read_bytes()
-        assert hashlib.sha256(raw).hexdigest() == digest, relative
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual != digest:
+            # Turn the most likely cause (a checkout that rewrote LF to CRLF) into an
+            # actionable message instead of a bare hash mismatch.
+            hint = ""
+            if hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest() == digest:
+                hint = (
+                    " — the file was checked out with CRLF line endings; check that "
+                    ".gitattributes still marks it `text eol=lf`"
+                )
+            raise AssertionError(f"{relative}: sha256 {actual} != {digest}{hint}")
         lines = [line.strip() for line in raw.decode("utf-8").splitlines() if line.strip()]
         assert lines[0] in {
             "GNU GENERAL PUBLIC LICENSE",
