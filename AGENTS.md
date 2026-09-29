@@ -254,5 +254,5 @@ uv run photo-guard protect input.jpg
 - 分支 `main`；remote `origin → https://github.com/INORI-LIN/photo_cyber.git`。
 - 提交信息沿用历史体例：`type(scope): 中文摘要` + 中文正文说明缘由；历史提交带 `Co-Authored-By` 尾注（是否添加按实际协作工具决定）。
 - **未经用户显式确认不得 push**：`git push` 属于影响远端的动作，需先取得同意。
-- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md`、`README.md` 与 `.github/`（它们是规则本身的文档，两道合规门都整体排除它：ci.yml 的 `--exclude-dir=.github` 与 `tests/test_compliance.py` 的 `_EXCLUDE_DIRS`）；新文档与代码不得抄入，否则 grep 门与 `tests/test_compliance.py` 都会红。
+- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md` 与 `README.md`（它们是规则本身的文档，两道合规门都整体排除它们：ci.yml 的 `--exclude` 与 `tests/test_compliance.py` 的 `_EXCLUDE_FILES`）；新文档与代码不得抄入。自 G5 起两道门都用正则 `pip[[:space:]]+install`（可命中多空格写法），且**不再排除 `.github/`**——CI 自身文件也必须不出现该字面量，命中即红。
 - 维护边界：§一–§七 的改动需经用户确认；§八–§十一 随代码同步，改实现时一并更新对应条目。

@@ -255,9 +255,15 @@ src/photo_guard/
 └── download.py              # 唯一联网的模型下载入口
 
 packaging/
-├── build_desktop.py         # Nuitka 分平台构建
-├── windows-installer.iss    # Windows Inno Setup
-└── create_dmg.sh            # macOS DMG
+├── build_desktop.py         # Nuitka 分平台构建（版本只从 pyproject.toml 读）
+├── windows-installer.iss    # Windows Inno Setup（版本由 /DMyAppVersion 注入）
+├── create_dmg.sh            # macOS DMG
+├── smoke_wheel.sh           # sdist/wheel 构建与隔离安装冒烟
+└── generate_notices.py      # 生成/校验 THIRD_PARTY_NOTICES.md 的平台段
+
+LICENSE                      # MIT（Copyright (c) 2026 INORI-LIN）
+THIRD_PARTY_NOTICES.md       # 第三方声明（按平台段生成，含 SD VAE 权重）
+licenses/                    # GPL-3.0 / LGPL-3.0 正文（PySide6/Qt 走 LGPL）
 ```
 
 ## 开发与测试
@@ -303,13 +309,13 @@ uv run photo-guard-gui               # 启动 PySide6 桌面界面
 
 `slow` marker 已在 `pyproject.toml` 注册，但当前仓库没有标记 `slow` 的用例。真实 SD 慢档需要 `uv sync --frozen --extra photoguard` 并用 `uv run photo-guard download-models` 准备本地模型；快速档全绿不等于 SD 路径有效。
 
-提交前跑一遍合规检查（`AGENTS.md` §6.4：检索被禁字面量，命中即判失败）：
+提交前跑一遍合规检查（`AGENTS.md` §6.4：检索被禁字面量，命中即判失败；正则形式可命中多空格写法，`.github/` 不再排除）：
 
 ```bash
-grep -RIn --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
+grep -RInE --exclude-dir=.venv --exclude-dir=.git \
      --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
      --exclude=test_compliance.py \
-     "pip install" .   # 应无输出
+     "pip[[:space:]]+install" .   # 应无输出
 ```
 
 项目依赖必须写入 `pyproject.toml` 并由 `uv.lock` 锁定；禁止新增 `requirements.txt`，所有 Python 命令统一通过 `uv run` 执行。
@@ -321,14 +327,17 @@ grep -RIn --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
 - GitHub Actions 手动运行；
 - 推送 `v*` 版本标签。
 
-Windows 和 macOS 必须在各自 runner 上构建，不能交叉生成。工作流会：
+Windows 和 macOS 必须在各自 runner 上构建，不能交叉生成。工作流先跑一个 `verify` 作业（锁文件 round-trip、fast 档全绿、tag 与 `pyproject.toml` 版本一致），两个构建作业 `needs: verify`：
 
 1. 使用 `uv.lock` 同步完整依赖；
-2. 下载并嵌入 SD VAE；
-3. 使用 Nuitka 生成 standalone 应用；
-4. 执行无 GUI 烟雾测试；
-5. 生成安装包/DMG 和 SHA-256 文件；
-6. 上传 GitHub Actions artifact。
+2. 校验 `THIRD_PARTY_NOTICES.md` 与本机安装环境一致（`packaging/generate_notices.py --check`）；
+3. 下载并嵌入 SD VAE；
+4. 使用 Nuitka 生成 standalone 应用（`LICENSE`、第三方声明与 `licenses/` 一并打包）；
+5. 执行无 GUI 烟雾测试（同时校验许可材料确实在包内）；
+6. 生成安装包/DMG 和 SHA-256 文件；
+7. 上传 GitHub Actions artifact；tag 推送时同时附到 GitHub Release。
+
+**版本号只住在 `pyproject.toml`**：Nuitka 的 file/product/macos-app 版本、Inno Setup 的 `AppVersion`（经 `/DMyAppVersion=` 注入）与发布闸门都从它读。改版本后请跑 `uv lock && git diff --exit-code -- uv.lock`，tag 必须是 `v<版本>`。
 
 本地构建命令仅应在目标平台执行：
 
@@ -337,6 +346,18 @@ uv sync --frozen --extra desktop --extra photoguard --group package
 uv run photo-guard download-models
 uv run python packaging/build_desktop.py
 ```
+
+分发包本身的冒烟（sdist/wheel 构建 + 隔离安装 + 版本比对，POSIX）在仓库根执行 `packaging/smoke_wheel.sh`。
+
+## 许可与第三方声明
+
+本项目以 MIT 许可发布（`LICENSE`，Copyright (c) 2026 INORI-LIN）。随包分发的第三方内容：
+
+- `THIRD_PARTY_NOTICES.md`：按平台段列出依赖及各自许可证，含随包分发的 `stabilityai/sd-vae-ft-mse` 权重（MIT）；
+- `licenses/GPL-3.0.txt`、`licenses/LGPL-3.0.txt`：PySide6/Qt 以 LGPL-3.0 分发，正文随包提供；
+- Docker 镜像、macOS bundle 与 Windows 安装器都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md` 与 `licenses/`。
+
+刷新本平台段：`uv run python packaging/generate_notices.py`（须在装了完整依赖的环境里跑）；发布前用 `--check` 校验——它只比当前平台段，缺失或多出都判失败。许可正文与声明属手写件，生成器只读不写。
 
 ## 已知边界
 

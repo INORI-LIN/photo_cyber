@@ -50,8 +50,9 @@ jobs:
       - name: Generate a synthetic test image
         # Use Pillow inside the just-built image rather than the runner's
         # host Python (free-disk-space wiped the runner's tool cache, so
-        # Pillow may not be present; and we can't `pip install` per AGENTS.md
-        # §6.4). The container already has Pillow from the photoguard extra.
+        # Pillow may not be present; and AGENTS.md §6.4 forbids installing
+        # one directly). The container already has Pillow from the
+        # photoguard extra.
         # Override the entrypoint so we can run python directly against the
         # baked-in venv instead of the photo-guard CLI.
         run: |

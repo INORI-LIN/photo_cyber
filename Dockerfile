@@ -86,6 +86,11 @@ RUN uv run --no-sync python -c "import cv2, numpy, PIL, pywt, torch, diffusers, 
 # /app/models/sd-vae-ft-mse, matching config.PHOTOGUARD_MODEL_ID.
 RUN uv run --no-sync photo-guard download-models
 
+# Licence material travels with the image (G2). Kept as its own layer on purpose: editing a
+# licence text must not invalidate the torch/diffusers layer above, which is the whole reason
+# the two syncs are split.
+COPY LICENSE THIRD_PARTY_NOTICES.md licenses/ /app/
+
 # Lock runtime to offline mode — matches the os.environ.setdefault calls
 # in photoguard.py, but applied unconditionally so users can't accidentally
 # trigger a HuggingFace request from inside the container.

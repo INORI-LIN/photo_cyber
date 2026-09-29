@@ -1,11 +1,19 @@
 #define MyAppName "Photo Guard"
-#define MyAppVersion "0.1.0"
 #define MyAppExeName "PhotoGuard.exe"
+
+; G5: the version comes from pyproject.toml via the release workflow
+; (ISCC.exe /DMyAppVersion=<version> ...). A missing define must fail loudly instead of
+; stamping an empty AppVersion; if this guard is not understood by the local ISPP build,
+; the bare {#MyAppVersion} reference below still aborts the compile.
+#ifndef MyAppVersion
+  #error MyAppVersion is required: pass /DMyAppVersion=<version> to ISCC.exe
+#endif
 
 [Setup]
 AppId={{A0DAED64-1B78-4B63-88CF-94604E7C9CE1}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+LicenseFile=..\LICENSE
 DefaultDirName={autopf}\Photo Guard
 DefaultGroupName=Photo Guard
 OutputDir=..\release

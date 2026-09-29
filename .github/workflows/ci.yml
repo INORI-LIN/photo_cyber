@@ -12,7 +12,8 @@ jobs:
       # results to know whether a regression is OS-specific.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # macos-15 is a release target (see release-desktop.yml), so it runs per PR.
+        os: [ubuntu-latest, windows-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,16 +25,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -e
-          # Match the literal "pip<space>install" anywhere except docs / lock /
-          # the test file that documents the rule itself. Any hit fails CI per
-          # AGENTS.md 6.4: "可在 CI 加一道检查：检索脚本与文档中是否出现
-          # `pip install`，命中即判失败".
-          if grep -RIn \
-                  --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github \
+          # Match the forbidden installer command: "pip", whitespace, "install". The
+          # .github/ directory is scanned like everything else (it used to be excluded,
+          # which left a blind spot); AGENTS.md §11 records the whitelist as AGENTS.md
+          # and README.md only. Any hit fails CI per AGENTS.md 6.4.
+          if grep -RInE \
+                  --exclude-dir=.venv --exclude-dir=.git \
                   --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
                   --exclude=test_compliance.py \
-                  "pip install" .; then
-            echo "::error::pip install reference found — AGENTS.md 6 forbids pip"
+                  "pip[[:space:]]+install" .; then
+            echo "::error::forbidden installer reference found — AGENTS.md 6 forbids it"
             exit 1
           fi
 
@@ -87,3 +88,36 @@ jobs:
 
       - name: Run pytest (fast tier only)
         run: uv run pytest -m 'not slow' -v
+
+      - name: Wheel / sdist smoke (G5)
+        # Linux-only: the script is POSIX bash and the isolation check is about uv, not Qt.
+        if: runner.os == 'Linux'
+        run: packaging/smoke_wheel.sh
+
+  gui:
+    # G6: the GUI tier had no coverage anywhere — `-m gui` skipped silently on every leg
+    # because the core+dev sync does not install PySide6.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.11
+
+      - name: Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1 libegl1 libxkbcommon0 libglib2.0-0 libdbus-1-3
+
+      - name: Sync (frozen, dev + desktop extra)
+        run: uv sync --frozen --group dev --extra desktop
+
+      - name: Run pytest (gui tier, offscreen)
+        run: QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -m gui -q
+
+      - name: GUI entry point answers --help without starting Qt
+        run: timeout 60 uv run --no-sync photo-guard-gui --help

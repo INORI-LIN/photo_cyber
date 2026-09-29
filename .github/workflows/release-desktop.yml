@@ -9,8 +9,38 @@ permissions:
   contents: read
 
 jobs:
+  verify:
+    # G5/G6: nothing is built until the fast tier is green and the tag matches pyproject.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - name: Lock must round-trip through this uv (format + semantics)
+        # `uv lock --check` accepts a previous lock format, so the only reliable guard is a
+        # rewrite-and-diff (a different uv would rewrite the whole file).
+        run: |
+          uv lock --offline
+          git diff --exit-code -- uv.lock
+      - run: uv sync --frozen --group dev
+      - name: Fast test tier
+        run: uv run --no-sync pytest -m 'not slow' -q
+      - name: Tag must match the pyproject version
+        run: |
+          V=$(uv run --no-sync python packaging/build_desktop.py --print-version)
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$V" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject version ${V}"
+            exit 1
+          fi
+          echo "version ${V} accepted for ${GITHUB_REF_NAME:-workflow_dispatch}"
+
   windows:
+    needs: verify
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -18,16 +48,27 @@ jobs:
           enable-cache: true
       - run: uv python install 3.11
       - run: uv sync --frozen --extra photoguard --extra desktop --group package
-      - run: uv run photo-guard download-models
-      - run: uv run python packaging/build_desktop.py
+      - name: Third-party notices must match this environment (G2)
+        run: uv run --no-sync python packaging/generate_notices.py --check
+      - run: uv run --no-sync photo-guard download-models
+      - run: uv run --no-sync python packaging/build_desktop.py
       - name: Smoke test standalone application
         shell: powershell
         run: .\dist\desktop_entry.dist\PhotoGuard.exe --smoke-test
+      - name: Licence material is inside the built tree (G2)
+        shell: powershell
+        run: |
+          foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "GPL-3.0.txt")) {
+            if (-not (Get-ChildItem -Recurse -File "dist\desktop_entry.dist" -Filter $name)) {
+              throw "$name is missing from dist\desktop_entry.dist"
+            }
+          }
       - name: Build installer
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\windows-installer.iss
+          $V = (uv run --no-sync python packaging\build_desktop.py --print-version).Trim()
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$V" packaging\windows-installer.iss
       - name: Checksums
         shell: powershell
         run: Get-FileHash release\* -Algorithm SHA256 | Format-Table | Out-File release\SHA256SUMS.txt
@@ -35,9 +76,21 @@ jobs:
         with:
           name: PhotoGuard-Windows-x64
           path: release/*
+      - name: Attach to the GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" release/* --clobber
 
   macos-arm64:
+    needs: verify
     runs-on: macos-15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -45,16 +98,37 @@ jobs:
           enable-cache: true
       - run: uv python install 3.11
       - run: uv sync --frozen --extra photoguard --extra desktop --group package
-      - run: uv run photo-guard download-models
-      - run: uv run python packaging/build_desktop.py
+      - name: Third-party notices must match this environment (G2)
+        run: uv run --no-sync python packaging/generate_notices.py --check
+      - run: uv run --no-sync photo-guard download-models
+      - run: uv run --no-sync python packaging/build_desktop.py
       - name: Smoke test app bundle
+        # This is also the layout assertion for the licence material: the entry point locates
+        # it through resources.application_root() and returns 4 when it is missing (G2).
         run: |
           APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
           BIN=$(find "$APP/Contents/MacOS" -type f -perm +111 -print -quit)
           "$BIN" --smoke-test
+      - name: Licence material is inside the app bundle (G2)
+        run: |
+          APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
+          for name in LICENSE THIRD_PARTY_NOTICES.md GPL-3.0.txt; do
+            if ! find "$APP" -name "$name" -print -quit | grep -q .; then
+              echo "::error::$name is missing from $APP"
+              exit 1
+            fi
+          done
       - run: packaging/create_dmg.sh
       - run: shasum -a 256 release/* > release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoGuard-macOS-arm64
           path: release/*
+      - name: Attach to the GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" release/* --clobber
