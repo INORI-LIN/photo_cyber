@@ -6,7 +6,7 @@
 > 注（2026-09-28）：CLAUDE.md 已删除，不重复内容并入 AGENTS.md §八–§十一与 README.md。本文所有「文件:行号」引用（含 CLAUDE.md:NN、README.md:NNN）为写作时的历史坐标，行号可能已漂移——按内容（章节/用例名/命令文本）定位，勿按行号；凡步骤写「改 CLAUDE.md:…」者，一律改 AGENTS.md/README.md 对应内容。
 
 > **当前进度（2026-09-29 收尾）**：已落地批次 **1 / A / B / C / D / I**。批 I = `661b7eb`（落档三次审计的 12 项新条目）→ `a3fffbd`（修复 P27/P31/P32）→ `893c1be`（回写）→ `26e11ed`（登记 P33 并更正 S2 落点结论）；**四个提交已全部推送**到 `origin/main`，推送后的 CI 实测见 §9.10。
-> **突发修复（同日，`0bb150e`，未推送）**：`release-desktop` #3 的两处红已定位并修好 —— **G9①+④**（Windows 校验步自我锁死 + 两平台同名校验和互相覆盖）与 **P33**（macOS bundle 候选根解析）；两处都**待一次 dispatch 复验**，见 §9.9 / §10.1。
+> **突发修复（同日，`0bb150e` 修复 + `f23c428` 回写，**已推送**）**：`release-desktop` #3 的两处红已定位并修好 —— **G9①+④**（Windows 校验步自我锁死 + 两平台同名校验和互相覆盖）与 **P33**（macOS bundle 候选根解析）；两处都**待一次 dispatch 复验**，该 dispatch（#4 = `36553114743`）**进行中**，见 §9.9 / §9.10 第 11 小节 / §10.1。
 > **下一步（等下次会话）**：**批 H**（DOC1/DOC2，纯文档同步，成本最低）或 **批 J 的剩余部分**（`G9②③ → G10 → G8`，含 macOS/Win 的一次 dispatch 与 tag 推送取证）。两批的门槛与待定项见 §2 批次表、§3 裁定段 ④ 与 §10；开工前先按 §5 的纪律做一轮 AskUserQuestion。
 > 本次收尾**未动** 批 H / 批 J 的任何代码（`src/`、`tests/`、workflow、AGENTS.md、README.md 均未改）。
 
@@ -2038,6 +2038,16 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 | `release-desktop` #3 | `c3e3d2a` | **failure** | Windows：`Build installer` 成功（`Successful compile (421.140 sec)`）后 `Checksums` 步自我锁死 → exit 1 → `upload-artifact`/`gh release upload` skipped；macOS：`Smoke test app bundle` 退 4 → `create_dmg.sh`/checksums/upload skipped。**两处已由 `0bb150e` 修（G9①④ + P33），待一次 dispatch 复验** |
 
 **计数对账（沿用 §9.1 口径）**：推送时本机 `--collect-only -q` = **230**，CI 三腿 = 215 + 2 skipped = **217**，差额 **13** = 需要 PySide6 的用例在 test 腿**收集期跳过**（该腿不装 desktop extra）——与上一轮（219 vs 206）的差额完全一致，属既有口径、非本批引入。**本轮修复后**本机实测 **243 collected**（见 §10.1 的两条新文件），下一次 dispatch 的逐腿计数届时**现场取值**回写，不写推算值。
+
+**11. 验证 dispatch（G9①④ / P33 的取证，进行中）**
+
+- `release-desktop` **#4 = `36553114743`**（`workflow_dispatch`，sha `f23c428`，2026-09-29 10:03Z 发起）。`verify` 已 **success**；`windows` 与 `macos-arm64` 在跑。
+- **已可确认的一点**：两个平台 job 的步骤名都变成了 `Checksums (SHA256, sha256sum-compatible)` —— 旧名只是 `Checksums` —— 说明**新的 workflow 文本确实被这一轮用上了**（否则无从谈起验证）。
+- **待回写（结论产生后一次补）**：
+  1. Windows：`Checksums` 是否 success；`upload-artifact` 与 `gh release` 步是否不再 skipped；`release/` 里是否出现 `SHA256SUMS-Windows-x64.txt`（sha256sum 兼容格式）。
+  2. macOS：`Smoke test app bundle` 是否退 0；`create_dmg.sh`、`Checksums (macOS)`、`upload-artifact` 是否不再 skipped。
+  3. 同一次 push 触发的 `ci` **#35** 与 `docker` **#34** 的逐腿/冒烟关键行（另有 `docker` #33 因缓存偏冷仍在建，一并记录）。
+- 若仍有红：按 §9.2/§9.3 的既例定位（先判断是否为新独立问题），**不 amend 已推送历史**。
 - **同轮 Windows 腿也红了（另一处，归 G9①）**：`Build installer`（ISCC）成功 —— `Successful compile (421.140 sec). Resulting Setup program filename is: …\release\PhotoGuard-Windows-x64-Setup.exe` —— 但紧随的 `Checksums` 步失败：
   ```
   Get-FileHash release\* -Algorithm SHA256 | Format-Table | Out-File release\SHA256SUMS.txt
@@ -2125,6 +2135,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   - macOS 步同构（在 `release/` 内枚举、`case "$f" in SHA256SUMS*) continue`、引号安全），写 `release/SHA256SUMS-macOS-arm64.txt`；
   - 两个文件名按平台分开，覆盖风险消除。
   **验收**：`tests/test_release_workflow.py` 四条静态 pin 先红后绿；`git diff` 仅 workflow；**真实验证需一次 dispatch（待 CI 取证）**。②（`gh release create` 竞态）与 ③（tag 链 GUI 门）只在 tag 推送时执行，本轮不动、仍留批 J。
+  **验证中（2026-09-29 10:03Z）**：`release-desktop` #4 = `36553114743` 已发起（sha `f23c428`），两平台的步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`（新文本生效的旁证）；Windows 的 `Checksums`/`upload-artifact` 结论待回写，见 §9.10 第 11 小节。
 
 #### G10 — `smoke_wheel.sh` 假绿：wheel 从未被安装/导入（med，批 J）
 
@@ -2164,6 +2175,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验收**：macOS dispatch 的 smoke 退 0、`create_dmg.sh` 与 DMG staging 不再 skipped（**待 CI 取证**，与 G9 合并成一次 dispatch）；缺材料负控仍退 4。Windows 腿的既有 green 不得变红。
 - **2026-09-29 修法落地（待 dispatch 复验）**：`resources.py` 新增 `candidate_roots()`（darwin 冻结态 → `(Contents/Resources, Contents/MacOS)`；`PHOTO_GUARD_RESOURCE_DIR` 覆盖时单根）与 `find_resource(*parts)`（逐根探测、返回首个存在者），`application_root()` 保留为主根；`config.PHOTOGUARD_MODELS_DIR` 改为 `find_resource("models") or application_root()/"models"`（缺失时仍落到不存在的路径，让 G6 的 `is_dir()` 响亮失败）；`packaging/desktop_entry.py` 的许可检查改用 `find_resource` 并把**试过的根**打进失败信息；AGENTS.md §8.3 的 `resources.py` 行同步。
   测试：`tests/test_resources.py` 七例（混合布局 / 全在 Resources / 全在 MacOS / 缺失 → None / 覆盖单根 / 源码树不变 / 候选根顺序）+ `test_desktop_entry.py` 两例（冻结 bundle 的混合布局 → 0；缺材料 → 4 且信息里出现两个候选根）。**先红记录**：`find_resource` 不存在时新用例全部报 `AttributeError`（TDD 起点），落地后 243 passed。
+  **验证中（2026-09-29 10:03Z）**：同一次 `release-desktop` #4 = `36553114743`；macOS 的 `Smoke test app bundle` 退码与 DMG staging 是否不再 skipped 待回写，见 §9.10 第 11 小节。
 
 ### 10.2 P1 追加与残留收口
 
