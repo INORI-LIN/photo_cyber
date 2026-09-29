@@ -2,7 +2,10 @@
 
 Covers the branches in cli.py:
 - protect → 0 on success
-- verify  → 0 when payload recovered (envelope, clue, or blind discovery)
+- verify  → 0 when the payload is recovered as evidence (envelope match, or blind discovery)
+- verify  → 3 when only a checksum-less *clue* is recovered (P19: it used to be 0, which
+  made an unverified guess indistinguishable from a verified hit on the machine-readable
+  channel; the human-readable stdout/stderr wording is unchanged)
 - verify  → 1 when nothing is recoverable ("no payload recovered")
 - verify  → 2 when extraction itself raises (e.g. missing file, bad argument)
 
@@ -25,7 +28,8 @@ def _seed_textured(path: Path) -> None:
     Image.fromarray(arr, "RGB").save(path, quality=92)
 
 
-def test_protect_then_verify_exits_zero(tmp_path: Path, capsys) -> None:
+def test_protect_then_raw_verify_reports_a_clue(tmp_path: Path, capsys) -> None:
+    """protect succeeds (0); verifying the raw payload is a clue, not evidence (3, P19)."""
     src = tmp_path / "in.jpg"
     out = tmp_path / "out.jpg"
     _seed_textured(src)
@@ -37,8 +41,9 @@ def test_protect_then_verify_exits_zero(tmp_path: Path, capsys) -> None:
     captured = capsys.readouterr()
     assert "protected" in captured.out
 
+    # P19: the raw (checksum-less) path reports a clue and exits 3.
     code = main(["verify", str(out), "--payload-bytes", str(len(payload.encode()))])
-    assert code == 0
+    assert code == 3
     captured = capsys.readouterr()
     assert payload in captured.out
 
@@ -212,7 +217,8 @@ def test_verify_without_flags_on_an_unmarked_image_exits_one(tmp_path: Path, cap
 
 
 def test_legacy_verify_labels_its_output_as_a_clue(tmp_path: Path, capsys) -> None:
-    """A checksum-less payload is a clue: stdout says so and stderr carries the metrics."""
+    """A checksum-less payload is a clue: stdout says so, stderr carries the metrics,
+    and the exit code says so too (3 since P19)."""
     src = tmp_path / "in.jpg"
     out = tmp_path / "out.jpg"
     _seed_textured(src)
@@ -222,11 +228,41 @@ def test_legacy_verify_labels_its_output_as_a_clue(tmp_path: Path, capsys) -> No
     capsys.readouterr()
 
     code = main(["verify", str(out), "--payload-bytes", str(len(payload.encode()))])
-    assert code == 0
+    assert code == 3
     captured = capsys.readouterr()
     assert "线索" in captured.out and "未验证" in captured.out
     assert payload in captured.out
     assert "clue, not proof" in captured.err
+
+
+def test_legacy_clue_path_exits_three_not_zero(tmp_path: Path, capsys) -> None:
+    """The same file: blind discovery (evidence) exits 0, the raw clue path exits 3.
+
+    P19's whole point is that a caller can tell the two apart without parsing stdout. The
+    clue is read at the stored envelope's length, so the bytes it recovers really are the
+    envelope text — a recoverable-looking clue that is still not evidence.
+    """
+    from photo_guard import watermark_invisible as wi
+
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    payload = "test#cli"
+    code = main(
+        ["protect", str(src), "-o", str(out), "--payload", payload, "--payload-envelope"]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    assert main(["verify", str(out)]) == 0
+    capsys.readouterr()
+
+    stored = len(wi.pack_payload(payload).encode())
+    clue_code = main(["verify", str(out), "--payload-bytes", str(stored)])
+    assert clue_code == 3
+    assert clue_code not in (0, 1, 2), "the clue path must be machine-readably distinct"
+    assert "线索（未验证）" in capsys.readouterr().out
 
 
 def test_verify_with_a_zero_payload_bytes_exits_two(tmp_path: Path, capsys) -> None:

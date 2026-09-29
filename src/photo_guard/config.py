@@ -53,6 +53,9 @@ from . import resources as _resources
 PHOTOGUARD_MODEL_NAME = "sd-vae-ft-mse"
 PHOTOGUARD_MODELS_DIR = _resources.application_root() / "models"
 PHOTOGUARD_REMOTE_REPO = "stabilityai/sd-vae-ft-mse"
+# P15: the immutable commit the download and the loader both pin to, so the Docker bake and
+# the desktop bundles are reproducible. Measured 2026-09-29 (last modified 2023-06-06).
+PHOTOGUARD_REVISION = "31f26fdeee1355a5c34592e401dd41e45d25a493"
 PHOTOGUARD_MODEL_ID = str(PHOTOGUARD_MODELS_DIR / PHOTOGUARD_MODEL_NAME)
 PHOTOGUARD_EPSILON = 8.0 / 255.0
 PHOTOGUARD_STEP_SIZE = 2.0 / 255.0

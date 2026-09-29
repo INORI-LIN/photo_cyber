@@ -142,6 +142,8 @@ def test_sd_vae_notice_is_mit_and_pinned_to_the_configured_repo() -> None:
     rows = [line for line in notices.splitlines() if config.PHOTOGUARD_REMOTE_REPO in line]
     assert rows, "no notice row mentions the configured model repo"
     assert any("| MIT |" in row for row in rows), rows
+    # P15: the row must carry the revision both sides pin to, so the notice cannot drift.
+    assert any(config.PHOTOGUARD_REVISION in row for row in rows), rows
 
 
 def test_packaging_wires_license_material() -> None:

@@ -66,8 +66,15 @@ class _SDEncoderAttack:
         self._device, self._dtype, self.device_info = device_mod.resolve_device(
             self.cfg.device, self.cfg.device_index
         )
+        # P15: `use_safetensors=True` refuses a directory whose weights are pickle (`.bin`)
+        # instead of silently falling back to `torch.load` — the spike measured diffusers
+        # printing "Defaulting to unsafe serialization" and calling torch.load on such a
+        # directory. A local directory is a trust boundary: `--perturber-model` accepts any
+        # path, so the loader must not execute whatever it finds there. `revision` is a
+        # statement of intent for a local directory (it only bites on the download side).
         self._vae = AutoencoderKL.from_pretrained(
-            str(model_path), torch_dtype=self._dtype, local_files_only=True
+            str(model_path), torch_dtype=self._dtype, local_files_only=True,
+            use_safetensors=True, revision=config.PHOTOGUARD_REVISION,
         ).to(self._device)
         self._vae.eval()
         for parameter in self._vae.parameters():

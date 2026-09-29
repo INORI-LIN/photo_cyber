@@ -35,7 +35,11 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--perturber-eps", type=float, default=config.PHOTOGUARD_EPSILON)
     group.add_argument("--perturber-step-size", type=float, default=config.PHOTOGUARD_STEP_SIZE)
     group.add_argument("--perturber-steps", type=int, default=config.PHOTOGUARD_STEPS)
-    group.add_argument("--perturber-model", default=config.PHOTOGUARD_MODEL_ID, help="Local SD VAE directory")
+    group.add_argument(
+        "--perturber-model", default=config.PHOTOGUARD_MODEL_ID,
+        help="Local SD VAE directory (safetensors only — a directory without them is refused; "
+             "populate it with `download-models`)",
+    )
 
     verify = sub.add_parser("verify", help="Verify an invisible watermark")
     verify.add_argument("suspect", type=Path)
@@ -122,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
                 # No checksum exists on this path, so it is reported as a clue in stdout
                 # and the advisory metrics go to stderr where they cannot be mistaken for
-                # a verification result.
+                # a verification result. Exit 3 keeps "clue" machine-readably distinct
+                # from "verified" (0) — P19.
                 print(f"\u7ebf\u7d22\uff08\u672a\u9a8c\u8bc1\uff09: {clue.text}")
                 print(
                     f"advisory gates: blocks/bit={clue.blocks_per_bit} "
@@ -130,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"-- {clue.notes}",
                     file=sys.stderr,
                 )
-                return 0
+                return 3
             try:
                 payload = pipeline.discover_payload(args.suspect, args.max_payload_bytes)
             except watermark_invisible.NoPayloadError as exc:
@@ -149,7 +154,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "download-models":
             from . import download
             path = download.download_sd_vae(repo=args.repo, dest=args.dest)
-            print(f"downloaded {args.repo} → {path}")
+            print(
+                f"downloaded {args.repo}@{config.PHOTOGUARD_REVISION} → {path} "
+                "(json + safetensors only)"
+            )
             return 0
     except (OSError, ValueError, RuntimeError, InterruptedError) as exc:
         print(f"{args.cmd} failed: {exc}", file=sys.stderr)

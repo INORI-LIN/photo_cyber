@@ -123,7 +123,7 @@ uv run photo-guard verify suspect.jpg --payload-bytes 16
 
 `--payload-bytes` 必须等于嵌入内容的 UTF-8 字节数，不一定等于字符数。
 
-旧版 payload 没有校验和，因此这条路径**只给线索、不给结论**：stdout 形如 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin` 两个辅助指标。实测（见 `docs/fix-plan.md` §6 P3）：真实产物的 `mean_margin` 落在 0.2567–0.3247，而可打印垃圾可达 0.2005–0.5000，两者完全重叠——**没有任何阈值能区分真伪**，故该路径的结论不可作为确权证据。需要能举证的结论时，请用 `--payload-envelope` 重新保护。
+旧版 payload 没有校验和，因此这条路径**只给线索、不给结论**：stdout 形如 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin` 两个辅助指标，**退出码为 3**（`0` 只保留给取回证据的路径，见上方退出码表）。实测（见 `docs/fix-plan.md` §6 P3）：真实产物的 `mean_margin` 落在 0.2567–0.3247，而可打印垃圾可达 0.2005–0.5000，两者完全重叠——**没有任何阈值能区分真伪**，故该路径的结论不可作为确权证据。需要能举证的结论时，请用 `--payload-envelope` 重新保护。
 
 ### 启用 PhotoGuard
 
@@ -138,6 +138,12 @@ uv run photo-guard protect input.jpg \
   --device auto \
   --payload "owner:alice#sd"
 ```
+
+模型来源与信任边界：`download-models` 从 `stabilityai/sd-vae-ft-mse` 拉取，并钉在不可变的
+revision `31f26fdeee1355a5c34592e401dd41e45d25a493`（只取 `*.json` 与 `*.safetensors`）。
+加载侧强制 `use_safetensors=True`：目录里没有 safetensors 权重就报错退出，**不会回退到 `.bin`
+的 pickle 反序列化**。`--perturber-model` 接受任意本地目录，请只指向自己下载的目录——该目录
+内容会被反序列化，等同于信任其来源。
 
 可通过以下命令查看设备：
 
@@ -168,7 +174,7 @@ uv run photo-guard devices
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
-退出码：`0` 成功，`1` 未恢复出 payload（含盲检未找到信封），`2` 参数或运行错误（含 `--expected-payload` 不符、信封 CRC 校验不确定）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（含盲检未找到信封），`2` 参数或运行错误（含 `--expected-payload` 不符、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
 `protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个目标文件是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换，且成功路径不回贴原权限位，目标文件的写位会保留。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 
@@ -221,7 +227,7 @@ docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
 
 docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
   verify /work/out.jpg --payload-bytes 7
-# 期望 stdout 整行为 线索（未验证）: ci-test —— 未启用 --payload-envelope，这条路径只给线索
+# 期望 stdout 整行为 线索（未验证）: ci-test、退出码 3 —— 未启用 --payload-envelope，这条路径只给线索
 
 # ② 离线 SD 冒烟：--network none 下仍能跑 PGD，证明镜像内确实烘焙了 SD VAE
 docker run --rm --network none -v "$PWD/fixtures:/work" photo-guard:ci \

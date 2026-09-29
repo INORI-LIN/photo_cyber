@@ -15,10 +15,11 @@ is installed. `--check` validates one platform's section at a time.
 
 | component | license | source | revision |
 |---|---|---|---|
-| sd-vae-ft-mse (Stable Diffusion VAE) | MIT | https://huggingface.co/stabilityai/sd-vae-ft-mse | main（P15 将钉到不可变 revision） |
+| sd-vae-ft-mse (Stable Diffusion VAE) | MIT | https://huggingface.co/stabilityai/sd-vae-ft-mse | 31f26fdeee1355a5c34592e401dd41e45d25a493 |
 
-The weights are downloaded by `photo-guard download-models` and baked into the Docker image
-and the desktop bundles; they are MIT-licensed and unmodified.
+The weights are downloaded by `photo-guard download-models` (pinned to the immutable revision
+above, `*.json` + `*.safetensors` only) and baked into the Docker image and the desktop
+bundles; they are MIT-licensed and unmodified.
 
 
 ## Darwin / arm64

@@ -77,10 +77,14 @@ jobs:
           echo "$noise_output" | grep -F "perturber=noise"
           test -s fixtures/out.jpg
 
+          # P19: the clue path exits 3, so the command must not run under `bash -e` directly.
+          set +e
           recovered=$(docker run --rm \
               -v "$PWD/fixtures:/work" \
               photo-guard:ci \
               verify /work/out.jpg --payload-bytes 7)
+          clue_rc=$?
+          set -e
 
           echo "recovered: $recovered"
           # P3: the checksum-less path labels its output as a clue, so the exact line is
@@ -88,6 +92,11 @@ jobs:
           # The comparison itself is byte-wise (bash `=`, unaffected by locale), but the
           # container's stdout encoding is a real dependency, so a mismatch dumps the bytes:
           # that is what tells an encoding problem apart from a genuine output change.
+          # P19: and the exit code must say "clue", not "verified".
+          if [ "$clue_rc" != "3" ]; then
+            echo "::error::the clue path must exit 3, got $clue_rc"
+            exit 1
+          fi
           if [ "$recovered" != "线索（未验证）: ci-test" ]; then
             echo "::error::unexpected verify output"
             printf '%s' "$recovered" | od -c | head -5
@@ -115,3 +124,41 @@ jobs:
           echo "$sd_output" | grep -F "layers=invisible+perturb+visible"
           echo "$sd_output" | grep -F "perturber=sd"
           test -s fixtures/out_sd.jpg
+
+      # P15: the loader must refuse a model directory with no safetensors instead of falling
+      # back to pickle. Only config.json is staged, so there are no weights to load at all —
+      # the same guard that rejects a `.bin`-only directory.
+      - name: Smoke test — a model directory without safetensors is refused
+        run: |
+          docker run --rm --entrypoint /app/.venv/bin/python \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci -c "
+import pathlib, shutil
+dst = pathlib.Path('/work/no-safetensors')
+dst.mkdir(parents=True, exist_ok=True)
+shutil.copy('/app/models/sd-vae-ft-mse/config.json', dst / 'config.json')
+"
+          set +e
+          refusal=$(docker run --rm \
+              --network none \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              protect /work/in.jpg -o /work/refused.jpg \
+              --layers invisible \
+              --perturber sd \
+              --perturber-model /work/no-safetensors \
+              --perturber-steps 2 \
+              --long-edge 384 2>&1)
+          rc=$?
+          set -e
+          echo "refusal rc=$rc"
+          echo "$refusal"
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::a model directory without safetensors was accepted"
+            exit 1
+          fi
+          echo "$refusal" | grep -F "safetensors"
+          if [ -e fixtures/refused.jpg ]; then
+            echo "::error::an output file was written despite the refusal"
+            exit 1
+          fi

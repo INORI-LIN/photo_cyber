@@ -18,11 +18,16 @@ def download_sd_vae(
     *,
     repo: str = config.PHOTOGUARD_REMOTE_REPO,
     dest: Path | str | None = None,
+    revision: str = config.PHOTOGUARD_REVISION,
 ) -> Path:
-    """Download `repo` to ``models/<basename>/``; return the local path.
+    """Download `repo`@`revision` to ``models/<basename>/``; return the local path.
 
     Idempotent — if the destination already contains the full snapshot,
     HuggingFace's local cache short-circuits the network round trip.
+
+    P15: the revision is pinned so the Docker bake and the desktop bundles are reproducible,
+    and only ``*.json`` / ``*.safetensors`` are fetched — the same repo also publishes a
+    pickle ``.bin``, which the loader refuses anyway (``use_safetensors=True``).
     """
     try:
         from huggingface_hub import snapshot_download
@@ -43,8 +48,9 @@ def download_sd_vae(
     # self-contained, relocatable model directory under the repo.
     snapshot_download(
         repo_id=repo,
+        revision=revision,
+        allow_patterns=("*.json", "*.safetensors"),
         local_dir=str(dest),
-        local_dir_use_symlinks=False,
         # We DO want network access here — this is the one explicit
         # online step. Don't set HF_HUB_OFFLINE before reaching this.
     )
