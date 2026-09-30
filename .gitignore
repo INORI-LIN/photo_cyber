@@ -17,3 +17,7 @@ release/
 *.build/
 *.dist/
 *.app/
+
+# 本地 skill 执行记录（不进入版本控制）
+jingdonglin/
+jingdonglin-*/

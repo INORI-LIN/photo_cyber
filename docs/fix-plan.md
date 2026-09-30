@@ -6,8 +6,8 @@
 > 注（2026-09-28）：CLAUDE.md 已删除，不重复内容并入 AGENTS.md §八–§十一与 README.md。本文所有「文件:行号」引用（含 CLAUDE.md:NN、README.md:NNN）为写作时的历史坐标，行号可能已漂移——按内容（章节/用例名/命令文本）定位，勿按行号；凡步骤写「改 CLAUDE.md:…」者，一律改 AGENTS.md/README.md 对应内容。
 
 > **当前进度（2026-09-29 收尾）**：已落地批次 **1 / A / B / C / D / I**。批 I = `661b7eb`（落档三次审计的 12 项新条目）→ `a3fffbd`（修复 P27/P31/P32）→ `893c1be`（回写）→ `26e11ed`（登记 P33 并更正 S2 落点结论）；**四个提交已全部推送**到 `origin/main`，推送后的 CI 实测见 §9.10。
-> **突发修复（同日，`0bb150e` 修复 + `f23c428` 回写，**已推送**）**：`release-desktop` #3 的两处红已定位并修好 —— **G9①+④**（Windows 校验步自我锁死 + 两平台同名校验和互相覆盖）与 **P33**（macOS bundle 候选根解析）；两处都**待一次 dispatch 复验**，该 dispatch（#4 = `36553114743`）在 **2026-09-29 当时**仍进行中；本轮未查远端最终结果，见 §9.9 / §9.10 第 11 小节 / §10.1。
-> **本轮进度（2026-09-30，本地验证）**：批 J 的 **G9②③ + G10** 已实施、本地验证通过（记录见 §10.7），工作树仅改 release workflow、wheel 冒烟、其测试及本文档；`src/`、AGENTS.md、README.md 未改。批 J 整体**未收口**：G8 仍未开始；既有 G9①④/P33 的远端 dispatch 结果、G9②③ 的真 tag 发布与本轮 CI 均未由本轮取证，未经授权不推送/打 tag/dispatch。
+> **既有发布缺陷复验（`0bb150e` 修复 + `f23c428` 回写，已推送）**：G9①④（Windows 校验和步骤）与 P33（macOS bundle 资源路径）在旧 `release-desktop` #4（`36553114743`，SHA `f23c428`）的 Windows/macOS 真机构建中已取证成功；该 run 为手工调度，Release 附加步骤 skipped 属预期，见 §9.10 第 11 小节。
+> **本轮远端结果（2026-09-30）**：批 J 的 **G9②③ + G10** 本地实施见 §10.7，已按授权将 `000a504` 推送 `main` 一次：该 SHA 的 `ci` 三系统 + GUI、`docker` 及一次手工 `release-desktop` 构建均 **success**；Windows 安装包和 macOS DMG 已下载，与各自 SHA256 清单一致（§10.8）。旧 #4 的 G9①④/P33 也已补到真机构建成功。**未推 tag、未公开 Release**；批 J 的 G8 与仅在 tag push 执行的 publish 仍未完成。
 > **后续**：批 H（DOC1/DOC2）、批 J 的 G8 及本轮新登记的 P34–P37/DOC3（§10.6，待运行复现/产品裁定）均保留原有门槛；开工前按 §5 再集中确认。
 
 ---
@@ -56,12 +56,12 @@
 | P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [x] 批次 I 已落地（`a3fffbd`；4 通道实为静默接受，见 §10.5） |
 | P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [x] 批次 I 已落地（`a3fffbd`） |
 | G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿未署名、opencv wheel 的 LGPL-2.1 组件无记、无 Linux notices 段且镜像不跑 `--check`、Python 合规门弱于 ci.yml 的正则。 | [ ] 未开始（批 J） |
-| G9 | release 三处高危（校验步必失败 / 发布竞态 / 缺 GUI 门）+ 新增第④条同名覆盖 | **high** | M | J | 实测：Windows `Checksums` 步因「重定向目标先于通配展开被打开」而**必定失败**（连带 upload/release 全 skip）；两平台同名 sums 互相覆盖；另有发布竞态与 tag 链缺 GUI 门。 | [x] ①+④ 已修（`0bb150e`，既有 dispatch 待核）；②③ 本地已修（2026-09-30，tag 真发布待取证，见 §10.7） |
-| G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [x] 本地已修、双 wheel 真实安装与负控通过（2026-09-30；CI 待取证，见 §10.7） |
+| G9 | release 三处高危（校验步必失败 / 发布竞态 / 缺 GUI 门）+ 新增第④条同名覆盖 | **high** | M | J | 实测：Windows `Checksums` 步因「重定向目标先于通配展开被打开」而**必定失败**（连带 upload/release 全 skip）；两平台同名 sums 互相覆盖；另有发布竞态与 tag 链缺 GUI 门。 | [x] ①+④ 已修且旧 dispatch #4 的 Windows 校验/上传真机成功（§9.10 第 11 小节）；②③ 已修且新 SHA 的 GUI/Win/macOS 构建门真跑成功；唯一 publish 在本轮手工调度中按预期 skipped，真 tag 发布待授权（§10.8） |
+| G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [x] 本地已修且新 SHA 的 Linux CI 双 wheel 冒烟真跑成功（2026-09-30，见 §10.7/§10.8） |
 | G11 | CI/仓库硬化六条（tag 钉 / permissions / concurrency / ignore / eol / urls） | low-med | S | F′ | 六处相互独立的基础设施硬化，逐条可验。 | [ ] 未开始（批 F′） |
 | DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [ ] 未开始（批 H；§十一 正则句归 G8） |
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [ ] 未开始（批 H） |
-| P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`，待 dispatch 复验；证据 §9.9） |
+| P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`；旧 dispatch #4 的 macOS smoke/DMG/校验/上传真机全绿，见 §9.10 第 11 小节） |
 | P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | 未排批次（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 读码推断；待 POSIX/Windows 复现 |
 | P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | 待复现 | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [ ] 读码推断；待离屏复现 |
 | P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | 待复现 | 未排批次（GUI 面） | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [ ] 读码推断；待离屏复现 |
@@ -86,7 +86,7 @@
 | ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。四个提交（`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed`）已推送到 `origin/main`，推送后 CI 结论见 §9.10。** |
-| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①+④/P33 先行落地（`0bb150e`，既有 dispatch 待核）；**2026-09-30 G9②③/G10 本地已修**：唯一 tag-push 发布 job 依赖 GUI 与双平台成功、发布前校验双工件；两份 wheel 独立受管 uv 环境实装、RECORD/入口点及旧负控通过，fast 与 GUI 全绿。**J 未完成**：G8 未开始；tag 真发布/Windows/macOS 与本轮 CI 未取证，跨 workflow run 的并发归 G11③。见 §10.7。 |
+| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①④/P33 的旧手工构建 #4 已真机成功；G9②③/G10 本地修复后，`000a504` 的 `ci` 三系统、GUI、Docker 与手工桌面构建 #5 全绿，两平台安装包/DMG 的 SHA256 清单实际匹配（§10.7–§10.8）。**J 仍未完成**：G8 未开始；本轮 publish 按非 tag 调度正确跳过，真 tag 创建/上传 Release 未取证；跨 workflow run 并发归 G11③。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
@@ -2041,18 +2041,16 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 | `ci` #34 | `26e11ed` | **success** | 同上（纯文档提交，用例集未变） |
 | `docker` #32 | `893c1be` | **success** | 三条冒烟全过：noise `recovered: 线索（未验证）: ci-test` 且 `clue_rc == 3`；SD `protected: /work/out_sd.jpg size=384x288 … perturber=sd`；P15 拒载 `refusal rc=2` + `no file named diffusion_pytorch_model.safetensors`（且未落成品） |
 | `docker` #33 | `26e11ed` | 记录时仍在 Build image | 缓存偏冷、比 #32 慢；结论另报 |
-| `release-desktop` #3 | `c3e3d2a` | **failure** | Windows：`Build installer` 成功（`Successful compile (421.140 sec)`）后 `Checksums` 步自我锁死 → exit 1 → `upload-artifact`/`gh release upload` skipped；macOS：`Smoke test app bundle` 退 4 → `create_dmg.sh`/checksums/upload skipped。**两处已由 `0bb150e` 修（G9①④ + P33），待一次 dispatch 复验** |
+| `release-desktop` #3 | `c3e3d2a` | **failure** | Windows：`Build installer` 成功（`Successful compile (421.140 sec)`）后 `Checksums` 步自我锁死 → exit 1 → `upload-artifact`/`gh release upload` skipped；macOS：`Smoke test app bundle` 退 4 → `create_dmg.sh`/checksums/upload skipped。**两处已由 `0bb150e` 修（G9①④ + P33），后续 #4 手工 dispatch 真机成功（见本节第 11 小节）** |
 
 **计数对账（沿用 §9.1 口径）**：推送时本机 `--collect-only -q` = **230**，CI 三腿 = 215 + 2 skipped = **217**，差额 **13** = 需要 PySide6 的用例在 test 腿**收集期跳过**（该腿不装 desktop extra）——与上一轮（219 vs 206）的差额完全一致，属既有口径、非本批引入。**本轮修复后**本机实测 **243 collected**（见 §10.1 的两条新文件），下一次 dispatch 的逐腿计数届时**现场取值**回写，不写推算值。
 
-**11. 验证 dispatch（G9①④ / P33 的取证，进行中）**
+**11. 验证 dispatch（G9①④ / P33 的迟到取证；2026-09-30 已补读）**
 
-- `release-desktop` **#4 = `36553114743`**（`workflow_dispatch`，sha `f23c428`，2026-09-29 10:03Z 发起）。`verify` 已 **success**；`windows` 与 `macos-arm64` 在跑。
-- **已可确认的一点**：两个平台 job 的步骤名都变成了 `Checksums (SHA256, sha256sum-compatible)` —— 旧名只是 `Checksums` —— 说明**新的 workflow 文本确实被这一轮用上了**（否则无从谈起验证）。
-- **待回写（结论产生后一次补）**：
-  1. Windows：`Checksums` 是否 success；`upload-artifact` 与 `gh release` 步是否不再 skipped；`release/` 里是否出现 `SHA256SUMS-Windows-x64.txt`（sha256sum 兼容格式）。（记录时仍在 Nuitka 构建，约 10:40Z 后出结论。）
-  2. macOS：`Smoke test app bundle` 是否退 0；`create_dmg.sh`、`Checksums (macOS)`、`upload-artifact` 是否不再 skipped。（记录时仍在构建，约 12:40Z。）
-  3. ~~同一次 push 触发的 `ci` #35 与 `docker` #34、以及迟到的 `docker` #33~~ → **已回，见下**。
+- `release-desktop` **#4 = `36553114743`**（`workflow_dispatch`，sha `f23c428fa1507c86a3a03e77aa2f416e45e3dbf0`，2026-09-29 发起）：认证读取 Actions run/jobs API，整轮 **completed/success**；`verify`、`windows`、`macos-arm64` 三 job 均 **success**。它是旧 SHA 的运行，不能替代本轮 G9②③/G10 的新代码取证。
+- Windows：`Smoke test standalone application`、`Build installer`、`Checksums (SHA256, sha256sum-compatible)`、`actions/upload-artifact@v4` 均 **success**；新平台清单的生成/上传步骤已在 Windows 真机通过。macOS：`Smoke test app bundle`、`packaging/create_dmg.sh`、`Checksums (SHA256, sha256sum-compatible)`、`actions/upload-artifact@v4` 均 **success**，故 P33 的 bundle 候选根修复与 DMG 路径在真机得到验证；本轮未下载旧工件验证内容哈希。
+- 旧版两平台的 `Attach to the GitHub Release (tag pushes only)` 都是 **skipped**：这是手工调度（非 tag push）的正确行为，不能把 skipped 当发版失败，也不能当成公开 Release 已验证。
+- 同一时期 `ci` #35 与迟到的 `docker` #33 已回，见下；`docker` #34 的最终状态本轮未查，不借旧 SHA 的结果替代新提交。
 - **已到手的证据（2026-09-29 ~10:15Z）**：
   - `ci` **#35**（`f23c428`）**success**：test 三腿（ubuntu / windows-latest / macos-15）各 **228 passed, 2 skipped**；`gui` job success。**计数对账**：本机 `--collect-only -q` = **243**，CI 三腿 = 228 + 2 = **230**，差额 **13** = 需要 PySide6 的用例在 test 腿收集期跳过 —— 与前两轮（221→206、230→217）**同一口径**。这条同时证明**本批 13 个新用例**（`test_resources.py` 7 + `test_release_workflow.py` 4 + `test_desktop_entry.py` 2）**在三 OS 全绿**，即 workflow 静态 pin 在 CI 侧也成立（真机 pwsh/macOS 行为仍需第 1/2 条）。
   - `docker` **#33**（`26e11ed`，迟到的绿）**success**：`recovered: 线索（未验证）: ci-test`（`clue_rc == 3` 断言通过）；SD 冒烟 `protected: /work/out_sd.jpg size=384x288 layers=invisible+perturb+visible perturber=sd payload_bytes=7`；P15 拒载 `refusal rc=2`。
@@ -2140,20 +2138,20 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **现象**（读码）：① `.github/workflows/release-desktop.yml` 的 Windows 校验文件用 `Get-FileHash … | Format-Table | Out-File`，`Out-File` 默认 UTF-16LE+BOM、内容是带表头的列宽表格 → `sha256sum -c`/`shasum -c` 均不可解析，却随 `gh release upload release/*` 一起发布；② windows 与 macos 两个 job 只 `needs: verify`，并发跑 `gh release view || gh release create` → 败者 HTTP 422 `already_exists`，在 `bash -e` 下变红；③ tag 发布链的 `verify` 只 sync `--group dev`，GUI 用例经 `importorskip` 静默跳过 → **未跑 GUI 档也能发版**（唯一的 GUI 档在 `ci.yml`，它不在 tag 上跑）。
 - **方案**：① 改 `… | ForEach-Object { "$($_.Hash.ToLower())  $($_.Name)" } | Set-Content -Encoding ascii release\SHA256SUMS.txt`（与 macOS 侧 `shasum -a 256` 同格式）；② 发布动作收敛到单一 job（`needs: [windows, macos-arm64]`）或给 create 加幂等处理，取哪条在批 J 开工时定（推荐单一发布 job）；③ release 链补装 desktop extra 的 `-m gui` 步骤并挂进 `needs` 链。
 - **验收**：本机只能静态验证（PyYAML + 逐行复读）；三条结论**待 CI/Windows/tag 取证**（Windows 校验文件格式与路径、发布竞态、tag 链 GUI 门）。
-- **2026-09-29 实测升级（① 与新增 ④ 已修，待 CI 复验）**：见 §9.9 的同一轮日志 —— Windows 的 `Checksums` 步**必定失败**（重定向目标先于通配展开被打开 → `Get-FileHash` 读到被锁的自己 → 退 1 → `upload-artifact`/`gh release upload` 全 skipped），故 ① 从「格式不可解析」升级为「阻断发布」；同时发现 **④ 两平台都写 `release/SHA256SUMS.txt` 并上传到同一 Release（`--clobber`）→ 后上传者静默覆盖前者**。修法落地：
+- **2026-09-29 实测升级（① 与新增 ④ 已修；后续旧 #4 真机 success，见 §9.10）**：见 §9.9 的同一轮日志 —— Windows 的 `Checksums` 步**必定失败**（重定向目标先于通配展开被打开 → `Get-FileHash` 读到被锁的自己 → 退 1 → `upload-artifact`/`gh release upload` 全 skipped），故 ① 从「格式不可解析」升级为「阻断发布」；同时发现 **④ 两平台都写 `release/SHA256SUMS.txt` 并上传到同一 Release（`--clobber`）→ 后上传者静默覆盖前者**。修法落地：
   - Windows 步改为「先枚举（`Get-ChildItem -File` 且 `-notlike 'SHA256SUMS*'`）→ `[System.IO.File]::WriteAllText` 显式 ASCII+LF → 写 `release\SHA256SUMS-Windows-x64.txt`」；
   - macOS 步同构（在 `release/` 内枚举、`case "$f" in SHA256SUMS*) continue`、引号安全），写 `release/SHA256SUMS-macOS-arm64.txt`；
   - 两个文件名按平台分开，覆盖风险消除。
-  **验收**：`tests/test_release_workflow.py` 四条静态 pin 先红后绿；`git diff` 仅 workflow；**真实验证需一次 dispatch（待 CI 取证）**。②（`gh release create` 竞态）与 ③（tag 链 GUI 门）只在 tag 推送时执行，本轮不动、仍留批 J。
-  **验证中（2026-09-29 10:03Z）**：`release-desktop` #4 = `36553114743` 已发起（sha `f23c428`），两平台的步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`（新文本生效的旁证）；同一次 push 的 `ci` #35 已绿（三腿各 228 passed/2 skipped，**含本批四条静态 pin**），但 **Windows 的 `Checksums`/`upload-artifact` 结论仍待回写**，见 §9.10 第 11 小节。
-  **2026-09-30 的 G9②③ 本地实施（见 §10.7）**：`verify` 补桌面依赖、PySide6 硬探针和 GUI 有通过/无跳过门；两平台只构建并上传，独立 `publish` 仅在 tag push 且 verify/双平台全绿时取得写权限，分别下载并核验清单与目标文件后才创建/上传 Release。`workflow_dispatch` 即使选择 tag ref 也不发布。静态回归旧码先红，本地新码已绿；**未触发 tag/dispatch，不能替代旧 #4 结果或新发布真机取证**；跨 run 的并发归 G11③。
+  **验收**：`tests/test_release_workflow.py` 四条静态 pin 先红后绿；`git diff` 仅 workflow；**后续旧 #4 dispatch 真机取证 success（§9.10 第 11 小节）**。②（`gh release create` 竞态）与 ③（tag 链 GUI 门）在 2026-09-29 当轮未动，后续见 §10.7–§10.8；仅 tag 发布 job 仍未实测。
+  **当时验证进度（2026-09-29 10:03Z；后续已收口）**：`release-desktop` #4 = `36553114743` 发起时（sha `f23c428`），两平台步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`；同一次 push 的 `ci` #35 绿（三腿各 228 passed/2 skipped，含当时四条静态 pin）。**最终 Windows 校验和/上传 success**，完整结论见 §9.10 第 11 小节。
+  **2026-09-30 的 G9②③ 本地实施（见 §10.7）**：`verify` 补桌面依赖、PySide6 硬探针和 GUI 有通过/无跳过门；两平台只构建并上传，独立 `publish` 仅在 tag push 且 verify/双平台全绿时取得写权限，分别下载并核验清单与目标文件后才创建/上传 Release。`workflow_dispatch` 即使选择 tag ref 也不发布。静态回归旧码先红，本地新码已绿；**该本地实施时尚未触发 tag/dispatch**；此后新 SHA 的非 tag 真机构建证据见 §10.8，tag 真实发布仍未验证；跨 run 的并发归 G11③。
 
 #### G10 — `smoke_wheel.sh` 假绿：wheel 从未被安装/导入（med，批 J）
 
 - **现象**（读码）：`packaging/smoke_wheel.sh` 第 2 步只 grep 所建 wheel 的 `namelist()`；第 3 步从 sdist 再建 wheel 后不再使用；第 4 步 `uv sync --frozen --no-dev --no-editable` 装的是**源码树**，`$WHEEL`/`$SDIST` 其后成为死变量 → RECORD 损坏、入口点缺失、`license-files` 未随包的 wheel 都能过冒烟。
 - **方案（原审计推荐，实施取值见下）**：第 4 步改为在临时 venv 内安装**所建 wheel**（用 uv 的 pip 子命令，不出现被禁字面量）并 `import photo_guard`、`photo-guard --help` 退 0、`importlib.metadata` 读 `License-Expression`；sdist 侧同验。
 - **验收**：本机实跑脚本退 0；再加负控（临时副本上破坏 wheel 元数据）确认变红。该脚本被 `ci.yml` 的 wheel 冒烟步调用，改动即抬高 CI 门槛。
-- **2026-09-30 本地已修（见 §10.7）**：锁文件导出到临时输入，分别对直接 wheel 与 sdist 重建 wheel 执行 `uv venv --managed-python --python 3.11` + `uv pip sync`，每份单独环境核验真实来源路径、版本、许可证文件与元数据、控制台入口；安装前逐成员验证 wheel RECORD。受管 Python、双轮真实冒烟、损坏 RECORD 与入口点的负控及旧版号/项目虚拟环境负控均通过；CI 真环境仍待推送取证。
+- **2026-09-30 本地已修（见 §10.7）**：锁文件导出到临时输入，分别对直接 wheel 与 sdist 重建 wheel 执行 `uv venv --managed-python --python 3.11` + `uv pip sync`，每份单独环境核验真实来源路径、版本、许可证文件与元数据、控制台入口；安装前逐成员验证 wheel RECORD。受管 Python、双轮真实冒烟、损坏 RECORD 与入口点的负控及旧版号/项目虚拟环境负控均通过；**新 SHA 的 Linux CI 双 wheel 冒烟实测 success**（`ci` run `36671396744`，见 §10.8）。
 
 #### G11 — CI/仓库硬化六条（low-med，批 F′）
 
@@ -2184,10 +2182,10 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **对照**：Windows 腿同一逻辑通过（扁平布局，`application_root()` = `dist/desktop_entry.dist`）→ 属**布局假设**缺陷，非 G2 的落包缺陷；G2 的两处成功项（材料进包、Windows 可读）**不受影响、不回退**。
 - **方案**（2026-09-29 用户裁定：候选根解析）：`resources` 增加 bundle 内的候选根解析 —— 同时接受 `Contents/Resources/` 与 `Contents/MacOS/`，**licence 与 model 各自解析**（避免两处落点不同时互相拖累），不修改 Nuitka 参数语义、不赌 `dest` 的相对基准。
 - **测试**：与 G7 的 `tests/test_resources.py` 合并落地 —— ① 两种完整布局各命中；② 混合布局（材料只在 `MacOS`、models 只在 `Resources`）下两个查找各自命中；③ 材料缺失时 `desktop_entry --smoke-test` 仍退 4（G2 的响亮失败不得被解析逻辑吞掉）。本机用 monkeypatch（`sys.frozen`/`sys.executable`/`sys.platform` + 假目录树）即可钉住，无需 macOS。
-- **验收**：macOS dispatch 的 smoke 退 0、`create_dmg.sh` 与 DMG staging 不再 skipped（**待 CI 取证**，与 G9 合并成一次 dispatch）；缺材料负控仍退 4。Windows 腿的既有 green 不得变红。
-- **2026-09-29 修法落地（待 dispatch 复验）**：`resources.py` 新增 `candidate_roots()`（darwin 冻结态 → `(Contents/Resources, Contents/MacOS)`；`PHOTO_GUARD_RESOURCE_DIR` 覆盖时单根）与 `find_resource(*parts)`（逐根探测、返回首个存在者），`application_root()` 保留为主根；`config.PHOTOGUARD_MODELS_DIR` 改为 `find_resource("models") or application_root()/"models"`（缺失时仍落到不存在的路径，让 G6 的 `is_dir()` 响亮失败）；`packaging/desktop_entry.py` 的许可检查改用 `find_resource` 并把**试过的根**打进失败信息；AGENTS.md §8.3 的 `resources.py` 行同步。
+- **验收**：macOS dispatch 的 smoke、`create_dmg.sh` 与后续校验/上传全 success（旧 #4 真机已取证，见 §9.10 第 11 小节）；缺材料负控仍退 4。Windows 腿的既有 green 未变红。
+- **2026-09-29 修法落地（后续旧 #4 dispatch 真机复验通过）**：`resources.py` 新增 `candidate_roots()`（darwin 冻结态 → `(Contents/Resources, Contents/MacOS)`；`PHOTO_GUARD_RESOURCE_DIR` 覆盖时单根）与 `find_resource(*parts)`（逐根探测、返回首个存在者），`application_root()` 保留为主根；`config.PHOTOGUARD_MODELS_DIR` 改为 `find_resource("models") or application_root()/"models"`（缺失时仍落到不存在的路径，让 G6 的 `is_dir()` 响亮失败）；`packaging/desktop_entry.py` 的许可检查改用 `find_resource` 并把**试过的根**打进失败信息；AGENTS.md §8.3 的 `resources.py` 行同步。
   测试：`tests/test_resources.py` 七例（混合布局 / 全在 Resources / 全在 MacOS / 缺失 → None / 覆盖单根 / 源码树不变 / 候选根顺序）+ `test_desktop_entry.py` 两例（冻结 bundle 的混合布局 → 0；缺材料 → 4 且信息里出现两个候选根）。**先红记录**：`find_resource` 不存在时新用例全部报 `AttributeError`（TDD 起点），落地后 243 passed。
-  **验证中（2026-09-29 10:03Z）**：同一次 `release-desktop` #4 = `36553114743`；`ci` #35 已绿（三腿各 228 passed/2 skipped，含 `test_resources.py` 七例，`test_desktop_entry.py` 两例在三 OS 全绿），但 **macOS 的 `Smoke test app bundle` 退码与 DMG staging 是否不再 skipped 仍待回写**，见 §9.10 第 11 小节。
+  **当时验证进度（2026-09-29 10:03Z；后续已收口）**：同一次 `release-desktop` #4 = `36553114743`；`ci` #35 已绿（三腿各 228 passed/2 skipped，含 `test_resources.py` 七例，`test_desktop_entry.py` 两例在三 OS 全绿）；后续 macOS 的 `Smoke test app bundle`、DMG 创建、校验和与工件上传均 **success**，见 §9.10 第 11 小节。
 
 ### 10.2 P1 追加与残留收口
 
@@ -2237,4 +2235,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **G9②③**：`release-desktop.yml` 的 verify 在既有 fast/tag 版本门后增加 Qt 运行库、desktop extra、PySide6 导入探针、离屏 GUI 测试“有通过且无跳过”检查与 GUI `--help`；构建 job 只生成并上传平台工件，唯一 `publish` 仅在 **tag push** 且 verify/Windows/macOS 全绿时下载双工件、核对指定文件与平台独立的 SHA256SUMS 内容，再执行一次 Release 创建/上传。`workflow_dispatch` 即使 ref 指向 tag 也不发布；顶层只读权限，只有 publish job 有写权限。原有四条校验和 pin 继续有效，定位范围由全文改为指定 job（**加强**）；新增四条发布/分发静态 pin 在旧实现上 **4 红**，现态通过。额外用模拟的 `if: always()` 注释与 GUI `|| true` 两条反例验证测试会红，未放宽任何旧断言。**边界**：此修复消除同一 run 的双平台创建竞态；同 tag 多次 run 的并发仍归 G11③，且未做真实 tag 发布。
 - **G10**：`smoke_wheel.sh` 保留版本单源及拒绝项目 `.venv` 的前置门，构建原始 wheel、sdist 和由 sdist 重建的 wheel；每份 wheel 先核验 RECORD 全部成员/摘要/大小与许可元数据，再在不同的项目外 uv 托管 Python 3.11 临时 venv 用锁定 core 依赖 + 对应本地 wheel 安装。运行时在非源码目录、禁用 `PYTHONPATH` 且用 Python 隔离模式，核对实际导入路径在该 venv 内、dist 版本、`License-Expression`/`License-File` 实际文件及控制台入口 `--help`。两轮真实冒烟均退 **0**；临时篡改 wheel 内容但不更新 RECORD 时被摘要门拒绝；重算 RECORD 后改名入口点虽可安装，但原 `photo-guard` 命令不存在（冒烟必须失败）；错误期望版本退 **非零**、指定项目 `.venv` 在构建前退 **非零**。原有负控强度未放宽；本机首次运行时临时环境曾选系统 Python，后显式钉 `--managed-python --python 3.11` 并重新跑通。**本机已有项目 `.venv` 仍指向 Homebrew Python 3.11**，属既有本地环境差异，本批未重建用户虚拟环境；本修复只保证新建的冒烟 venv 受 uv 托管。
 - **回归与范围**：`uv run --no-sync pytest tests/test_release_workflow.py tests/test_compliance.py -q` 本地通过；全量 fast `uv run --no-sync pytest -m 'not slow' -q` **247 passed**，`uv run --no-sync pytest --collect-only -q` **现场收集 247**；`QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -m gui -q` **15 passed、0 skipped**；PyYAML 解析 release workflow、`bash -n packaging/smoke_wheel.sh`、`git diff --check`、函数头/逻辑注释及复杂度门均通过。变更限定在 release workflow、smoke 脚本、`tests/test_release_workflow.py` 和本文档；不改 `src/`、`uv.lock` 或依赖声明。
-- **未取证/下一步**：未 push、未打 tag、未触发 workflow_dispatch，故本轮 CI Linux 的实际 wheel 冒烟、macOS/Windows 打包及 tag 发布行为仍为**待远端授权取证**；旧 release #4 的最终状态也未在本轮查询。批 J 的 G8 和批 H 尚未开工，P34–P37/DOC3 只按 §10.6 登记，没有当作已修。
+- **当时未取证/下一步（2026-09-30 本地提交时的状态）**：尚未 push、打 tag 或触发 workflow_dispatch；此后经用户单次授权，旧 #4 与本批远端 CI/构建的新进度见 §10.8。批 J 的 G8 和批 H 尚未开工，P34–P37/DOC3 只按 §10.6 登记，没有当作已修。
+
+### 10.8 批 J 发布链远端取证（2026-09-30；仅构建，不公开发布）
+
+> 授权边界：仅将原有本地提交 `000a5041b9d66f7ff4dd4faca60868e88742d080` 推 `origin/main` **一次**，并对 `release-desktop` 的 `main` ref 手工派发**一次**；不推 tag、不创建 GitHub Release、不再推后续文档提交。run 结论均按完整 SHA 与事件核对；不能拿旧 SHA 的成功当新代码验证。
+
+- **自动 CI**：[ci run `36671396744`](https://github.com/INORI-LIN/photo_cyber/actions/runs/36671396744)（`push`，本批 SHA）**success**。Actions jobs 与日志取证：`test (ubuntu-latest)`、`test (windows-latest)`、`test (macos-15)` 各实测 `232 passed, 2 skipped`；独立 `gui` job 实测 `15 passed, 232 deselected`，GUI CLI `--help` 步 success；Ubuntu 的 `Wheel / sdist smoke (G5)` 步 success，日志逐轮出现原始 wheel 和 sdist 重建 wheel 的 `RECORD + metadata OK`、独立安装后的 `smoke OK`。Windows/macOS 的 wheel 冒烟按 CI 配置为 Linux-only，skipped 是预期，非用例放宽。
+- **Docker**：[docker run `36671396648`](https://github.com/INORI-LIN/photo_cyber/actions/runs/36671396648)（同 SHA、`push`）**success**；`Build image`、noise 保护/验证、`--network none` 的 SD 扰动、拒载无 safetensors 模型目录各步骤 success；`docker.yml` 仍设 `push: false`，本轮未推送镜像。
+- **桌面构建**：[release-desktop #5](https://github.com/INORI-LIN/photo_cyber/actions/runs/36672339928)（同 SHA、`workflow_dispatch`、`ref=main`、attempt 1）整轮 **completed/success**；事前本 SHA 的手工运行列表为空，唯一 POST 收到 HTTP 204。`verify`、`windows`、`macos-arm64` 三 job 均 success，`publish` job 明确 **skipped**。`verify` 中锁文件回环、fast `232 passed, 2 skipped`、Qt 库/PySide6 导入、GUI `15 passed, 232 deselected` 与 GUI `--help` 均 success。Windows 的 standalone smoke、ISCC 安装包、校验和与 artifact 上传均 success；macOS 的 bundle smoke、DMG 生成、校验和与 artifact 上传均 success。
+- **两份工件内容（独立下载验证）**：Windows artifact id `11085541805` 的 ZIP 只含 `PhotoGuard-Windows-x64-Setup.exe` 与 `SHA256SUMS-Windows-x64.txt`；安装包 `522253954` bytes，SHA256 **`d5c23d6250c77dee2cf89b963a713078e85720bf36b3670fa334008a3110865e`**。macOS artifact id `11083737979` 的 ZIP 只含 `PhotoGuard-macOS-arm64.dmg` 与 `SHA256SUMS-macOS-arm64.txt`；DMG `754309452` bytes，SHA256 **`9d12fb1fcb3add9570d9401c68f74e9535e47c461e08621a6003e5d41ce9b625`**。两者下载时均非空且 API 标为未过期，实际文件 SHA256 与各自清单**一致**；ZIP 在隔离临时目录流式校验后清理，无安装或执行工件。
+- **明确未验证**：本次是非 tag 的手工调度，`publish` 被跳过是预期；**本次运行未**创建/更新 GitHub Release、未运行 `gh release upload`，也未验证 tag-push 的并发情形。工件内容哈希匹配不等于签名、公证或安装后可运行；G8 许可合规与 G11③ 跨运行并发仍是待办，不得把整个批 J 标为已完成。
