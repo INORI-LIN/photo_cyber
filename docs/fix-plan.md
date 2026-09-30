@@ -6,9 +6,9 @@
 > 注（2026-09-28）：CLAUDE.md 已删除，不重复内容并入 AGENTS.md §八–§十一与 README.md。本文所有「文件:行号」引用（含 CLAUDE.md:NN、README.md:NNN）为写作时的历史坐标，行号可能已漂移——按内容（章节/用例名/命令文本）定位，勿按行号；凡步骤写「改 CLAUDE.md:…」者，一律改 AGENTS.md/README.md 对应内容。
 
 > **当前进度（2026-09-29 收尾）**：已落地批次 **1 / A / B / C / D / I**。批 I = `661b7eb`（落档三次审计的 12 项新条目）→ `a3fffbd`（修复 P27/P31/P32）→ `893c1be`（回写）→ `26e11ed`（登记 P33 并更正 S2 落点结论）；**四个提交已全部推送**到 `origin/main`，推送后的 CI 实测见 §9.10。
-> **突发修复（同日，`0bb150e` 修复 + `f23c428` 回写，**已推送**）**：`release-desktop` #3 的两处红已定位并修好 —— **G9①+④**（Windows 校验步自我锁死 + 两平台同名校验和互相覆盖）与 **P33**（macOS bundle 候选根解析）；两处都**待一次 dispatch 复验**，该 dispatch（#4 = `36553114743`）**进行中**，见 §9.9 / §9.10 第 11 小节 / §10.1。
-> **下一步（等下次会话）**：**批 H**（DOC1/DOC2，纯文档同步，成本最低）或 **批 J 的剩余部分**（`G9②③ → G10 → G8`，含 macOS/Win 的一次 dispatch 与 tag 推送取证）。两批的门槛与待定项见 §2 批次表、§3 裁定段 ④ 与 §10；开工前先按 §5 的纪律做一轮 AskUserQuestion。
-> 本次收尾**未动** 批 H / 批 J 的任何代码（`src/`、`tests/`、workflow、AGENTS.md、README.md 均未改）。
+> **突发修复（同日，`0bb150e` 修复 + `f23c428` 回写，**已推送**）**：`release-desktop` #3 的两处红已定位并修好 —— **G9①+④**（Windows 校验步自我锁死 + 两平台同名校验和互相覆盖）与 **P33**（macOS bundle 候选根解析）；两处都**待一次 dispatch 复验**，该 dispatch（#4 = `36553114743`）在 **2026-09-29 当时**仍进行中；本轮未查远端最终结果，见 §9.9 / §9.10 第 11 小节 / §10.1。
+> **本轮进度（2026-09-30，本地验证）**：批 J 的 **G9②③ + G10** 已实施、本地验证通过（记录见 §10.7），工作树仅改 release workflow、wheel 冒烟、其测试及本文档；`src/`、AGENTS.md、README.md 未改。批 J 整体**未收口**：G8 仍未开始；既有 G9①④/P33 的远端 dispatch 结果、G9②③ 的真 tag 发布与本轮 CI 均未由本轮取证，未经授权不推送/打 tag/dispatch。
+> **后续**：批 H（DOC1/DOC2）、批 J 的 G8 及本轮新登记的 P34–P37/DOC3（§10.6，待运行复现/产品裁定）均保留原有门槛；开工前按 §5 再集中确认。
 
 ---
 
@@ -56,12 +56,17 @@
 | P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [x] 批次 I 已落地（`a3fffbd`；4 通道实为静默接受，见 §10.5） |
 | P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [x] 批次 I 已落地（`a3fffbd`） |
 | G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿未署名、opencv wheel 的 LGPL-2.1 组件无记、无 Linux notices 段且镜像不跑 `--check`、Python 合规门弱于 ci.yml 的正则。 | [ ] 未开始（批 J） |
-| G9 | release 三处高危（校验步必失败 / 发布竞态 / 缺 GUI 门）+ 新增第④条同名覆盖 | **high** | M | J | 实测：Windows `Checksums` 步因「重定向目标先于通配展开被打开」而**必定失败**（连带 upload/release 全 skip）；两平台同名 sums 互相覆盖；另有发布竞态与 tag 链缺 GUI 门。 | [x] ①+④ 已修（`0bb150e`，待 dispatch 复验）；②③ 待批 J |
-| G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [ ] 未开始（批 J） |
+| G9 | release 三处高危（校验步必失败 / 发布竞态 / 缺 GUI 门）+ 新增第④条同名覆盖 | **high** | M | J | 实测：Windows `Checksums` 步因「重定向目标先于通配展开被打开」而**必定失败**（连带 upload/release 全 skip）；两平台同名 sums 互相覆盖；另有发布竞态与 tag 链缺 GUI 门。 | [x] ①+④ 已修（`0bb150e`，既有 dispatch 待核）；②③ 本地已修（2026-09-30，tag 真发布待取证，见 §10.7） |
+| G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [x] 本地已修、双 wheel 真实安装与负控通过（2026-09-30；CI 待取证，见 §10.7） |
 | G11 | CI/仓库硬化六条（tag 钉 / permissions / concurrency / ignore / eol / urls） | low-med | S | F′ | 六处相互独立的基础设施硬化，逐条可验。 | [ ] 未开始（批 F′） |
 | DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [ ] 未开始（批 H；§十一 正则句归 G8） |
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [ ] 未开始（批 H） |
 | P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`，待 dispatch 复验；证据 §9.9） |
+| P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | 未排批次（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 读码推断；待 POSIX/Windows 复现 |
+| P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | 待复现 | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [ ] 读码推断；待离屏复现 |
+| P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | 待复现 | 未排批次（GUI 面） | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [ ] 读码推断；待离屏复现 |
+| P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | 待复现 | 未排批次（GUI 面） | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [ ] 读码推断；待导出与消费者验证 |
+| DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | 未排批次（文档面） | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [ ] 读码确认算法；措辞待产品裁定 |
 
 ---
 
@@ -81,7 +86,7 @@
 | ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。四个提交（`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed`）已推送到 `origin/main`，推送后 CI 结论见 §9.10。** |
-| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①+④ 与 P33 已于 2026-09-29 先行落地（`0bb150e`，见 §9.9/§9.10，待一次 dispatch 复验）；本行剩余 ②（`gh release create` 竞态，需 tag 推送才可验）、③（tag 链 GUI 门）、G10（`smoke_wheel.sh` 假绿，本机可验）、G8（许可与合规门四处，含 Linux notices 段 bootstrap）。 |
+| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①+④/P33 先行落地（`0bb150e`，既有 dispatch 待核）；**2026-09-30 G9②③/G10 本地已修**：唯一 tag-push 发布 job 依赖 GUI 与双平台成功、发布前校验双工件；两份 wheel 独立受管 uv 环境实装、RECORD/入口点及旧负控通过，fast 与 GUI 全绿。**J 未完成**：G8 未开始；tag 真发布/Windows/macOS 与本轮 CI 未取证，跨 workflow run 的并发归 G11③。见 §10.7。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
@@ -155,13 +160,14 @@
 ① **新 ID 与批次重订**：采纳 §10.1 的 12 个新 ID（`P27–P32` / `G8–G11` / `DOC1–DOC2`）与 §10.4 的重切结果（新批 `H/I/J/K/L/M/O`，原批 F 扩为 `F′`）；**原批 E 作废**。理由：新发现里发布链两条高危（G9/G10）成本低而危害高，必须提前；旧批 E 的四个 ID 与 P20 按文件族重切，避免同一文件被两批改两遍。
 ② **`verify --expected-payload` 的退码口径**：**整图找不到信封 → 1**（与另两条 verify 路径一致，符合 §4.3「1 = 未取回任何东西」），**找到信封但 CRC 不符 / payload 不符 → 2**。由 P27 落地，README 退出码表同步拆写并加用例钉住。这是 P19 之后第二次退出码口径变更；P24 在 README 上登记的「`--expected-payload` 不符 → 2」属**细分未拆**，非数值冲突，被本条取代。
 ③ **P31 口径**：空载荷在 `embed`/`pack_payload` 一律抛 `ValueError`（不再 `ZeroDivisionError`，不再产出 `envelope_lengths` 永不可发现的 13 字符信封）；`embed`/`extract`/`extract_envelope` 增加「3 维且 3 通道」校验，把 `cv2.error` 纳入 `ValueError`→exit 2 映射；`extract_envelope` 接入 P14 的 `_require_capacity`（**P14 残留收口**）。`_dwt_dct_svd.decode_bits` 的 `ZeroDivisionError` 属上游逐字契约（其 docstring 已声明），**不动**。
-④ **仍待定**（随各自批次开工前集中确认）：批 L 的 ICC 归属 / 损坏 EXIF 语义 / HEIC 与像素上限；批 O 的非 JPEG 输出策略；批 M 的 P5/P6 契约与阈值；批 J 的发布者归属与 wheel 安装策略（本轮落档时只登记待定，不预先裁定）；批 N 的 ε 语义与慢档判据。
+④ **仍待定**（2026-09-29 时点，随各自批次开工前集中确认）：批 L 的 ICC 归属 / 损坏 EXIF 语义 / HEIC 与像素上限；批 O 的非 JPEG 输出策略；批 M 的 P5/P6 契约与阈值；批 J 的发布者归属与 wheel 安装策略（当时只登记待定）；批 N 的 ε 语义与慢档判据。
+⑤ **批 J 的两项裁定（2026-09-30）**：G9②③ 在同一次 workflow run 内采用唯一发布 job，两平台只负责构建并上传各自工件，双平台与 GUI 门全绿后才允许 tag push 创建/上传 Release；同 tag 多次 run/重跑的并发隔离仍归 G11③ 的 workflow concurrency 待办；G10 分别在独立临时 uv 环境安装仓库 wheel 和由 sdist 重建的 wheel，实际检查导入、入口点、版本、许可元数据；保留既有版本错配与项目 `.venv` 冲突两个负控。本轮只实施 G9②③/G10，G8 留在批 J 待办；另发现的 P34–P37/DOC3 只做 §10.6 的待复现登记。
 
 ---
 
 ## 4 全局约定
 
-1. **uv 规范（AGENTS.md 六）**：禁止任何直接调用 pip 的安装形式（含 `pip3`、`python -m pip`）；依赖只写进 `pyproject.toml`，由 uv 生成并提交 `uv.lock`，仓库不得出现 `requirements.txt`；运行一律 `uv run`，新机器一律 `uv sync --frozen`。`tests/test_compliance.py` 与 CI 的 grep 门（注意排除 `.github`）把这条机械化；新增文档时不得把被禁字面量（pip + 空格 + install）抄进仓库——本文件正因此不写出该字面量。
+1. **uv 规范（AGENTS.md 六）**：禁止任何直接调用 pip 的安装形式（含 `pip3`、`python -m pip`）；依赖只写进 `pyproject.toml`，由 uv 生成并提交 `uv.lock`，仓库不得出现 `requirements.txt`；运行一律 `uv run`，新机器一律 `uv sync --frozen`。`tests/test_compliance.py` 与 CI 的 grep 门均扫描 `.github/`（前者仍只识别单空格、弱于后者的多空白正则，归 G8④）把这条机械化；新增文档时不得把被禁字面量（pip + 空格 + install）抄进仓库——本文件正因此不写出该字面量。
 2. **推进顺序与 `--layers` 语义**：处理顺序固定为 resize → invisible → perturb → visible → JPEG，任何条目都不得调换；`--layers` 只控制成员（哪些层参与），不改变顺序、不改变数量语义、不新增层。AGENTS.md 只读——冲突一律在条目「开放问题」里标注并由用户裁定。
 3. **退出码契约**：0 = 成功（含 `verify` 取回**证据**：信封命中或盲检发现）；1 = 未取回任何东西（verify 无 payload）；2 = 参数或运行期错误；**3 = 只取回旧版线索（`--payload-bytes` 路径，无校验和，P19 起）**。所有新增的 `ValueError`/`OSError`/`RuntimeError` 必须经 `cli.py:132-137` 落到 2；新增一类 exit 2（如损坏 EXIF、不支持的输出扩展名）时须有测试钉住，`cli.py:135` 会掩盖。3 只出现在旧版线索路径，不得被其它分支复用。
    - **P27 起的口径（2026-09-29 三次审计裁定）**：`verify --expected-payload` 的「整图找不到信封」归 **1**（与 `--payload-bytes`、盲检两条路径一致，即 1 统一为「三条 verify 路径共同的『未取回』」）；「信封在但 CRC 不符 / payload 不符」保持 **2**（取回了但校验不通过）。`cli.py:132-137`/`cli.py:135` 为 P3 时代的坐标，现对应 `cli.py:180`/`cli.py:183`。
@@ -2140,12 +2146,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   - 两个文件名按平台分开，覆盖风险消除。
   **验收**：`tests/test_release_workflow.py` 四条静态 pin 先红后绿；`git diff` 仅 workflow；**真实验证需一次 dispatch（待 CI 取证）**。②（`gh release create` 竞态）与 ③（tag 链 GUI 门）只在 tag 推送时执行，本轮不动、仍留批 J。
   **验证中（2026-09-29 10:03Z）**：`release-desktop` #4 = `36553114743` 已发起（sha `f23c428`），两平台的步骤名已换成 `Checksums (SHA256, sha256sum-compatible)`（新文本生效的旁证）；同一次 push 的 `ci` #35 已绿（三腿各 228 passed/2 skipped，**含本批四条静态 pin**），但 **Windows 的 `Checksums`/`upload-artifact` 结论仍待回写**，见 §9.10 第 11 小节。
+  **2026-09-30 的 G9②③ 本地实施（见 §10.7）**：`verify` 补桌面依赖、PySide6 硬探针和 GUI 有通过/无跳过门；两平台只构建并上传，独立 `publish` 仅在 tag push 且 verify/双平台全绿时取得写权限，分别下载并核验清单与目标文件后才创建/上传 Release。`workflow_dispatch` 即使选择 tag ref 也不发布。静态回归旧码先红，本地新码已绿；**未触发 tag/dispatch，不能替代旧 #4 结果或新发布真机取证**；跨 run 的并发归 G11③。
 
 #### G10 — `smoke_wheel.sh` 假绿：wheel 从未被安装/导入（med，批 J）
 
 - **现象**（读码）：`packaging/smoke_wheel.sh` 第 2 步只 grep 所建 wheel 的 `namelist()`；第 3 步从 sdist 再建 wheel 后不再使用；第 4 步 `uv sync --frozen --no-dev --no-editable` 装的是**源码树**，`$WHEEL`/`$SDIST` 其后成为死变量 → RECORD 损坏、入口点缺失、`license-files` 未随包的 wheel 都能过冒烟。
-- **方案**：第 4 步改为在临时 venv 内安装**所建 wheel**（用 uv 的 pip 子命令，不出现被禁字面量）并 `import photo_guard`、`photo-guard --help` 退 0、`importlib.metadata` 读 `License-Expression`；sdist 侧同验。
+- **方案（原审计推荐，实施取值见下）**：第 4 步改为在临时 venv 内安装**所建 wheel**（用 uv 的 pip 子命令，不出现被禁字面量）并 `import photo_guard`、`photo-guard --help` 退 0、`importlib.metadata` 读 `License-Expression`；sdist 侧同验。
 - **验收**：本机实跑脚本退 0；再加负控（临时副本上破坏 wheel 元数据）确认变红。该脚本被 `ci.yml` 的 wheel 冒烟步调用，改动即抬高 CI 门槛。
+- **2026-09-30 本地已修（见 §10.7）**：锁文件导出到临时输入，分别对直接 wheel 与 sdist 重建 wheel 执行 `uv venv --managed-python --python 3.11` + `uv pip sync`，每份单独环境核验真实来源路径、版本、许可证文件与元数据、控制台入口；安装前逐成员验证 wheel RECORD。受管 Python、双轮真实冒烟、损坏 RECORD 与入口点的负控及旧版号/项目虚拟环境负控均通过；CI 真环境仍待推送取证。
 
 #### G11 — CI/仓库硬化六条（low-med，批 F′）
 
@@ -2163,7 +2171,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 #### DOC2 — README 两条失实（low，批 H）
 
-1. `README.md:179`「且成功路径不回贴原权限位，目标文件的写位会保留」→ **假**：`outputs.py:105-106` 在 `os.replace` 之后回贴 `previous_mode`（`tests/test_output_integrity.py` 已钉只读目标写后仍只读）→ 删掉「不回贴」，改为「成功路径会把原权限位回贴到目标文件」。
+1. `README.md:179`「且成功路径不回贴原权限位，目标文件的写位会保留」→ **假**：`outputs.py:105-106` 在 `os.replace` 之后回贴 `previous_mode`（`tests/test_output_integrity.py` 已钉普通只读目标写后仍只读）→ 删掉「不回贴」，准确写成「普通目标成功时回贴权限到替换后的新文件」；**符号链接的旧目标不一定恢复原权限**（P34 待复现），不得把新文件与旧目标混称“目标文件”，也不得删掉原有链接风险提示。
 2. `README.md:366`「许可正文与声明属手写件，生成器只读不写」→ **假**：`generate_notices.py:186-187` 会重写 `THIRD_PARTY_NOTICES.md` 的平台段 → 改为「`LICENSE` 与 `licenses/*.txt` 只读；notices 的平台段由生成器重写」。
 
 #### P33 — macOS bundle 许可材料落点与 `application_root()` 不一致（**high**，批 J）
@@ -2211,3 +2219,22 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **批次门槛实测**：`uv run --no-sync pytest -m 'not slow' -q` **230 passed**；`--collect-only -q` 实测 **230 collected**（落地前 221；+9 = 先红 6 + 等价 pin 3）；合规门 + 四条 fail-loud 回归锁 **31 passed**；改动面 = README + 4 个 src 文件 + 3 个测试文件。
 - **风险登记**：① P27 是 P19 之后第二次退出码口径变更，本次只改**一条分支的 1/2 归属**（无新码、无码值回收），README 与 §4.3 已同步，四条用例钉住含两条反向 pin；② `_require_bgr` 仅作用于层① 直连接口，`pipeline` 侧输入经 `convert("RGB")` 保证 3 通道，GUI/CLI 路径行为不变（fast 230 覆盖）；③ 本批无 CI/Docker/tag 依赖项，**无需等待外部取证**。
 - **推送与 CI（2026-09-29）**：`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed` 四个提交已推送到 `origin/main`（`c3e3d2a..26e11ed`）。推送后 `ci` 三腿 + `gui` job 全绿（逐腿汇总行见 §9.10），`docker` 结论同见 §9.10。
+
+### 10.6 本轮只读审计：新风险待复现登记（2026-09-30）
+
+> 本节仅由文档/源码静态交叉审查得出，**未执行复现脚本、未验证表格软件行为，也未修改对应的 `src/`/GUI 代码**。按用户裁定，本批只修 G9②③/G10；以下条目各自留在未排批次，后续先复现再确定修法。它们不是批 J 的验收条件，不能把“待复现”写成“已修复”。
+
+1. **P34｜输出符号链接可能改动旧目标权限（输出面；关联 P28/P20，但不属于它们已列的报错包装/后置 `chmod`）**。`outputs.py:68` 的 `destination.exists()/stat()` 沿链接读取目标权限；若目标只读，`:94-97` 的 `os.chmod(destination, ...)` 也沿链接解除目标写保护；`:100` 替换的是链接自身，`:105-106` 成功回贴只作用于新产物。`tests/test_output_integrity.py:233-250` 只钉了旧目标**内容**不变，没有钉权限。先在支持符号链接的 POSIX 临时目录测旧目标 mode、字节前后完全一致，再判 Windows 文件属性差异；如证实，只允许对普通目标执行临时解除写保护及权限继承，不得影响链接目标。当前仅有源码机制推断。
+2. **P35｜GUI 自动发现绕过期望载荷（GUI 面；关联 P29 的输入校验，但不等同非法明水印模式）**。`gui.py:137-143` 的 `auto_discover` 分支先于 `expected`；`start_verify:353-360` 未禁止“显式勾选自动发现 + 同时填期望值”。若图内载荷为 B、期望 A，可能显示“通过（自动发现）”，而不是不匹配。先用离屏 GUI 用例**明确勾选**复选框并填写与 B **UTF-8 字节长度相同但内容不同**的 A（排除按期望长度找信封的干扰），钉住最终状态；再裁定互斥拒绝还是显式比对（CLI 的两种模式当前互斥）。未声称复选框默认勾选。
+3. **P36｜跨标签页忙碌拒绝导致按钮可能一直禁用（GUI 面）**。`gui.py:341-349` 启动保护时，在 `_start_worker` 后无条件禁用按钮；`:365-366` 遇已有任务只报警并返回；若活动任务是验证，`:418-420` 的验证完成回调也不恢复保护按钮。两个启动入口还分别在忙碌门**之前**清空了各自结果（保护 `:341`，验证 `:359`）：保护忙时点“开始验证”可能清掉既有验证结果，验证忙时重复点“开始验证”可能清掉已收到的行。先在离屏环境做双向/重复启动拒绝的复现，钉住按钮可用、旧结果不丢且新任务未启动；是否只在入口提前拒绝或统一维护按钮状态须以复现为依据。本条未实测。
+4. **P37｜CSV 中的未信任值可能被表格软件当公式执行（导出边界；关联 P29 的 `export_csv` 异常处理，非同一故障）**。`gui.py:429-434` 把恢复的 payload/来源路径直接交给 `csv.writer`；引号转义只保证 CSV 语法，不能保证消费者按纯文本对待首字符为 `= + - @` 或带前导控制字符的单元格。先做恶意前缀与普通值的导出/回读测试，再核定目标表格软件的实际解析行为、前导空白/控制字符策略与中和形式；不把潜在公式解释说成已执行外部命令。本条未复现。
+5. **DOC3｜CRC 完整性与作者身份的信任边界（文档面；与 DOC1/DOC2 同属文档漂移，但需要单独产品裁定）**。`watermark_invisible.py:304-328` 的公开 CRC32 及信封格式可由任意人重算，且 CRC **只覆盖 payload、不绑定图片像素**；模块顶注释 `watermark_invisible.py:7` 直接称其“确权 evidence”，`pipeline.py:143,161,174` 使用 evidence/`verified=True`，`README.md:126,177` 的“确权证据”和 `AGENTS.md` §8.3 的“可判真伪”均可能被误读成作者/具体图片归属认证。现有机制只能检测取回载荷的偶发损坏是否与头部一致，**不能单独证明作者身份或该载荷属于特定图片**；`README.md:116`“不会把随机噪声当成 payload”的绝对措辞也须按校验概率收窄。后续应区分“完整性/可恢复线索”与“来源认证”，若要来源认证需用户另行决定签名或外部留底方案，不得私自修改 §一–§七 的方案规范或既有信封格式。此处算法行为为读码确认，用户场景与改文案方案待裁定。
+
+**后续排批**：P34 可在输出面、P35–P37 可在 GUI 面、DOC3 可在文档面讨论，但本次不扩充既定 K/H 的 2–3 项批次，也不改变 §2 的五条硬定序；复现与产品裁定后再决定是否并批或新开批次。
+
+### 10.7 批 J 局部落地：G9②③ + G10（2026-09-30，本地验证）
+
+- **G9②③**：`release-desktop.yml` 的 verify 在既有 fast/tag 版本门后增加 Qt 运行库、desktop extra、PySide6 导入探针、离屏 GUI 测试“有通过且无跳过”检查与 GUI `--help`；构建 job 只生成并上传平台工件，唯一 `publish` 仅在 **tag push** 且 verify/Windows/macOS 全绿时下载双工件、核对指定文件与平台独立的 SHA256SUMS 内容，再执行一次 Release 创建/上传。`workflow_dispatch` 即使 ref 指向 tag 也不发布；顶层只读权限，只有 publish job 有写权限。原有四条校验和 pin 继续有效，定位范围由全文改为指定 job（**加强**）；新增四条发布/分发静态 pin 在旧实现上 **4 红**，现态通过。额外用模拟的 `if: always()` 注释与 GUI `|| true` 两条反例验证测试会红，未放宽任何旧断言。**边界**：此修复消除同一 run 的双平台创建竞态；同 tag 多次 run 的并发仍归 G11③，且未做真实 tag 发布。
+- **G10**：`smoke_wheel.sh` 保留版本单源及拒绝项目 `.venv` 的前置门，构建原始 wheel、sdist 和由 sdist 重建的 wheel；每份 wheel 先核验 RECORD 全部成员/摘要/大小与许可元数据，再在不同的项目外 uv 托管 Python 3.11 临时 venv 用锁定 core 依赖 + 对应本地 wheel 安装。运行时在非源码目录、禁用 `PYTHONPATH` 且用 Python 隔离模式，核对实际导入路径在该 venv 内、dist 版本、`License-Expression`/`License-File` 实际文件及控制台入口 `--help`。两轮真实冒烟均退 **0**；临时篡改 wheel 内容但不更新 RECORD 时被摘要门拒绝；重算 RECORD 后改名入口点虽可安装，但原 `photo-guard` 命令不存在（冒烟必须失败）；错误期望版本退 **非零**、指定项目 `.venv` 在构建前退 **非零**。原有负控强度未放宽；本机首次运行时临时环境曾选系统 Python，后显式钉 `--managed-python --python 3.11` 并重新跑通。**本机已有项目 `.venv` 仍指向 Homebrew Python 3.11**，属既有本地环境差异，本批未重建用户虚拟环境；本修复只保证新建的冒烟 venv 受 uv 托管。
+- **回归与范围**：`uv run --no-sync pytest tests/test_release_workflow.py tests/test_compliance.py -q` 本地通过；全量 fast `uv run --no-sync pytest -m 'not slow' -q` **247 passed**，`uv run --no-sync pytest --collect-only -q` **现场收集 247**；`QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -m gui -q` **15 passed、0 skipped**；PyYAML 解析 release workflow、`bash -n packaging/smoke_wheel.sh`、`git diff --check`、函数头/逻辑注释及复杂度门均通过。变更限定在 release workflow、smoke 脚本、`tests/test_release_workflow.py` 和本文档；不改 `src/`、`uv.lock` 或依赖声明。
+- **未取证/下一步**：未 push、未打 tag、未触发 workflow_dispatch，故本轮 CI Linux 的实际 wheel 冒烟、macOS/Windows 打包及 tag 发布行为仍为**待远端授权取证**；旧 release #4 的最终状态也未在本轮查询。批 J 的 G8 和批 H 尚未开工，P34–P37/DOC3 只按 §10.6 登记，没有当作已修。
