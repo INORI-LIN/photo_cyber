@@ -50,15 +50,28 @@ payload_match`
 | downscale_720_back_1080 | `scale_long=720` → `scale_to=1080`（LANCZOS 放大回长边 1080） |
 | combo_repost | `scale_long=720` → `jpeg 75` → `jpeg 85` |
 
+**被测对象是「重编码后的产物」**：每格把 ops 结果落盘到 `artifacts/`，`pass`、格式/长边检查
+都读那个文件（首版曾误读 ops 前的产物——被 P4 自检保证必可读，使钉住行空转；复核发现后已修）。
+ops 链的编码语义：几何 op 先作用于像素、由**下一个**编码器落盘（`scale_long→jpeg 75` 只编码一次
+@75）；纯几何链由末尾的 JPEG 默认编码收尾（q85/subsampling 2/optimize，即「平台重存」）。
+`blocks_per_bit` 以**产物（ops 前）**几何计算（水印嵌在那里）；`artifact_subsampling` 描述被测的
+**ops 产物**。
+
 **钉住行**：只有 `textured_detail` 的 `identity` 与 `jpeg_q85` 要求 100%；其余格是观测值，
 首轮 `<100%` 属产品发现（走 Q2 决策，禁缩语料、禁降钉）。
 
 ## 退出码
 
 - `0`：钉住行 100%、负向控制正确（仅 visible 层产物必须判定失败）、行数
-  `len(images) * len(CELLS)`、ops 期望的格式/长边与产物一致、identity 的 `rms_ratio` 精确 1.0。
+  `len(images) * len(CELLS)`、**ops 产物**的格式与长边符合 ops、`blocks_per_bit ≥ 8`、
+  每张图的 identity `rms_ratio` 精确 1.0、identity 扰动非空。
 - `1`：钉住行未 100%，或负向控制假阳（visible-only 竟能验真）。
-- `2`：环境不可用（缺 SD 模型、Pillow 无 webp、图 <256×256、表头漂移、ops 尺寸不符）。
+- `2`：环境/契约不可用（缺 SD 模型、Pillow 无 webp、图 <256×256、表头漂移、ops 产物尺寸/格式
+  不符、`blocks_per_bit < 8`、identity 扰动为零）。
+
+> 计划里的「反向配对 `abs(rms_ratio-1.0)>0.1`」**未按字面实现**：以 identity 为分母时该值恒为
+> 1.0，而要求每个格子的扰动都退化 >10% 并非设计保证。落地的对应保障是「每张图 identity 精确
+> 1.0」＋「扰动为零即退 2」＋summary 的逐格敏感性面板（见 `docs/fix-plan.md` §10.14 登记）。
 
 ## 自证失败法（G1 后口径）
 

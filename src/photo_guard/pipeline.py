@@ -172,14 +172,17 @@ def validate_capacity(stored_bytes: int, height: int, width: int) -> None:
         )
 
 
-def _verify_output(temp_path: Path, expected_payload: str, *, envelope: bool) -> None:
+def _verify_output(
+    temp_path: Path, expected_payload: str, *, envelope: bool, destination: Path
+) -> None:
     """Re-read the freshly written product and require exact recovery (P4).
 
     Runs on the temp file before ``os.replace`` (M-A), so a failure leaves no product and
     cannot damage a previous one. Raw payloads go through
     :func:`watermark_invisible.extract` **byte-exact** — deliberately not through
     ``verify``, whose ``is_recoverable_text`` filter rejects legal periodic payloads such as
-    ``abab`` and would turn honest products into exit 2.
+    ``abab`` and would turn honest products into exit 2. ``destination`` only names the
+    wanted output in the failure message (the temp name alone would be unhelpful).
     """
     image, _ = _load_oriented_rgb(temp_path)
     bgr = _pil_rgb_to_bgr(image)
@@ -193,12 +196,12 @@ def _verify_output(temp_path: Path, expected_payload: str, *, envelope: bool) ->
         # A reader that cannot see the carrier raises here; keep the self-check wording so
         # the failure is attributable to the product, with the underlying reason attached.
         raise ValueError(
-            f"self-check failed: the written product cannot be read back ({exc}): {temp_path.name}"
+            f"self-check failed: the written product cannot be read back ({exc}): {destination}"
         ) from exc
     if recovered != expected_payload:
         raise ValueError(
             f"self-check failed: the written product does not return the payload "
-            f"({temp_path.name}); the image content may be too flat or too small for the "
+            f"({destination}); the image content may be too flat or too small for the "
             f"invisible layer"
         )
 
@@ -287,7 +290,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         # P4/M-A: verify the temp bytes before the swap, so a failed check leaves neither a
         # product nor damage to a previous one.
         verify = lambda path: _verify_output(  # noqa: E731 - one-line closure over opts
-            path, opts.payload, envelope=opts.payload_envelope
+            path, opts.payload, envelope=opts.payload_envelope, destination=output_path
         )
     outputs.save_image_atomic(
         final, output_path, quality=opts.quality, icc_profile=icc, verify=verify

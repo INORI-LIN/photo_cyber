@@ -14,7 +14,13 @@ Run (core environment; no torch/diffusers needed for ``noise``)::
 Artifacts land in ``--out-dir``: ``cells.csv``, ``retention.csv``, ``summary.md``.
 Exit codes: 0 = pinned rows 100% and all self-checks hold; 1 = a pinned row below 100% or
 the negative control false-positived; 2 = unusable environment (missing SD model, webp
-unavailable, image below the 256x256 floor).
+unavailable, image below the 256x256 floor, ops result off-contract, empty perturbation).
+
+**The subject under test is the re-encoded artifact**: every cell writes its ops result to
+disk and both ``pass`` and the format/size checks run on that file. (The first landing of
+this script checked the pre-ops product instead — which the P4 self-check makes readable by
+construction, so the pinned rows were vacuous; found by the post-landing review and fixed
+here.)
 
 Column names are frozen; ``bench/README.md`` is the contract (P5 consumes both).
 """
@@ -27,6 +33,7 @@ import io
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +44,7 @@ from photo_guard import compress, config, perturb, pipeline, watermark_invisible
 IMAGES = ("textured_detail", "portrait_like", "smooth_lowtex")
 PINNED = frozenset({("textured_detail", "identity"), ("textured_detail", "jpeg_q85")})
 DEFAULT_PAYLOAD = "0123456789abcdef"  # 16 bytes -> 37 stored -> 296 bit
+MIN_BLOCKS_PER_BIT = 8  # sanity floor for the shipped carrier (see fix-plan §6 P6)
 
 CELLS_HEADER = (
     "image", "cell", "ops", "artifact_subsampling", "stored_payload_bytes", "bits",
@@ -44,6 +52,9 @@ CELLS_HEADER = (
     "fixture_h", "pass", "crc_ok", "payload_match",
 )
 RETENTION_HEADER = ("image", "cell", "rms_ratio", "linf_ratio")
+
+_CONTAINERS = {"jpeg": "JPEG", "webp": "WEBP", "png": "PNG"}
+_EXTENSIONS = {"JPEG": ".jpg", "WEBP": ".webp", "PNG": ".png"}
 
 
 @dataclass(frozen=True)
@@ -92,39 +103,71 @@ def _synthetic(name: str) -> Image.Image:
     return compress.fit_long_edge(image, config.DEFAULT_LONG_EDGE)
 
 
-def _apply_ops(image: Image.Image, cell: Cell) -> Image.Image:
+def _encode(image: Image.Image, container: str, quality: int | None) -> bytes:
+    buffer = io.BytesIO()
+    if container == "jpeg":
+        image.convert("RGB").save(
+            buffer, format="JPEG", quality=quality or 85, subsampling=2, optimize=True
+        )
+    elif container == "webp":
+        image.convert("RGB").save(buffer, format="WEBP", quality=quality or 80, method=4)
+    elif container == "png":
+        image.convert("RGB").save(buffer, format="PNG")
+    else:  # pragma: no cover - guarded by the frozen CELLS table
+        raise ValueError(f"unknown container {container!r}")
+    return buffer.getvalue()
+
+
+def _resize_long(image: Image.Image, long_edge: int) -> Image.Image:
+    width, height = image.size
+    scale = long_edge / max(width, height)
+    return image.resize(
+        (max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS
+    )
+
+
+def _apply_ops_bytes(data: bytes, cell: Cell) -> tuple[bytes, str]:
+    """Return ``(artifact bytes, format)`` after the cell's chain.
+
+    Geometry ops mutate pixels and are flushed by the *next* encoder (so a chain like
+    ``scale_long -> jpeg 75`` encodes once, at 75); a geometry-only tail is flushed with
+    the JPEG defaults (q85/subsampling 2/optimize) — the platform re-save a resize implies.
+    """
+    payload = data
+    container = "jpeg"
+    pending: list[tuple] = []
+
+    def flush(next_container: str, quality: int | None) -> None:
+        nonlocal payload, container
+        with Image.open(io.BytesIO(payload)) as source:
+            image = source.convert("RGB")
+        for op in pending:
+            if op[0] == "scale_long":
+                image = compress.fit_long_edge(image, op[1])
+            elif op[0] == "scale_to":
+                image = _resize_long(image, op[1])
+            else:  # pragma: no cover - guarded by the frozen CELLS table
+                raise ValueError(f"unknown op {op!r}")
+        pending.clear()
+        payload = _encode(image, next_container, quality)
+        container = next_container
+
     for op in cell.ops:
-        kind = op[0]
-        if kind in {"jpeg", "webp", "png"}:
-            buffer = io.BytesIO()
-            if kind == "jpeg":
-                image.convert("RGB").save(
-                    buffer, format="JPEG", quality=op[1], subsampling=2, optimize=True
-                )
-            elif kind == "webp":
-                image.convert("RGB").save(buffer, format="WEBP", quality=op[1], method=4)
-            else:
-                image.convert("RGB").save(buffer, format="PNG")
-            buffer.seek(0)
-            with Image.open(buffer) as reloaded:
-                image = reloaded.convert("RGB")
-        elif kind == "scale_long":
-            image = compress.fit_long_edge(image, op[1])
-        elif kind == "scale_to":
-            width, height = image.size
-            scale = op[1] / max(width, height)
-            image = image.resize(
-                (max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS
-            )
-        else:  # pragma: no cover - guarded by the frozen CELLS table
-            raise ValueError(f"unknown op {kind!r}")
-    return image
+        if op[0] in _CONTAINERS:
+            flush(op[0], op[1] if len(op) > 1 else None)
+        else:
+            pending.append(op)
+    if pending:
+        flush("jpeg", None)
+    return payload, _CONTAINERS[container]
 
 
-def _subsampling_of(path: Path) -> str:
-    with Image.open(path) as image:
-        layer = image.layer
-    return str(tuple(layer)) if layer else "n/a"
+def _expected_long_edge(cell: Cell) -> int:
+    edge = config.DEFAULT_LONG_EDGE
+    for op in cell.ops:
+        if op[0] in {"scale_long", "scale_to"}:
+            edge = op[1]
+    return edge
 
 
 def _decode_check(path: Path, payload: str) -> tuple[bool, bool]:
@@ -137,24 +180,6 @@ def _decode_check(path: Path, payload: str) -> tuple[bool, bool]:
     except ValueError:
         return False, False
     return True, recovered == payload
-
-
-def _options(payload: str, *, layers: frozenset[str], perturber: str) -> pipeline.ProtectOptions:
-    return pipeline.ProtectOptions(
-        payload=payload, payload_envelope=True, layers=layers,
-        perturber=perturber if "perturb" in layers else "noop",
-    )
-
-
-def _expected_long_edge(cell: Cell) -> int:
-    """The long edge the cell's ops must land on (P6 step 3: mismatch is exit 2)."""
-    edge = config.DEFAULT_LONG_EDGE
-    for op in cell.ops:
-        if op[0] == "scale_long":
-            edge = op[1]
-        elif op[0] == "scale_to":
-            edge = op[1]
-    return edge
 
 
 def _rms(arr: np.ndarray) -> float:
@@ -219,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     failures: list[str] = []
 
     # Negative control (P6 step 5): visible-only has no envelope — verify must refuse it.
-    control_src = sources[IMAGES[0]]
+    control_src = sources[next(iter(sources))]
     control_out = artifacts / "negative_control.jpg"
     pipeline.protect(
         control_src, control_out,
@@ -235,49 +260,52 @@ def main(argv: list[str] | None = None) -> int:
         with Image.open(source) as image:
             base_w, base_h = image.size
         deltas: dict[str, tuple[float, float]] = {}
+
+        # clean = shipped product (invisible+visible); pert = + the perturb layer.
+        clean_out = artifacts / f"{name}-clean.jpg"
+        pert_out = artifacts / f"{name}-pert.jpg"
+        pipeline.protect(
+            source, clean_out,
+            pipeline.ProtectOptions(payload=args.payload, payload_envelope=True, layers=plain_layers),
+        )
+        pipeline.protect(
+            source, pert_out,
+            pipeline.ProtectOptions(
+                payload=args.payload, payload_envelope=True, layers=all_layers,
+                perturber=args.perturber,
+            ),
+        )
+        with Image.open(clean_out) as product:
+            product_w, product_h = product.size
+
         for cell in CELLS:
-            out = artifacts / f"{name}-{cell.name}.jpg"
-            pipeline.protect(
-                source, out,
-                _options(args.payload, layers=plain_layers, perturber=args.perturber),
-            )
-            clean = _apply_ops(Image.open(out).convert("RGB"), cell)
-            pert_out = artifacts / f"{name}-{cell.name}-pert.jpg"
-            pipeline.protect(
-                source, pert_out,
-                pipeline.ProtectOptions(
-                    payload=args.payload, payload_envelope=True, layers=all_layers,
-                    perturber=args.perturber,
-                ),
-            )
-            perturbed = _apply_ops(Image.open(pert_out).convert("RGB"), cell)
-            clean_arr = np.asarray(clean, dtype=np.int16)
-            pert_arr = np.asarray(perturbed, dtype=np.int16)
-
-            expected_edge = _expected_long_edge(cell)
-            if max(clean.size) != expected_edge:
-                print(
-                    f"{name}/{cell.name}: post-ops long edge {max(clean.size)} != {expected_edge}",
-                    file=sys.stderr,
-                )
-                return 2
-            with Image.open(out) as artifact:
-                if artifact.format != "JPEG":
-                    print(f"{name}/{cell.name}: artifact format {artifact.format}", file=sys.stderr)
+            # The subject under test is the *re-encoded* artifact, written to disk first.
+            ops_bytes, ops_format = _apply_ops_bytes(clean_out.read_bytes(), cell)
+            ops_path = artifacts / f"{name}-{cell.name}-ops{_EXTENSIONS[ops_format]}"
+            ops_path.write_bytes(ops_bytes)
+            with Image.open(ops_path) as artifact:
+                if artifact.format != ops_format:
+                    print(f"{name}/{cell.name}: artifact format {artifact.format} != {ops_format}", file=sys.stderr)
                     return 2
+                if max(artifact.size) != _expected_long_edge(cell):
+                    print(
+                        f"{name}/{cell.name}: artifact long edge {max(artifact.size)} != "
+                        f"{_expected_long_edge(cell)}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                layer = getattr(artifact, "layer", None)  # JPEG-only; WebP/PNG have none
+                artifact_subsampling = str(tuple(layer)) if layer else "n/a"
 
-            crc_ok, payload_match = _decode_check(out, args.payload)
-            with Image.open(out) as artifact:
-                artifact_w, artifact_h = artifact.size
-            # The frozen formula from fix-plan §6 P6: blocks (MCU-aligned) per stored bit.
-            blocks = ((artifact_h // 4 * 4) // 8) * ((artifact_w // 4 * 4) // 8)
+            crc_ok, payload_match = _decode_check(ops_path, args.payload)
+            blocks = ((product_h // 4 * 4) // 8) * ((product_w // 4 * 4) // 8)
             bpb = blocks / bits
             cells_rows.append(
                 {
                     "image": name,
                     "cell": cell.name,
                     "ops": repr(cell.ops),
-                    "artifact_subsampling": _subsampling_of(out),
+                    "artifact_subsampling": artifact_subsampling,
                     "stored_payload_bytes": stored_bytes,
                     "bits": bits,
                     "blocks_per_bit": f"{bpb:.4f}",
@@ -291,16 +319,29 @@ def main(argv: list[str] | None = None) -> int:
                     "payload_match": payload_match,
                 }
             )
+            if bpb < MIN_BLOCKS_PER_BIT:
+                print(f"{name}/{cell.name}: blocks_per_bit {bpb:.4f} < {MIN_BLOCKS_PER_BIT}", file=sys.stderr)
+                return 2
+            if (name, cell.name) in PINNED and not (crc_ok and payload_match):
+                failures.append(f"pinned row {name}/{cell.name} did not pass")
+
+            # Retention: perturbation left after the same chain, vs the identity cell.
+            pert_bytes, _ = _apply_ops_bytes(pert_out.read_bytes(), cell)
+            with Image.open(io.BytesIO(ops_bytes)) as clean_image, Image.open(
+                io.BytesIO(pert_bytes)
+            ) as pert_image:
+                clean_arr = np.asarray(clean_image.convert("RGB"), dtype=np.int16)
+                pert_arr = np.asarray(pert_image.convert("RGB"), dtype=np.int16)
             if clean_arr.shape != pert_arr.shape:
                 print(f"{name}/{cell.name}: clean/pert shapes differ", file=sys.stderr)
                 return 2
             delta = (pert_arr - clean_arr).astype(np.float64)
             deltas[cell.name] = (_rms(delta), float(np.abs(delta).max()))
 
-            if (name, cell.name) in PINNED and not (crc_ok and payload_match):
-                failures.append(f"pinned row {name}/{cell.name} did not pass")
-
         rms0, linf0 = deltas["identity"]
+        if rms0 <= 0.0 or linf0 <= 0.0:
+            print(f"{name}: empty perturbation on the identity cell; retention undefined", file=sys.stderr)
+            return 2
         for cell in CELLS:
             rms_q, linf_q = deltas[cell.name]
             retention_rows.append(
@@ -311,6 +352,12 @@ def main(argv: list[str] | None = None) -> int:
                     "linf_ratio": f"{linf_q / linf0:.6f}",
                 }
             )
+        identity_ratio = next(
+            row["rms_ratio"] for row in retention_rows if row["image"] == name and row["cell"] == "identity"
+        )
+        if float(identity_ratio) != 1.0:
+            print(f"{name}: identity rms_ratio must be exactly 1.0, got {identity_ratio}", file=sys.stderr)
+            return 1
 
     cells_path = args.out_dir / "cells.csv"
     retention_path = args.out_dir / "retention.csv"
@@ -338,14 +385,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"row count {len(cells_rows)} != {expected_rows}", file=sys.stderr)
         return 2
 
-    first_image = next(iter(sources))
-    identity_ratio = next(
-        row["rms_ratio"] for row in retention_rows if row["image"] == first_image and row["cell"] == "identity"
-    )
-    if float(identity_ratio) != 1.0:
-        print(f"identity rms_ratio must be exactly 1.0, got {identity_ratio}", file=sys.stderr)
-        return 1
-
     import importlib.metadata as metadata
 
     try:
@@ -366,14 +405,17 @@ def main(argv: list[str] | None = None) -> int:
             [
                 "# efficacy matrix summary",
                 "",
+                f"- date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')} (UTC); sha: {sha}",
                 f"- run: {len(sources)} images x {len(CELLS)} cells; pass {passed}/{expected_rows}",
                 f"- perturber: {args.perturber}; payload {args.payload!r} "
                 f"({bits} bit, {stored_bytes} stored bytes)",
                 f"- negative control (visible-only): crc_ok={control_crc} match={control_match} "
                 f"(both must be False)",
                 f"- versions: python {sys.version.split()[0]}, Pillow {Image.__version__}, "
-                f"numpy {np.__version__}, photo-guard {version}, sha {sha}",
-                f"- artifact_subsampling: {sorted({row['artifact_subsampling'] for row in cells_rows})}",
+                f"numpy {np.__version__}, photo-guard {version}",
+                f"- measured subjects: the *re-encoded* artifacts under artifacts/; "
+                f"artifact_subsampling values: "
+                f"{sorted({row['artifact_subsampling'] for row in cells_rows})}",
                 "",
                 "Pinned rows (must be 100%): " + ", ".join(sorted(f"{i}/{c}" for i, c in PINNED)),
                 "",
