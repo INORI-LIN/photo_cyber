@@ -148,6 +148,13 @@ def test_hand_maintained_notices_name_vendored_and_bundled_code() -> None:
     assert refreshed.partition("## Darwin / arm64")[0] == hand
     assert OPENCV_THIRD_PARTY in generator["HAND_MAINTAINED_LICENSES"]
 
+    # Linux 平台表按首轮实际镜像的完整行数/专属依赖锁定，空缺与猜测将使测试变红。
+    linux = text.partition("## Linux / x86_64")[2].partition("## Windows / AMD64")[0]
+    assert len([line for line in linux.splitlines() if line.startswith("| ")]) == 63
+    assert "| nvidia-cublas | 13.1.1.3 |" in linux
+    assert "| opencv-python-headless | 4.13.0.92 |" in linux
+    assert "| PySide6 |" not in linux and "| Nuitka |" not in linux
+
     source = (REPO_ROOT / "src" / "photo_guard" / "_dwt_dct_svd.py").read_text(encoding="utf-8")
     doc = source.split('"""', 2)[1]
     for clause in (
