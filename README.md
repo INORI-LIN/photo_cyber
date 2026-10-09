@@ -361,6 +361,7 @@ uv run python packaging/build_desktop.py
 
 - `THIRD_PARTY_NOTICES.md`：按平台段列出依赖及各自许可证，含随包分发的 `stabilityai/sd-vae-ft-mse` 权重（MIT）；
 - `licenses/GPL-3.0.txt`、`licenses/LGPL-3.0.txt`：PySide6/Qt 以 LGPL-3.0 分发，正文随包提供；
+- `licenses/LICENSE-3RD-PARTY-opencv.txt`：保留锁定版本 OpenCV wheel 随附的完整第三方声明，包含 FFmpeg 的 LGPL-2.1 原文；仓内转录的 MIT 来源/署名另见 `THIRD_PARTY_NOTICES.md` 的手工段；
 - Docker 镜像、macOS bundle 与 Windows 安装器都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md` 与 `licenses/`。
 
 刷新本平台段：`uv run python packaging/generate_notices.py`（须在装了完整依赖的环境里跑）；发布前用 `--check` 校验——它只比当前平台段，缺失或多出都判失败。许可正文与声明属手写件，生成器只读不写。

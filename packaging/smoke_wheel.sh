@@ -104,7 +104,8 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     if (metadata.get("Name") != "photo-guard" or metadata.get("Version") != sys.argv[2]
             or metadata.get("License-Expression") != "MIT"
             or not {"LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/GPL-3.0.txt",
-                    "licenses/LGPL-3.0.txt"}.issubset(licenses)
+                    "licenses/LGPL-3.0.txt",
+                    "licenses/LICENSE-3RD-PARTY-opencv.txt"}.issubset(licenses)
             or any(record.rsplit("/", 1)[0] + "/licenses/" + name not in members
                    for name in licenses)):
         raise SystemExit("wheel version or license metadata/files mismatch")
@@ -134,7 +135,8 @@ if dist.version != sys.argv[2]:
     raise SystemExit(f"installed version {dist.version} != expected {sys.argv[2]}")
 if (dist.metadata.get("License-Expression") != "MIT"
         or not {"LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/GPL-3.0.txt",
-                "licenses/LGPL-3.0.txt"}.issubset(licenses)):
+                "licenses/LGPL-3.0.txt",
+                "licenses/LICENSE-3RD-PARTY-opencv.txt"}.issubset(licenses)):
     raise SystemExit("installed license metadata mismatch")
 
 # 已安装的许可文件必须出现在此 distribution 的文件清单内且真实存在。

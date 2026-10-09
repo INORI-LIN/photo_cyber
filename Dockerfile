@@ -97,6 +97,9 @@ RUN uv run --no-sync python -c "import cv2, numpy, PIL, pywt, torch, diffusers, 
 # /app/models/sd-vae-ft-mse, matching config.PHOTOGUARD_MODEL_ID.
 RUN uv run --no-sync photo-guard download-models
 
+# G8：模型下载层之后才拷入公告生成器，避免改动触发重装依赖或重新下载模型。
+COPY packaging/generate_notices.py /app/packaging/
+
 # Lock runtime to offline mode — matches the os.environ.setdefault calls
 # in photoguard.py, but applied unconditionally so users can't accidentally
 # trigger a HuggingFace request from inside the container.

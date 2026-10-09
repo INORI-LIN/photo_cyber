@@ -8,7 +8,7 @@
 > **当前进度（2026-09-29 收尾）**：已落地批次 **1 / A / B / C / D / I**。批 I = `661b7eb`（落档三次审计的 12 项新条目）→ `a3fffbd`（修复 P27/P31/P32）→ `893c1be`（回写）→ `26e11ed`（登记 P33 并更正 S2 落点结论）；**四个提交已全部推送**到 `origin/main`，推送后的 CI 实测见 §9.10。
 > **既有发布缺陷复验（`0bb150e` 修复 + `f23c428` 回写，已推送）**：G9①④（Windows 校验和步骤）与 P33（macOS bundle 资源路径）在旧 `release-desktop` #4（`36553114743`，SHA `f23c428`）的 Windows/macOS 真机构建中已取证成功；该 run 为手工调度，Release 附加步骤 skipped 属预期，见 §9.10 第 11 小节。
 > **本轮远端结果（2026-09-30）**：批 J 的 **G9②③ + G10** 本地实施见 §10.7，已按授权将 `000a504` 推送 `main` 一次：该 SHA 的 `ci` 三系统 + GUI、`docker` 及一次手工 `release-desktop` 构建均 **success**；Windows 安装包和 macOS DMG 已下载，与各自 SHA256 清单一致（§10.8）。旧 #4 的 G9①④/P33 也已补到真机构建成功。**未推 tag、未公开 Release**；批 J 的 G8 与仅在 tag push 执行的 publish 仍未完成。
-> **后续**：批 H（DOC1/DOC2）、批 J 的 G8 及本轮新登记的 P34–P37/DOC3（§10.6，待运行复现/产品裁定）均保留原有门槛；开工前按 §5 再集中确认。
+> **G8 进行中（2026-09-30）**：公开普通 Release 的 `v0.1.0` 先暂停；①②④ 的本地修补和分包许可新门见 §10.9，③ 等待 Docker 真 Linux 段和第二轮离线 CI；首轮 main 推送将连带已授权的既有文档提交 `a84e054`。批 H 与 P34–P37/DOC3 仍留待各自批次。
 
 ---
 
@@ -55,7 +55,7 @@
 | P30 | `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突 | low | S | K | 校验拒绝 `noop`+`{perturb}`，而 `protect` 会优先用调用方实例；编程调用方被误拒。 | [ ] 未开始（批 K） |
 | P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [x] 批次 I 已落地（`a3fffbd`；4 通道实为静默接受，见 §10.5） |
 | P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [x] 批次 I 已落地（`a3fffbd`） |
-| G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿未署名、opencv wheel 的 LGPL-2.1 组件无记、无 Linux notices 段且镜像不跑 `--check`、Python 合规门弱于 ci.yml 的正则。 | [ ] 未开始（批 J） |
+| G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录稿缺独立通知、opencv wheel 内 FFmpeg 的 LGPL-2.1 声明需随包、Linux 镜像段须真源取证且离线校验、Python 合规门须与 ci.yml 多空白正则等价。 | [ ] ①②④ 已本地修补；③ 待 Linux 真镜像段与第二轮 CI；正式 tag 暂缓，见 §10.9 |
 | G9 | release 三处高危（校验步必失败 / 发布竞态 / 缺 GUI 门）+ 新增第④条同名覆盖 | **high** | M | J | 实测：Windows `Checksums` 步因「重定向目标先于通配展开被打开」而**必定失败**（连带 upload/release 全 skip）；两平台同名 sums 互相覆盖；另有发布竞态与 tag 链缺 GUI 门。 | [x] ①+④ 已修且旧 dispatch #4 的 Windows 校验/上传真机成功（§9.10 第 11 小节）；②③ 已修且新 SHA 的 GUI/Win/macOS 构建门真跑成功；唯一 publish 在本轮手工调度中按预期 skipped，真 tag 发布待授权（§10.8） |
 | G10 | `smoke_wheel.sh` 假绿：wheel 从未被安装/导入 | med | S | J | 只 grep wheel 的 `namelist()`，第 4 步装的是源码树；RECORD/入口点损坏也能过。 | [x] 本地已修且新 SHA 的 Linux CI 双 wheel 冒烟真跑成功（2026-09-30，见 §10.7/§10.8） |
 | G11 | CI/仓库硬化六条（tag 钉 / permissions / concurrency / ignore / eol / urls） | low-med | S | F′ | 六处相互独立的基础设施硬化，逐条可验。 | [ ] 未开始（批 F′） |
@@ -86,7 +86,7 @@
 | ~~E~~ | **作废（2026-09-29 重订）**：原 E 的 P6→P5、G4、P7、P20 重切为 K/L/M/O，见 §10.4。 | — |
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。 |
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。四个提交（`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed`）已推送到 `origin/main`，推送后 CI 结论见 §9.10。** |
-| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①④/P33 的旧手工构建 #4 已真机成功；G9②③/G10 本地修复后，`000a504` 的 `ci` 三系统、GUI、Docker 与手工桌面构建 #5 全绿，两平台安装包/DMG 的 SHA256 清单实际匹配（§10.7–§10.8）。**J 仍未完成**：G8 未开始；本轮 publish 按非 tag 调度正确跳过，真 tag 创建/上传 Release 未取证；跨 workflow run 并发归 G11③。 |
+| **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | G9①④/P33 的旧手工构建 #4 已真机成功；G9②③/G10 本地修复后，`000a504` 的 `ci` 三系统、GUI、Docker 与手工桌面构建 #5 全绿，两平台安装包/DMG 的 SHA256 清单实际匹配（§10.7–§10.8）。**J 仍未完成**：G8 的 ①②④ 已本地落地、③ 待真实 Linux CI 段与离线硬门；正式 tag/publish 暂缓，跨 workflow run 并发归 G11③。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
@@ -2132,6 +2132,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **现象**（读码）：① 仓内 vendored 的 `_dwt_dct_svd.py`（invisible-watermark 0.2.0，MIT）在 `THIRD_PARTY_NOTICES.md` 无记载，而 `generate_notices.py` 只枚举已安装发行版 → **结构上不可能**自动收录仓内文件；② `opencv-python-headless` 记作纯 Apache-2.0，而 wheel 随附组件含 LGPL-2.1（证据：`cv2/LICENSE-3RD-PARTY.txt` 明列 FFmpeg 等）；③ notices 只有 `Darwin / arm64` 与 `Windows / AMD64` 两段，镜像却随包携带该文件，`docker.yml` 从不跑 `--check` → Linux 段永无门禁；④ `tests/test_compliance.py:20,46` 用单空格字面量，`ci.yml:36` 用正则 → **文档承诺强于实现**。
 - **方案**：① notices 增手工维护的「仓内转录」条目（上游名称/版本/MIT/来源 URL）+ `test_compliance.py` 一条锁；② opencv 段补 LGPL-2.1 说明与对应文本（新增 `licenses/LGPL-2.1.txt` 或随附 `cv2/LICENSE-3RD-PARTY.txt`，二选一在批 J 开工时定）；③ `docker.yml` 加 `generate_notices.py --check` 步，Linux 段用 §9.5 的失败信息解析法 bootstrap（**待 CI 取证**）；④ 合规门改 `re.search(r"pip\s+install", line)`，AGENTS §十一 那句同步改为由两门保证。
 - **验收**：本机可验 ①②④ 与 macOS 段的 `--check`；③ 待 CI。
+- **2026-09-30 裁定与首轮本地实施（§10.9）**：正式 `v0.1.0` 会公开普通 Release，因此用户要求**先修 G8，不推 tag**；Linux 行必须由 Docker 镜像真实 `photoguard --no-dev` 环境生成；OpenCV 取锁定版本 wheel 的完整 `cv2/LICENSE-3RD-PARTY.txt` 随包并校验原文；授权至多两轮 G8 范围的 main 推送引导 Linux 真源和执行镜像硬门，第一轮含用户已确认的既有文档祖先 `a84e054`。手工段位于自动平台段之前；**Darwin/Windows 的 OpenCV Apache 自动元数据行不手改**，FFmpeg/LGPL-2.1 在手工段单列。当前仅 ①②④ 本地测试绿、③ 的一次性镜像 bootstrap 待真 CI；不同平台 wheel 原文不一致或二轮 CI 红即停，不能宣称法律合规或 G8 已完成。
 
 #### G9 — release 三处高危（**high**，批 J）
 
@@ -2246,3 +2247,9 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **桌面构建**：[release-desktop #5](https://github.com/INORI-LIN/photo_cyber/actions/runs/36672339928)（同 SHA、`workflow_dispatch`、`ref=main`、attempt 1）整轮 **completed/success**；事前本 SHA 的手工运行列表为空，唯一 POST 收到 HTTP 204。`verify`、`windows`、`macos-arm64` 三 job 均 success，`publish` job 明确 **skipped**。`verify` 中锁文件回环、fast `232 passed, 2 skipped`、Qt 库/PySide6 导入、GUI `15 passed, 232 deselected` 与 GUI `--help` 均 success。Windows 的 standalone smoke、ISCC 安装包、校验和与 artifact 上传均 success；macOS 的 bundle smoke、DMG 生成、校验和与 artifact 上传均 success。
 - **两份工件内容（独立下载验证）**：Windows artifact id `11085541805` 的 ZIP 只含 `PhotoGuard-Windows-x64-Setup.exe` 与 `SHA256SUMS-Windows-x64.txt`；安装包 `522253954` bytes，SHA256 **`d5c23d6250c77dee2cf89b963a713078e85720bf36b3670fa334008a3110865e`**。macOS artifact id `11083737979` 的 ZIP 只含 `PhotoGuard-macOS-arm64.dmg` 与 `SHA256SUMS-macOS-arm64.txt`；DMG `754309452` bytes，SHA256 **`9d12fb1fcb3add9570d9401c68f74e9535e47c461e08621a6003e5d41ce9b625`**。两者下载时均非空且 API 标为未过期，实际文件 SHA256 与各自清单**一致**；ZIP 在隔离临时目录流式校验后清理，无安装或执行工件。
 - **明确未验证**：本次是非 tag 的手工调度，`publish` 被跳过是预期；**本次运行未**创建/更新 GitHub Release、未运行 `gh release upload`，也未验证 tag-push 的并发情形。工件内容哈希匹配不等于签名、公证或安装后可运行；G8 许可合规与 G11③ 跨运行并发仍是待办，不得把整个批 J 标为已完成。
+
+### 10.9 批 J / G8 许可与合规门（2026-09-30 起，进行中）
+
+- **新裁定**：正式版本门只接受 `v0.1.0`，tag push 会生成公开普通 Release；在 G8 四项落地前不得推 tag。本轮用户授权**最多两轮** G8 范围的 main 非强推，引导并校验 Docker 真实 Linux 公告段，首轮可连带既有本地 `a84e054`（仅前一轮 CI 取证文档和忽略规则），不包含 Release/PR/镜像推送。完成 G8 后仍需另行裁定新版 tag 的目标 SHA 与是否正式公开。
+- **①②④ 本地实现**：`_dwt_dct_svd.py` 的 MIT 原文/`Copyright (c) 2021 ShieldMnt` 已存在；现于 notices 首个平台表前手工补转录来源及 FFmpeg/LGPL-2.1 随轮说明。完整 `licenses/LICENSE-3RD-PARTY-opencv.txt` 从已安装且与锁文件一致的 `opencv-python-headless 4.13.0.92` 复制，`177835` bytes、SHA256 `0e8fac55c2f5bff939c1e7aae1fa2799e1cece5fd0857d8e5fafeb46562aafc9`，与原发行版 RECORD 的 sha256/size 一致；保留两平台自动表格原有 Apache 行。`tests/test_compliance.py` 改逐行多空白正则并钉 4 种空白、跨行反例、手工声明/原文哈希与真安装 wheel（Windows 仅 CRLF 不同、另钉原生字节哈希）；生成器写盘前同样挡住多空白；原始与 sdist 重建 wheel 的元数据/文件冒烟、桌面两平台许可探针均提高到必含该文件。新用例的双空格/tab 旧实现先红。**Windows 轮 CRLF 造成原生哈希 `55bf7d4a1de21d130a39ca38824eb61ba061edbf8449838634246bde30fde403`（181410 bytes、3575 行），精确转 LF 后与 macOS/Linux 的仓内原文逐字节相等**，由 uv.lock 对应 wheel archive 哈希验证的只读预检证实；已加独立强锁，不采用宽松 splitlines 或跳过平台。其他差异须停并重新裁定；本机 macOS 本地绿仍不能替代最终 CI 三系统与镜像取证。
+- **③ 首轮引导（尚待真 CI）**：`Dockerfile` 在模型下载层后复制公告生成器；`docker.yml` Build image 后、原 noise/离线 SD/拒载冒烟前在 `--network none` + 只读容器里打印镜像内 `photoguard --no-dev` 的实际平台 tag 和完整行，只作为 Linux 真源，不篡改镜像或假造段。首轮 CI 审核 Linux 真原文后，第二轮才把整段写入 notices 并将临时引导替换为镜像内离线 `generate_notices.py --check` 的 fail-loud 步；每轮验证后就地补本节真实 SHA/run/结论，未取得证据前不标 G8 完成。两轮后若仍有未解决的 OpenCV 二进制义务须人工审阅，不能把文本在包内等同于法律层面的完全合规。

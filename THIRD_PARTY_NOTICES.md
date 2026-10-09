@@ -3,13 +3,14 @@
 photo-guard is distributed under the MIT licence (see `LICENSE`). This file records the
 licences of the third-party components that ship with it or are required to build it.
 
-Two things are hand-maintained and never generated: this file's header sections and the
-copyleft texts under `licenses/` (`GPL-3.0.txt`, `LGPL-3.0.txt`, kept in full because
-PySide6/Qt is shipped under LGPL-3.0). Everything below a `## <platform>` heading is
-generated: run `uv run python packaging/generate_notices.py` **on that platform, in the
-shipping environment** (`--extra photoguard --extra desktop --group package`) to write or
-refresh its section, and `... --check` to fail loudly when the section no longer matches what
-is installed. `--check` validates one platform's section at a time.
+The header and sections before the platform tables are hand-maintained, as are the full
+third-party texts under `licenses/` (GPL-3.0, LGPL-3.0 and the OpenCV wheel's bundled
+notices). The `Darwin / arm64` and `Windows / AMD64` tables are generated in the desktop
+shipping environment (`--extra photoguard --extra desktop --group package`). The Linux table
+is measured separately in the Docker image's `photoguard --no-dev` environment. Run
+`uv run python packaging/generate_notices.py` in the corresponding environment to refresh
+its own platform table; `--check` rejects missing or extra rows in that table only. Rows
+reflect distribution metadata and do not supersede bundled-component licences below.
 
 ## Bundled model weights
 
@@ -21,6 +22,20 @@ The weights are downloaded by `photo-guard download-models` (pinned to the immut
 above, `*.json` + `*.safetensors` only) and baked into the Docker image and the desktop
 bundles; they are MIT-licensed and unmodified.
 
+## Bundled source and wheel components
+
+| component | source distribution version | licence | source and notice |
+|---|---|---|---|
+| Vendored `imwatermark/dwtDctSvd.py` from invisible-watermark | 0.2.0 | MIT | https://pypi.org/project/invisible-watermark/ — transcribed in `src/photo_guard/_dwt_dct_svd.py`, which carries the complete upstream MIT text and Copyright (c) 2021 ShieldMnt. |
+| FFmpeg bundled in the opencv-python-headless wheel | opencv-python-headless 4.13.0.92; FFmpeg version not stated by the wheel notice | LGPL-2.1 | https://github.com/opencv/opencv-python — the full wheel-provided third-party notice and licence texts are in `licenses/LICENSE-3RD-PARTY-opencv.txt`. |
+
+The generated `opencv-python-headless` platform row reports the OpenCV distribution's
+Apache 2.0 metadata; it does not describe every library bundled in its wheel. The copied
+third-party file comes from the pinned 4.13.0.92 macOS arm64 wheel with LF line endings.
+The pinned Windows wheel carries the same full text with CRLF endings; checks enforce each
+wheel's native bytes and require them to match the shipped LF text after the documented
+line-ending conversion. Linux ships the same LF bytes. This notice does not by itself
+certify all binary redistribution obligations.
 
 ## Darwin / arm64
 

@@ -229,7 +229,7 @@ uv run photo-guard protect input.jpg
 3. 运行镜像设 `LANG`/`LC_ALL=C.UTF-8` 与 `PYTHONIOENCODING=utf-8`；CLI 有中文输出，针对它的 CI 断言必须**整行精确相等**，不得为绕编码问题降级为子串匹配。
 4. `.dockerignore` **必须**排除 `models/` 与 `.venv/`：本地模型/虚拟环境会撑爆构建上下文，并掩盖镜像内下载步骤的 bug。
 
-冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → noise protect+verify → `--network none` 跑 `--perturber sd` 证明模型真在镜像里。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
+冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线校验真实 Linux 第三方依赖段（G8；首轮引导只打印真实行，第二轮改为硬 `--check`）→ noise protect+verify → `--network none` 跑 `--perturber sd` 证明模型真在镜像里。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
 
 ---
 
@@ -254,5 +254,5 @@ uv run photo-guard protect input.jpg
 - 分支 `main`；remote `origin → https://github.com/INORI-LIN/photo_cyber.git`。
 - 提交信息沿用历史体例：`type(scope): 中文摘要` + 中文正文说明缘由；历史提交带 `Co-Authored-By` 尾注（是否添加按实际协作工具决定）。
 - **未经用户显式确认不得 push**：`git push` 属于影响远端的动作，需先取得同意。
-- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md` 与 `README.md`（它们是规则本身的文档，两道合规门都整体排除它们：ci.yml 的 `--exclude` 与 `tests/test_compliance.py` 的 `_EXCLUDE_FILES`）；新文档与代码不得抄入。自 G5 起两道门都用正则 `pip[[:space:]]+install`（可命中多空格写法），且**不再排除 `.github/`**——CI 自身文件也必须不出现该字面量，命中即红。
+- 合规白名单：§六 规定的那串被禁安装命令字面量，只允许出现在 `AGENTS.md` 与 `README.md`（它们是规则本身的文档，两道合规门都整体排除它们：ci.yml 的 `--exclude` 与 `tests/test_compliance.py` 的 `_EXCLUDE_FILES`）；新文档与代码不得抄入。自 G8 起两道门都识别 `pip` 后跟连续空白再跟 `install`（可命中多空格/制表符），且**不再排除 `.github/` 或合规测试自身**——CI 自身文件也必须不出现该字面量，命中即红。
 - 维护边界：§一–§七 的改动需经用户确认；§八–§十一 随代码同步，改实现时一并更新对应条目。

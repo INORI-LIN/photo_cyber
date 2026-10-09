@@ -77,7 +77,7 @@ jobs:
       - name: Licence material is inside the built tree (G2)
         shell: powershell
         run: |
-          foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "GPL-3.0.txt")) {
+          foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "GPL-3.0.txt", "LICENSE-3RD-PARTY-opencv.txt")) {
             $found = Get-ChildItem -Recurse -File "dist\desktop_entry.dist" -Filter $name | Select-Object -First 1
             if (-not $found) { throw "$name is missing from dist\desktop_entry.dist" }
             Write-Host "found: $($found.FullName)"
@@ -131,7 +131,7 @@ jobs:
         run: |
           APP=$(find dist -maxdepth 1 -name "*.app" -print -quit)
           echo "bundle: $APP"
-          for name in LICENSE THIRD_PARTY_NOTICES.md GPL-3.0.txt; do
+          for name in LICENSE THIRD_PARTY_NOTICES.md GPL-3.0.txt LICENSE-3RD-PARTY-opencv.txt; do
             found=$(find "$APP" -name "$name" -print -quit)
             if [ -z "$found" ]; then
               echo "::error::$name is missing from $APP"

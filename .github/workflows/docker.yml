@@ -47,6 +47,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # G8：镜像构建后离线、只读采集真实 Linux 依赖行；仅打印，不调用生成器写盘入口。
+      - name: Bootstrap Linux third-party notices rows
+        run: |
+          docker run --rm --network none --read-only \
+              --entrypoint /app/.venv/bin/python \
+              photo-guard:ci \
+              -B -c 'import runpy; ns = runpy.run_path("/app/packaging/generate_notices.py"); print(ns["render_section"](ns["collect_rows"](), ns["platform_tag"]()), end="")'
+
       - name: Generate a synthetic test image
         # Use Pillow inside the just-built image rather than the runner's
         # host Python (free-disk-space wiped the runner's tool cache, so

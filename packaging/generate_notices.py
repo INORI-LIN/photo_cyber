@@ -2,10 +2,9 @@
 
 The notices are a per-platform view of the environment that ships: rows come from
 ``importlib.metadata`` of the interpreter this tool runs in, so a section is only ever as
-good as the environment that produced it. ``--check`` therefore compares **the current
-platform's section only** against the installed set, and the release workflow runs it in the
-shipping environment (``--extra photoguard --extra desktop --group package``) before
-building anything, so a stale section fails loudly with zero artefacts.
+good as the environment that produced it. ``--check`` compares **the current platform's
+section only** against the installed set. Desktop release verifies its full extra set, while
+Docker CI verifies the image's smaller ``photoguard --no-dev`` set after building it.
 
 Hand-maintained material (``LICENSE``, ``licenses/*.txt``) is never generated and never
 overwritten — this tool only reads those files; only the platform section of the notices is
@@ -16,6 +15,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata as md
 import platform
+import re
 import sys
 from pathlib import Path
 
@@ -29,9 +29,10 @@ HAND_MAINTAINED_LICENSES = (
     "THIRD_PARTY_NOTICES.md",
     "licenses/GPL-3.0.txt",
     "licenses/LGPL-3.0.txt",
+    "licenses/LICENSE-3RD-PARTY-opencv.txt",
 )
-# Kept split so this file cannot trip the repository's own compliance gate.
-FORBIDDEN_LITERAL = "pip" + " install"
+# 写平台段前与 CI/测试同样识别多空白；不会命中本文件中的字面代码。
+FORBIDDEN_PATTERN = re.compile(r"pip\s+install")
 ROW_FIELDS = ("name", "version", "license", "source")
 PROJECT_NAME = "photo-guard"
 SECTION_PREFIX = "## "
@@ -49,10 +50,12 @@ appended by running this tool on those platforms; ``--check`` validates one sect
 """
 
 
+# 用镜像或桌面构建环境的实际系统/架构命名平台段，不能从锁文件猜测。
 def platform_tag() -> str:
     return f"{platform.system()} / {platform.machine()}"
 
 
+# 平台行只复述发行版声明；随 wheel 嵌入组件的许可由手工段单列。
 def _license_of(metadata) -> str:
     expression = (metadata.get("License-Expression") or "").strip()
     if expression:
@@ -66,6 +69,7 @@ def _license_of(metadata) -> str:
     return "declared in package metadata"
 
 
+# 按发行版公开元数据回退来源，避免把来源猜成当前仓库地址。
 def _source_of(metadata) -> str:
     homepage = (metadata.get("Home-page") or "").strip()
     if homepage:
@@ -77,6 +81,7 @@ def _source_of(metadata) -> str:
     return (metadata.get("Author-email") or "").strip() or "unknown"
 
 
+# 只枚举当前解释器已安装的发行版，不把未装的桌面依赖混进 Docker 段。
 def collect_rows() -> list[dict[str, str]]:
     """One row per installed distribution, the project itself excluded."""
     rows = []
@@ -96,10 +101,12 @@ def collect_rows() -> list[dict[str, str]]:
     return sorted(rows, key=lambda row: row["name"].lower())
 
 
+# 四列保持固定顺序，供生成和精确差集比对共用。
 def render_row(row: dict[str, str]) -> str:
     return "| " + " | ".join(row[field] for field in ROW_FIELDS) + " |"
 
 
+# 将真实安装集渲染成独立平台段，首轮镜像引导只读取此结果。
 def render_section(rows: list[dict[str, str]], tag: str) -> str:
     body = "\n".join(render_row(row) for row in rows) or "| (none installed) | | | |"
     return SECTION_TEMPLATE.format(
@@ -108,6 +115,7 @@ def render_section(rows: list[dict[str, str]], tag: str) -> str:
     )
 
 
+# 下一个二级标题即平台段边界，手工声明必须放在首个平台段之前。
 def _section_bounds(text: str, tag: str) -> tuple[int, int] | None:
     lines = text.splitlines()
     start = None
@@ -125,6 +133,7 @@ def _section_bounds(text: str, tag: str) -> tuple[int, int] | None:
     return start, end
 
 
+# 仅比对当前环境的行集合，缺行与多行都应响亮失败。
 def compare_section(text: str, rows: list[dict[str, str]], tag: str) -> tuple[list[str], list[str]]:
     """``(missing, extra)`` row lines for ``tag``; both empty means the section is current."""
     bounds = _section_bounds(text, tag)
@@ -140,6 +149,7 @@ def compare_section(text: str, rows: list[dict[str, str]], tag: str) -> tuple[li
     return sorted(expected - present), sorted(present - expected)
 
 
+# 刷新目标平台段时保留手工声明和其它 OS 的既有段落。
 def replace_section(text: str, section: str, tag: str) -> str:
     bounds = _section_bounds(text, tag)
     if bounds is None:
@@ -150,6 +160,7 @@ def replace_section(text: str, section: str, tag: str) -> str:
     return "\n".join([*lines[:start], *section.splitlines(), "", *lines[end:]]) + "\n"
 
 
+# 校验模式只读；生成模式先拦下不合规行，再仅重写当前平台段。
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="generate_notices.py", description=__doc__)
     parser.add_argument(
@@ -180,7 +191,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     section = render_section(rows, tag)
-    if FORBIDDEN_LITERAL in section:
+    # 平台表按行扫描，与合规门等价；跨行词组不应被当成一条安装命令。
+    if any(FORBIDDEN_PATTERN.search(line) for line in section.splitlines()):
         print("refusing to write: a forbidden install literal is present", file=sys.stderr)
         return 1
     text = NOTICES.read_text(encoding="utf-8") if NOTICES.exists() else "# Third-party notices\n"

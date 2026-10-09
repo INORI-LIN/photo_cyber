@@ -32,7 +32,6 @@ jobs:
           if grep -RInE \
                   --exclude-dir=.venv --exclude-dir=.git \
                   --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
-                  --exclude=test_compliance.py \
                   "pip[[:space:]]+install" .; then
             echo "::error::forbidden installer reference found — AGENTS.md 6 forbids it"
             exit 1
