@@ -51,7 +51,9 @@ class GaussianNoisePerturber(Perturber):
 
     def apply(self, image_bgr: np.ndarray) -> np.ndarray:
         scale = self.epsilon * 255.0
-        noise = self._rng.normal(0.0, scale, size=image_bgr.shape)
+        # P1: the documented promise is an L∞ bound, so the Gaussian sample is clipped at
+        # ±σ (= ±ε·255). Without this the tails exceed the budget (~31.7% of samples change).
+        noise = np.clip(self._rng.normal(0.0, scale, size=image_bgr.shape), -scale, scale)
         out = image_bgr.astype(np.float32) + noise
         return np.clip(out, 0, 255).astype(np.uint8)
 
@@ -71,6 +73,7 @@ class SDEncoderPerturber(Perturber):
         epsilon: float = config.PHOTOGUARD_EPSILON,
         steps: int = config.PHOTOGUARD_STEPS,
         step_size: float = config.PHOTOGUARD_STEP_SIZE,
+        seed: int = config.PHOTOGUARD_SEED,
         model_id: str = config.PHOTOGUARD_MODEL_ID,
         device: str = "auto",
         device_index: int | None = None,
@@ -81,6 +84,7 @@ class SDEncoderPerturber(Perturber):
         self.epsilon = epsilon
         self.steps = steps
         self.step_size = step_size
+        self.seed = seed
         self.model_id = model_id
         self.device = device
         self.device_index = device_index
@@ -97,6 +101,7 @@ class SDEncoderPerturber(Perturber):
                     epsilon=self.epsilon,
                     step_size=self.step_size,
                     steps=self.steps,
+                    seed=self.seed,
                     model_id=self.model_id,
                     device=self.device,
                     device_index=self.device_index,

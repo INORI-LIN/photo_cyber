@@ -43,7 +43,9 @@ DEFAULT_PERTURBER = "noop"  # explicit wiring/test mode; not AI protection
 NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 
 # PhotoGuard SD-encoder attack (AGENTS.md 三② 真实实现).
-# Loaded lazily; only used when --perturber sd. ε in image-space [0,1].
+# Loaded lazily; only used when --perturber sd. ε 是 L∞ 界（image-space [0,1] 度量）；
+# PGD 内部把图像映到 [-1,1]，故预算与步长各乘 2。noise 档同用 `--perturber-eps`
+# 且同样以 ±ε·255 为硬界（P1）。
 #
 # Model is loaded **offline-only** from `models/sd-vae-ft-mse/` under the repo
 # root — no HuggingFace request at runtime. Use `photo-guard download-models`
@@ -66,6 +68,10 @@ PHOTOGUARD_MODEL_ID = str(PHOTOGUARD_MODELS_DIR / PHOTOGUARD_MODEL_NAME)
 PHOTOGUARD_EPSILON = 8.0 / 255.0
 PHOTOGUARD_STEP_SIZE = 2.0 / 255.0
 PHOTOGUARD_STEPS = 10
+# P1: the PGD initial point is sampled from a per-call, seeded generator. Byte-for-byte
+# reproducibility is promised for CPU/float32 only (a CUDA/MPS generator is created on the
+# tensor's device when supported; otherwise the global RNG is used and bytes are not fixed).
+PHOTOGUARD_SEED = 0
 
 # Layer ③ visible watermark
 # AGENTS.md 三③ wants "压在主体关键纹理上" — `subject` mode binds the

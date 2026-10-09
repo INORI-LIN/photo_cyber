@@ -37,3 +37,23 @@ def test_padding_repeats_the_edge_pixel() -> None:
 
     assert np.all(padded[9:, :8] == 1.0)  # added rows copy the last row
     assert np.all(padded[:, 9:] == 2.0)  # added columns copy the last column
+
+
+def test_attack_rejects_bad_input(monkeypatch) -> None:
+    """P1: input validation runs *before* the model load, so a bad call fails fast.
+
+    The monkeypatch is what makes the ordering observable (and this test red on the pre-P1
+    code even on a machine with the extra installed): if ``attack()`` ever loads before
+    validating, the load path explodes instead of raising the expected ``ValueError``.
+    """
+    attack = photoguard.build_attack()
+
+    def _explode():
+        raise AssertionError("the model must not be loaded before input validation")
+
+    monkeypatch.setattr(attack, "_ensure_loaded", _explode)
+
+    with pytest.raises(ValueError, match="three-channel"):
+        attack.attack(np.zeros((16, 16), dtype=np.uint8))
+    with pytest.raises(ValueError, match="empty"):
+        attack.attack(np.zeros((0, 0, 3), dtype=np.uint8))

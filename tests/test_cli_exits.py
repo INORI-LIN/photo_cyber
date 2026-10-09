@@ -459,3 +459,33 @@ def test_protect_self_check_failure_exits_two(tmp_path: Path, monkeypatch, capsy
     assert main(["protect", str(src), "-o", str(out)]) == 2
     assert "self-check" in capsys.readouterr().err
     assert not out.exists()
+def test_zero_epsilon_is_rejected(tmp_path: Path, capsys) -> None:
+    """P1: `--perturber-eps 0` used to be a silent no-op that still exited 0.
+
+    With the perturb layer running, an ε of zero means "no perturbation at all" — a
+    protection product that reports success while doing nothing.
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main(["protect", str(src), "-o", str(out), "--perturber", "noise", "--perturber-eps", "0"]) == 2
+    assert "epsilon" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_sd_only_flags_are_ignored_without_perturb_layer(tmp_path: Path) -> None:
+    """P1/§10.2 addendum: the SD-only flags are validated only when that layer runs.
+
+    `--perturber-steps 0` with `--layers visible --perturber noop` has no effect on this
+    run, so it must not be an error (pre-P1 the check was unconditional and exited 2).
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(["protect", str(src), "-o", str(out), "--layers", "visible",
+                 "--perturber", "noop", "--perturber-steps", "0"])
+
+    assert code == 0
+    assert out.exists()

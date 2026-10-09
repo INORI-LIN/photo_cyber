@@ -101,10 +101,16 @@ def main(argv: list[str] | None = None) -> int:
             layers = _parse_layers(args.layers)
             if args.perturber != "noop":
                 layers = frozenset({*layers, pipeline.LAYER_PERTURB})
-            if args.perturber_steps <= 0:
-                raise ValueError("perturber steps must be positive")
-            if args.perturber_eps < 0 or args.perturber_step_size <= 0:
-                raise ValueError("perturber epsilon/step size are invalid")
+            # P1 (§10.2 addendum): the SD-only flags are validated only when the perturb
+            # layer actually runs — the effective set is the one *after* the auto-add above,
+            # so `--layers visible --perturber noop --perturber-steps 0` is a no-op, not an
+            # error. Validation stays here in the CLI on purpose: the pipeline-level
+            # `epsilon=0.0` control group (P5) must keep working.
+            if pipeline.LAYER_PERTURB in layers:
+                if args.perturber_steps <= 0:
+                    raise ValueError("perturber steps must be positive")
+                if args.perturber_eps <= 0 or args.perturber_step_size <= 0:
+                    raise ValueError("perturber epsilon/step size are invalid")
             kwargs: dict[str, object] = {}
             if args.perturber == "sd":
                 kwargs.update(

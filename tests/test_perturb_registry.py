@@ -32,10 +32,12 @@ def test_noise_within_epsilon() -> None:
     out = perturb.get("noise", epsilon=eps, seed=0).apply(img)
     assert out.shape == img.shape
     assert out.dtype == img.dtype
-    # Noise is Gaussian, not bounded — but std≈eps*255 keeps almost all pixels close.
+    # P1: the documented promise is an L∞ bound — the Gaussian sample is clipped at ±σ,
+    # so *every* pixel stays within ⌈ε·255⌉ (the pre-P1 test only checked the 99th
+    # percentile against ~4σ; this is the tightening the docs always claimed).
     diff = np.abs(out.astype(int) - img.astype(int))
-    # 99th percentile within ~4σ of the noise scale
-    assert np.percentile(diff, 99) <= eps * 255 * 4
+    assert diff.max() <= round(eps * 255)
+    assert diff.max() >= 1  # still a real perturbation, not a no-op
 
 
 def test_unknown_perturber_raises() -> None:

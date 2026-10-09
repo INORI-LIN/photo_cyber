@@ -16,6 +16,7 @@ class PGDConfig:
     epsilon: float = config.PHOTOGUARD_EPSILON
     step_size: float = config.PHOTOGUARD_STEP_SIZE
     steps: int = config.PHOTOGUARD_STEPS
+    seed: int = config.PHOTOGUARD_SEED
     model_id: str = config.PHOTOGUARD_MODEL_ID
     device: device_mod.Backend = "auto"
     device_index: int | None = None
@@ -84,27 +85,50 @@ class _SDEncoderAttack:
         if self._vae is None:
             self._load()
 
+    def _initial_noise_generator(self, x_orig):
+        """A fresh, seeded ``torch.Generator`` on ``x_orig``'s device (P1).
+
+        Created per :meth:`attack` call on purpose: a generator stored on the instance would
+        advance across calls, so the second attack with the same seed would differ. A device
+        whose generator API is unsupported (e.g. MPS) falls back to the global RNG — the
+        documented cost is that byte-level reproducibility is then not guaranteed.
+        """
+        try:
+            generator = self._torch.Generator(device=x_orig.device)
+            generator.manual_seed(int(self.cfg.seed))
+            return generator
+        except (RuntimeError, TypeError, ValueError):
+            return None
+
     def attack(self, image_bgr: np.ndarray) -> np.ndarray:
-        self._ensure_loaded()
-        torch = self._torch
+        # P1: input validation runs *before* the model load — a bad call must fail fast and
+        # cheaply (and the fast-tier bad-input test must not depend on torch being installed).
         if image_bgr.ndim != 3 or image_bgr.shape[2] != 3:
             raise ValueError("PhotoGuard expects a three-channel BGR image")
-
-        rgb = image_bgr[:, :, ::-1].astype(np.float32) / 255.0
-        h, w = rgb.shape[:2]
+        h, w = image_bgr.shape[:2]
         if h == 0 or w == 0:
             raise ValueError("PhotoGuard cannot process an empty image")
+
+        self._ensure_loaded()
+        torch = self._torch
+
+        rgb = image_bgr[:, :, ::-1].astype(np.float32) / 255.0
         rgb = pad_to_multiple_of_8(rgb)
         x_orig = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(
             self._device, dtype=self._dtype
         )
         x_orig = x_orig * 2.0 - 1.0
 
+        # The image spans [0,1] but PGD works on [-1,1], so the budget and the step are
+        # doubled exactly once here; `delta` is clamped back in that same doubled space.
         eps, step = self.cfg.epsilon * 2.0, self.cfg.step_size * 2.0
         with torch.no_grad():
             target_latent = torch.zeros_like(self._encode_mean(x_orig))
         x_adv = torch.clamp(
-            x_orig.clone().detach() + torch.empty_like(x_orig).uniform_(-eps, eps),
+            x_orig.clone().detach()
+            + torch.empty_like(x_orig).uniform_(
+                -eps, eps, generator=self._initial_noise_generator(x_orig)
+            ),
             -1.0,
             1.0,
         )
