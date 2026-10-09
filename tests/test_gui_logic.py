@@ -129,10 +129,15 @@ def test_validate_options_rejects_an_unknown_visible_mode_when_the_layer_runs() 
 
 
 def test_validate_output_dir_rule() -> None:
-    """P29: one shared rule — strip, expanduser, then non-empty and absolute."""
+    """P29: one shared rule — strip, expanduser, then non-empty and absolute.
+
+    Compare through ``Path``, not strings: Windows ``expanduser`` keeps the separator the
+    caller wrote (``~/pics`` → ``C:\\Users\\x/pics``), so a ``str`` comparison against the
+    all-backslash ``Path.home() / "pics"`` fails there while the path itself is correct.
+    """
     home = Path.home()
     assert gui_logic.validate_output_dir(f"  {home}  ") == str(home)
-    assert gui_logic.validate_output_dir("~/pics") == str(home / "pics")
+    assert Path(gui_logic.validate_output_dir("~/pics")) == home / "pics"
     for bad in ("", "   ", "out", "../out"):
         with pytest.raises(ValueError, match="absolute"):
             gui_logic.validate_output_dir(bad)
@@ -142,10 +147,11 @@ def test_load_settings_expands_a_tilde_output_dir() -> None:
     """P29: the shared rule expands ``~`` before the absolute check (deliberate change).
 
     Before the unification the stored value went through ``os.path.isabs`` without
-    ``expanduser``, so ``~/pics`` was silently replaced by the default.
+    ``expanduser``, so ``~/pics`` was silently replaced by the default. Compared via
+    ``Path`` for the Windows separator reason above.
     """
     values = gui_logic.load_settings({"output_dir": "~/pics"}, DEFAULTS)
-    assert values["output_dir"] == str(Path.home() / "pics")
+    assert Path(values["output_dir"]) == Path.home() / "pics"
 
 
 def _protect_call_lines(node: ast.AST) -> set[int]:
