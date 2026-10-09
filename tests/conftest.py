@@ -30,7 +30,8 @@ def textured_jpg(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def flat_small_image() -> np.ndarray:
-    """64×64 flat grey BGR — Sobel returns near-zero, used to drive Tier-3 fallback."""
+    """64×64 flat grey BGR — Sobel is exactly zero here, so the saliency tier
+    declines with ``None`` and Tier 3 (geometric centre) is exercised (P9)."""
     return np.full((64, 64, 3), 128, dtype=np.uint8)
 
 

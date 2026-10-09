@@ -1,16 +1,20 @@
 """Subject region detection (AGENTS.md 三③: 「压在脸部 / 主体关键纹理上」).
 
-Three-tier fallback so the layer always returns *some* meaningful region:
+Three-tier fallback so ``detect_subject`` always returns *some* meaningful region:
 
 1. Faces via OpenCV's bundled Haar cascade (`haarcascade_frontalface_default.xml`).
    Zero extra deps — the XML ships with `opencv-python-headless`.
-2. Saliency via Sobel-magnitude integral image: find the H×W window with the
-   highest aggregate edge energy. Catches non-face main subjects (objects,
-   pets, products) without an ML model.
-3. Geometric center fallback — last resort if both above degenerate.
+2. Saliency via Sobel-magnitude integral image: the H×W window with the highest
+   aggregate edge energy. Catches non-face main subjects (objects, pets, products)
+   without an ML model. **Declines with ``None`` when the image carries no edge
+   energy at all** — a constant-colour image has an all-zero Sobel magnitude (H1
+   spike), and the argmax window would be a meaningless top-left corner.
+3. Geometric centre fallback — reached when the saliency tier returns ``None`` or
+   raises ``cv2.error`` (an unexpected numeric failure inside OpenCV).
 
-All detectors return a list of `(x, y, w, h)` boxes in image pixel space.
-The visible-watermark layer picks the largest box.
+Return shapes: ``detect_faces`` returns a list (the caller picks the largest);
+``detect_salient_box`` returns a single ``Box`` or ``None``; ``detect_subject``
+returns a single ``Box`` and never ``None``.
 """
 from __future__ import annotations
 
@@ -57,17 +61,32 @@ def detect_faces(image_bgr: np.ndarray) -> list[Box]:
     return [Box(int(x), int(y), int(bw), int(bh)) for (x, y, bw, bh) in faces]
 
 
+def _centre_box(image_bgr: np.ndarray) -> Box:
+    """The 60%-of-image central box, clamped to at least 1x1 (P9).
+
+    Without the clamp a 1x1 image would yield ``Box(0, 0, 0, 0)`` (``int(0.6) == 0``)
+    where the pre-P9 inline fallback produced ``Box(0, 0, 1, 1)``.
+    """
+    h, w = image_bgr.shape[:2]
+    bw, bh = max(1, int(w * 0.6)), max(1, int(h * 0.6))
+    return Box((w - bw) // 2, (h - bh) // 2, bw, bh)
+
+
 def detect_salient_box(
     image_bgr: np.ndarray, *, target_frac: float = 0.30
-) -> Box:
+) -> Box | None:
     """Pick the rectangle of size ~target_frac of the image with max edge energy.
 
     Uses Sobel magnitude → integral image → single sliding-window max. O(W·H).
+    Returns ``None`` for a flat image (all-zero magnitude): there is no salient
+    window to choose, and reporting the top-left corner would be a silent lie.
     """
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     sx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
     sy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
     mag = cv2.magnitude(sx, sy)
+    if not mag.any():
+        return None
 
     h, w = mag.shape
     bw = max(64, int(w * target_frac))
@@ -92,13 +111,14 @@ def detect_salient_box(
 
 
 def detect_subject(image_bgr: np.ndarray) -> Box:
-    """Return the best subject box, applying the three-tier fallback."""
+    """Return the best subject box, applying the three-tier fallback (never None)."""
     faces = detect_faces(image_bgr)
     if faces:
         return max(faces, key=lambda b: b.area)
     try:
-        return detect_salient_box(image_bgr)
+        salient = detect_salient_box(image_bgr)
     except cv2.error:
-        h, w = image_bgr.shape[:2]
-        bw, bh = int(w * 0.6), int(h * 0.6)
-        return Box((w - bw) // 2, (h - bh) // 2, bw, bh)
+        salient = None
+    if salient is None:
+        return _centre_box(image_bgr)
+    return salient
