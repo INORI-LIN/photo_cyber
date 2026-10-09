@@ -12,6 +12,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # P1: the job now also builds the `test` target and runs the slow tier; 45 min covers the
+    # ~11 min release build plus a cold test-target build and the smokes with headroom.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -113,8 +116,8 @@ jobs:
 
       # Strongest evidence the SD VAE is actually baked in: run with
       # --network none so any HuggingFace request would fail. PGD on CPU
-      # is slow but bounded (~30s for 5 steps on 640x480). Keep step count
-      # low to keep CI under a minute.
+      # is slow but bounded (~30s for 5 steps on 640x480); the smoke keeps
+      # the step count at 2 and the product at long-edge 384 to stay cheap.
       - name: Smoke test — offline SD perturber
         run: |
           sd_output=$(docker run --rm \
@@ -132,6 +135,49 @@ jobs:
           echo "$sd_output" | grep -F "layers=invisible+perturb+visible"
           echo "$sd_output" | grep -F "perturber=sd"
           test -s fixtures/out_sd.jpg
+
+      # P4's SD-cell gate: the SD product's raw payload must come back as the exact clue
+      # line. The SD smoke above deliberately uses a raw payload with no envelope, so a
+      # blind check would fail by design — this asserts the checksum-less clue path instead.
+      - name: SD product clue round-trip (P4 SD-cell gate)
+        run: |
+          set +e
+          recovered=$(docker run --rm \
+              -v "$PWD/fixtures:/work" \
+              photo-guard:ci \
+              verify /work/out_sd.jpg --payload-bytes 7)
+          clue_rc=$?
+          set -e
+
+          echo "recovered: $recovered"
+          if [ "$clue_rc" != "3" ]; then
+            echo "::error::the SD product's clue path must exit 3, got $clue_rc"
+            exit 1
+          fi
+          if [ "$recovered" != "线索（未验证）: ci-test" ]; then
+            echo "::error::unexpected SD verify output"
+            printf '%s' "$recovered" | od -c | head -5
+            exit 1
+          fi
+
+      # P1: the real SD path runs as a *slow tier* against the explicit `test` target
+      # (pytest lives there; the release image stays --no-dev so the notices gate above keeps
+      # holding). tests/ is out of the build context on purpose — it is bind-mounted instead.
+      - name: Build test image (dev group, slow tier)
+        run: docker build --target test -t photo-guard:test .
+
+      - name: Slow-tier preflight (torch, diffusers, photo_guard, model dir)
+        run: |
+          docker run --rm --network none --entrypoint uv photo-guard:test \
+              run --project /app --no-sync python -c "from pathlib import Path; import photo_guard, torch, diffusers; assert Path('/app/models/sd-vae-ft-mse').is_dir(), 'model dir missing in image'; print('slow-tier preflight OK')"
+
+      - name: Slow tier — real SD assertions (P1)
+        run: |
+          docker run --rm --network none \
+              -v "$PWD/tests:/app/tests:ro" \
+              --entrypoint uv \
+              photo-guard:test \
+              run --project /app --no-sync pytest -m slow -v -rs /app/tests/test_photoguard_slow.py
 
       # P15: the loader must refuse a model directory with no safetensors instead of falling
       # back to pickle. Only config.json is staged, so there are no weights to load at all —

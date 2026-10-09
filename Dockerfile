@@ -113,3 +113,19 @@ WORKDIR /work
 
 ENTRYPOINT ["uv", "run", "--project", "/app", "--no-sync", "photo-guard"]
 CMD ["--help"]
+
+# P1 (§N-2): the slow tier needs pytest (and the tests, bind-mounted at run time), which the
+# release image must NOT carry — the G8 notices gate enumerates the installed distribution set,
+# so adding pytest/pluggy/iniconfig would make `generate_notices.py --check` fail on the Linux
+# section (AGENTS §九: “以 photoguard --no-dev 依赖集为准”). The test bits therefore live in an
+# explicit `test` target, and the `release` stage at the end re-declares the release image so a
+# plain `docker build .` keeps producing it (Docker builds the *last* stage by default).
+FROM runtime AS test
+
+# dev group = pytest; `.dockerignore` keeps tests/ out of the build context on purpose, so the
+# tier is run against a bind-mounted copy instead of a COPY here.
+RUN uv sync --frozen --extra photoguard --group dev
+
+WORKDIR /app
+
+FROM runtime AS release
