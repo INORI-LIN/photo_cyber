@@ -2362,3 +2362,4 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **不扩面（显式）**：P5/M2 本体（`latent_norm`、README 强度降级、Spike A 人工必附）、P7/P20、G11/P22/P23/G7、P34–P37/DOC3；`detect_faces` 的 cv2 失败语义只登记（开放问题，不静默降级）；不加新 CLI 旗标；无新 ID、无新退码值（两条行为变更各有一条 pin）。
 - **文档同步**：`pyproject.toml` marker 文案；README 冒烟段（补 SD 线索回环与慢档 ③）与 slow 现状段；AGENTS §九（冒烟链补 SD 回环/test target/慢档）与 §十（slow 现状据实 + 覆盖口径）；`bench/README.md`（seed 已落地，sd 仍不作门禁）。
 - **残留**：**9F**（真镜像 preflight + 慢档 + notices 门保持绿）与「docker 慢档步 passed>0」**待推送授权后取证**；`-m slow` 的 CUDA/MPS 字节复现不承诺（文档已限定）。
+- **本批自身的一处流程登记**：回写 §10.16 时曾在「方法注记」里写出被禁安装命令字面量（含 `uv` 前缀的示例外壳也命中），**由 fast 档的 compliance 门当轮拦下**（`test_no_forbidden_install_in_code_or_scripts`），已在 `1943349` 修正。教训：文档里引用该命令族时必须改写成不含「pip + 空白 + install」的描述性文字。
