@@ -377,7 +377,7 @@ uv run python packaging/build_desktop.py
 - 输入契约（见上文）之外的边界：HEIC/HEIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）、ICC 原样保留但**不做色彩管理**（源在何种色域，成品仍在何种色域）；
 - PhotoGuard 效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
 - 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
-- 项目尚未建立针对主流社交平台的自动化上传/下载压缩基准。
+- 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。
 
 ## 参考
 

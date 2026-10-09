@@ -1,0 +1,42 @@
+name: efficacy
+
+# P6: the fast tier locks decisions; this weekly job measures the two efficacy promises
+# (watermark survival across re-encode chains, perturbation retention) and uploads the
+# CSVs. Noise tier only — it must stay runnable on the core dependency set (no torch).
+# NOTE: GitHub disables scheduled workflows after ~60 days without repository activity;
+# keep the manual `workflow_dispatch` entry as the recovery path.
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.11
+
+      - name: Sync (frozen, dev group)
+        run: uv sync --frozen --group dev
+
+      - name: Efficacy matrix (noise tier)
+        run: uv run --no-sync python bench/efficacy_matrix.py --out-dir bench/results --perturber noise
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: efficacy-results
+          path: bench/results/cells.csv bench/results/retention.csv bench/results/summary.md
+          if-no-files-found: warn

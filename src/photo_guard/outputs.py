@@ -24,7 +24,7 @@ import os
 import secrets
 import unicodedata
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from PIL import Image
 
@@ -56,12 +56,18 @@ def save_image_atomic(
     image_format: str = "JPEG",
     quality: int | None = None,
     icc_profile: bytes | None = None,
+    verify: Callable[[Path], None] | None = None,
 ) -> None:
     """Write ``image`` to ``path`` without ever exposing a partial file.
 
     The bytes land in a temp file in the destination directory, are flushed, and only
     then replace the destination. A crash, a full disk or Ctrl-C therefore leaves either
     the previous file or no file — never a truncated image under the final name.
+
+    ``verify`` (P4) is called with the temp path after the bytes are durable and before
+    the swap: an exception from it aborts the write, cleans the temp file and leaves the
+    destination untouched. Its exception is deliberately **not** wrapped as a write error
+    — a failed check is not an I/O failure.
     """
     destination = Path(path)
     previous_mode: int | None = None
@@ -88,6 +94,11 @@ def save_image_atomic(
             os.fsync(handle)
         finally:
             os.close(handle)
+        if verify is not None:
+            # P4/M-A: check the temp bytes before the swap. A raise here (typically a
+            # ValueError from the product self-check) skips the replace, and the finally
+            # block below unlinks the temp file.
+            verify(temp)
         # Windows refuses to replace a read-only destination (measured on windows-latest:
         # WinError 5 "Access is denied" out of `os.replace`), and a read-only output is
         # precisely the mode this function promises to carry over — so lift the protection for

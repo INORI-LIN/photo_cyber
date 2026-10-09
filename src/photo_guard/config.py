@@ -95,3 +95,9 @@ MAX_INPUT_PIXELS = 64_000_000
 # Transparent pixels are flattened onto this matte before the RGB conversion, so hidden
 # RGB values under alpha=0 can never leak into the protected output.
 ALPHA_MATTE = (255, 255, 255)
+
+# Write-side capacity gate (P4). Below this the invisible layer is refused up front with its
+# historic "too small" wording plus the numeric floor; the capacity ceiling itself is
+# `watermark_invisible.max_stored_bytes` and deliberately NOT a reliability threshold
+# (docs/fix-plan.md §10.14: no blocks-per-bit threshold is monotone — 448-cell measurement).
+WATERMARK_MIN_IMAGE_PIXELS = 256 * 256

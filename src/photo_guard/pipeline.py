@@ -148,6 +148,61 @@ def _same_file(first: Path, second: Path) -> bool:
     )
 
 
+def validate_capacity(stored_bytes: int, height: int, width: int) -> None:
+    """P4 write-side gate: the pixel floor first, then the structural ceiling.
+
+    The ceiling is :func:`watermark_invisible.max_stored_bytes` — a "cannot possibly fit"
+    bound, **not** a reliability threshold. The 448-cell measurement (docs/fix-plan.md §6 P4
+    / §10.14) showed no ``blocks/bit`` threshold is monotone and every one of them rejects
+    legal products, so reliability belongs to the post-write self-check in :func:`protect`.
+    Runs on the **post-resize** dimensions — that is why it lives here rather than in
+    ``validate_options`` (which never sees the resized size).
+    """
+    if height * width < config.WATERMARK_MIN_IMAGE_PIXELS:
+        raise ValueError(
+            f"image too small for the invisible layer: {height * width} pixels < "
+            f"{config.WATERMARK_MIN_IMAGE_PIXELS} (256x256 = 65536); use a larger image "
+            f"or drop the invisible layer"
+        )
+    limit = watermark_invisible.max_stored_bytes(height, width)
+    if stored_bytes > limit:
+        raise ValueError(
+            f"payload cannot be carried: this image can carry at most {limit} stored bytes "
+            f"({height}x{width}); shorten --payload or raise --long-edge"
+        )
+
+
+def _verify_output(temp_path: Path, expected_payload: str, *, envelope: bool) -> None:
+    """Re-read the freshly written product and require exact recovery (P4).
+
+    Runs on the temp file before ``os.replace`` (M-A), so a failure leaves no product and
+    cannot damage a previous one. Raw payloads go through
+    :func:`watermark_invisible.extract` **byte-exact** — deliberately not through
+    ``verify``, whose ``is_recoverable_text`` filter rejects legal periodic payloads such as
+    ``abab`` and would turn honest products into exit 2.
+    """
+    image, _ = _load_oriented_rgb(temp_path)
+    bgr = _pil_rgb_to_bgr(image)
+    try:
+        if envelope:
+            stored = watermark_invisible.pack_payload(expected_payload)
+            recovered = watermark_invisible.extract_envelope(bgr, len(stored.encode("utf-8")))
+        else:
+            recovered = watermark_invisible.extract(bgr, len(expected_payload.encode("utf-8")))
+    except ValueError as exc:
+        # A reader that cannot see the carrier raises here; keep the self-check wording so
+        # the failure is attributable to the product, with the underlying reason attached.
+        raise ValueError(
+            f"self-check failed: the written product cannot be read back ({exc}): {temp_path.name}"
+        ) from exc
+    if recovered != expected_payload:
+        raise ValueError(
+            f"self-check failed: the written product does not return the payload "
+            f"({temp_path.name}); the image content may be too flat or too small for the "
+            f"invisible layer"
+        )
+
+
 def validate_options(opts: ProtectOptions) -> None:
     unknown = set(opts.layers) - ALL_LAYERS
     if unknown:
@@ -204,6 +259,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     if LAYER_INVISIBLE in opts.layers:
         if opts.payload_envelope:
             stored_payload = watermark_invisible.pack_payload(opts.payload)
+        validate_capacity(len(stored_payload.encode("utf-8")), bgr.shape[0], bgr.shape[1])
         bgr = watermark_invisible.embed(bgr, stored_payload)
 
     perturber_name = None
@@ -226,7 +282,16 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         if LAYER_VISIBLE in opts.layers
         else rgb
     )
-    outputs.save_image_atomic(final, output_path, quality=opts.quality, icc_profile=icc)
+    verify = None
+    if LAYER_INVISIBLE in opts.layers:
+        # P4/M-A: verify the temp bytes before the swap, so a failed check leaves neither a
+        # product nor damage to a previous one.
+        verify = lambda path: _verify_output(  # noqa: E731 - one-line closure over opts
+            path, opts.payload, envelope=opts.payload_envelope
+        )
+    outputs.save_image_atomic(
+        final, output_path, quality=opts.quality, icc_profile=icc, verify=verify
+    )
     return {
         "output": str(output_path),
         "size": final.size,

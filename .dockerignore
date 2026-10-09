@@ -41,3 +41,6 @@ wheels/
 # The Dockerfile itself doesn't need to be in the image
 Dockerfile
 .dockerignore
+
+# P6 bench outputs must never bloat the build context
+bench/results/

@@ -180,8 +180,8 @@ uv run photo-guard protect input.jpg
 
 | 模块 | 职责 / 边界 | 可整体替换 |
 |---|---|---|
-| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧] + EXIF 方向转置 + 剔 EXIF 留 ICC；guard 全在 `.load()` 前、JPEG `draft` 居中）；输出路径守卫：拒绝等于输入（`_same_file`）或**指向已存在的目录**（P28，含跟随符号链接的收紧） | 否 |
-| `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名 | 是 |
+| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧] + EXIF 方向转置 + 剔 EXIF 留 ICC；guard 全在 `.load()` 前、JPEG `draft` 居中）；输出路径守卫：拒绝等于输入（`_same_file`）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC） | 否 |
+| `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名。支持可选 `verify` 回调：在 temp 上先验后 `os.replace`（P4/M-A） | 是 |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |
 | `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（可判真伪）、无校验和原始路径（只是**线索**） | 是（整文件） |

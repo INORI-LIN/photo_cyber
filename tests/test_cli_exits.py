@@ -421,3 +421,41 @@ def test_protect_with_a_directory_output_fails_before_reading_the_input(
     assert list(out_dir.iterdir()) == []
     assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
 
+def test_protect_over_capacity_exits_two_and_writes_nothing(tmp_path: Path, capsys) -> None:
+    """P4: an impossible payload is refused at write time — pre-fix it exited 0.
+
+    1600x1200 resizes to 1080x810 → capacity 1704 stored bytes; 1705 is one over.
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main(["protect", str(src), "-o", str(out), "--payload", "A" * 1705]) == 2
+    assert "can carry at most" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_protect_below_the_pixel_floor_exits_two(tmp_path: Path, capsys) -> None:
+    """P4: the floor message must carry both the historic phrase and the number."""
+    src = tmp_path / "small.jpg"
+    Image.new("RGB", (200, 200), (10, 20, 30)).save(src, quality=92)
+    out = tmp_path / "out.jpg"
+
+    assert main(["protect", str(src), "-o", str(out)]) == 2
+    err = capsys.readouterr().err
+    assert "too small" in err and "65536" in err
+    assert not out.exists()
+
+
+def test_protect_self_check_failure_exits_two(tmp_path: Path, monkeypatch, capsys) -> None:
+    """P4/M-A: a product that fails verification is not left behind, and the run exits 2."""
+    from photo_guard import watermark_invisible
+
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+    monkeypatch.setattr(watermark_invisible, "extract", lambda *_args, **_kwargs: "garbage")
+
+    assert main(["protect", str(src), "-o", str(out)]) == 2
+    assert "self-check" in capsys.readouterr().err
+    assert not out.exists()

@@ -21,3 +21,6 @@ release/
 # 本地 skill 执行记录（不进入版本控制）
 jingdonglin/
 jingdonglin-*/
+
+# P6 bench outputs (weekly efficacy job uploads them as artifacts)
+bench/results/
