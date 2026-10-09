@@ -242,6 +242,7 @@ uv run photo-guard protect input.jpg
 - **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖目前只有 `docker.yml` 的 `--network none` 冒烟（慢档尚未建立）。
 - `ci.yml`：`test` job 跑 ubuntu-latest / windows-latest / macos-15 三腿矩阵（fail-fast: false）；另有独立 `gui` job（ubuntu-latest，装 desktop extra 后以 offscreen 跑 `-m gui`，并验证 `photo-guard-gui --help` 不启动 Qt）。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，仅 Linux 腿跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
 - `docker.yml` 构建全合一镜像并冒烟，**不推送**。用 `jlumbroso/free-disk-space` 的原因：托管 ubuntu runner 约 14GB 可用，而 torch + nvidia wheel + SD VAE 解包约 6GB，不腾空间易「no space left on device」。
+- **跨平台路径断言一律按 `Path` 比较，不比字符串**：Windows 的 `os.path.expanduser("~/x")` 保留调用方写的分隔符（`C:\Users\x/pics`），与 `str(Path.home() / "x")` 的全反斜杠形态字符串不等——按字符串断言会只在 windows 腿假红（批 M1 的 CI 实测：`docs/fix-plan.md` §10.15）。
 - 四条 fail-loud 回归锁（动相关代码前先读它们保护的决策）：
   - `tests/test_invisible_watermark_roundtrip.py::test_embed_survives_jpeg85_and_visible_watermark` — 钉住 `dwtDctSvd`；把 `config.WATERMARK_METHOD` 改回 `dwtDct` 立即变红。
   - `tests/test_pipeline_order.py::test_protect_then_verify_round_trip` — 端到端，钉住「resize 先于 embed」；有人「修正」顺序即断。
