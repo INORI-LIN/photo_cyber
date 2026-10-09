@@ -51,6 +51,6 @@ package = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: requires torch + diffusers and a HuggingFace model download (excluded from CI)",
+    "slow: requires torch + diffusers and a local model; runs in docker.yml's slow tier (excluded from the fast legs)",
     "gui: requires PySide6 (desktop extra); excluded from the core-only tier",
 ]

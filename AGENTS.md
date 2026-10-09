@@ -230,7 +230,7 @@ uv run photo-guard protect input.jpg
 3. 运行镜像设 `LANG`/`LC_ALL=C.UTF-8` 与 `PYTHONIOENCODING=utf-8`；CLI 有中文输出，针对它的 CI 断言必须**整行精确相等**，不得为绕编码问题降级为子串匹配。
 4. `.dockerignore` **必须**排除 `models/` 与 `.venv/`：本地模型/虚拟环境会撑爆构建上下文，并掩盖镜像内下载步骤的 bug。
 
-冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
+冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → **SD 产物线索回环（`verify out_sd.jpg --payload-bytes 7` 退 3、整行 `线索（未验证）: ci-test`；P4 的 SD-cell 闸门）** → `--target test` 构建 + preflight（torch/diffusers/`photo_guard`/模型目录）→ **慢档真跑（`uv run --project /app --no-sync pytest -m slow`，单文件限定）** → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算（`test` target 不改变发布镜像的依赖集）。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
 
 ---
 
@@ -238,8 +238,8 @@ uv run photo-guard protect input.jpg
 
 - 快速档：`uv run pytest -m 'not slow' -q`（先 `uv sync --frozen --group dev`）。
 - **不写死任何用例数**（总数、增量都算）；要取值现场跑 `uv run pytest --collect-only -q`。
-- `slow` 现状据实：marker 已在 `pyproject.toml` 注册，但全仓当前**没有任何** `@pytest.mark.slow` 标记（`-m slow` 收集 0 例）；真实 SD 慢档尚未建立。将来要跑需 `uv sync --frozen --extra photoguard` 加本地模型（`photo-guard download-models`）。
-- **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖目前只有 `docker.yml` 的 `--network none` 冒烟（慢档尚未建立）。
+- `slow` 档现状据实：`tests/test_photoguard_slow.py`（P1，11 例）标记 `slow`，跑在 `docker.yml` 的慢档步（显式 `test` target）与本机（`uv sync --frozen --extra photoguard` + `photo-guard download-models`）；核心环境下全 skip 且理由含补齐命令（已用临时 core venv 实测）。fast 档以 `-m 'not slow'` 排除；`-m slow --collect-only` 现场取数。
+- **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖为 `docker.yml` 的 `--network none` SD 冒烟**加强档真断言**（`test` target + `pytest -m slow`，字节复现只在 CPU/float32 承诺）。
 - `ci.yml`：`test` job 跑 ubuntu-latest / windows-latest / macos-15 三腿矩阵（fail-fast: false）；另有独立 `gui` job（ubuntu-latest，装 desktop extra 后以 offscreen 跑 `-m gui`，并验证 `photo-guard-gui --help` 不启动 Qt）。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，仅 Linux 腿跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
 - `docker.yml` 构建全合一镜像并冒烟，**不推送**。用 `jlumbroso/free-disk-space` 的原因：托管 ubuntu runner 约 14GB 可用，而 torch + nvidia wheel + SD VAE 解包约 6GB，不腾空间易「no space left on device」。
 - **跨平台路径断言一律按 `Path` 比较，不比字符串**：Windows 的 `os.path.expanduser("~/x")` 保留调用方写的分隔符（`C:\Users\x/pics`），与 `str(Path.home() / "x")` 的全反斜杠形态字符串不等——按字符串断言会只在 windows 腿假红（批 M1 的 CI 实测：`docs/fix-plan.md` §10.15）。

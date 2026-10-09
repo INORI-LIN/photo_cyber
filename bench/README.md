@@ -89,9 +89,8 @@ ops 链的编码语义：几何 op 先作用于像素、由**下一个**编码�
 ## sd 档口径
 
 - 需要 `uv sync --frozen --extra photoguard` 与本地模型（`uv run photo-guard download-models`）。
-- 当前 PGD **无 seed**（P1 未落地）：`sd` 只作 **CI 外单次证据**，必须记录版本/参数，**不得**把
-  任何比值当门禁。
-- CI 每周跑的是 `noise` 档（`.github/workflows/efficacy.yml`）。
+- P1 起 PGD **有 seed**（`config.PHOTOGUARD_SEED=0`，每次 `attack()` 内新建 Generator；**字节复现只在 CPU/float32 承诺**）。`sd` 仍只作 **CI 外单次证据**，必须记录版本/参数与 `--device cpu`，**不得**把任何比值当门禁。
+- CI 每周跑的是 `noise` 档（`.github/workflows/efficacy.yml`）；真 SD 的自动化断言在 `docker.yml` 的慢档步（`pytest -m slow`）。
 
 ## 与容量/最小尺寸的关系
 

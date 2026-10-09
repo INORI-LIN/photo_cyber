@@ -239,6 +239,16 @@ docker run --rm --network none -v "$PWD/fixtures:/work" photo-guard:ci \
   --perturber sd \
   --perturber-steps 2 \
   --long-edge 384
+
+docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
+  verify /work/out_sd.jpg --payload-bytes 7
+# 同上：整行为 线索（未验证）: ci-test、退出码 3（SD 产物同为 raw payload）
+
+# ③ 真 SD 慢档（P1）：pytest 在显式 test target 里（发布镜像保持 --no-dev，不动许可门）
+docker build --target test -t photo-guard:test .
+docker run --rm --network none -v "$PWD/tests:/app/tests:ro" --entrypoint uv \
+  photo-guard:test run --project /app --no-sync \
+  pytest -m slow -v -rs /app/tests/test_photoguard_slow.py
 ```
 
 ## 项目结构
@@ -315,7 +325,7 @@ uv run photo-guard-gui               # 启动 PySide6 桌面界面
 
 快速档覆盖原有三层顺序、所有层组合、隐水印 JPEG 回环、参数校验、CRC envelope、设备发现；用例数见 `uv run pytest --collect-only -q`。
 
-`slow` marker 已在 `pyproject.toml` 注册，但当前仓库没有标记 `slow` 的用例。真实 SD 慢档需要 `uv sync --frozen --extra photoguard` 并用 `uv run photo-guard download-models` 准备本地模型；快速档全绿不等于 SD 路径有效。
+`slow` marker 已在 `pyproject.toml` 注册，真 SD 慢档用例在 `tests/test_photoguard_slow.py`（P1 建立，11 例：seed 确定性、L∞ 预算、目标下降、1×1 等形状、protect 字节复现）。它跑在两处：`docker.yml` 的 slow tier（显式 `test` target，`--network none`）与本机 `uv sync --frozen --extra photoguard` + `uv run photo-guard download-models` 之后；核心环境下这些用例全部 **skip 且理由给出补齐命令**（已用临时 core venv 实测）。快速档全绿不等于 SD 路径有效——同理，慢档只覆盖 CPU/float32 的字节可复现，CUDA/MPS 不承诺逐位一致。
 
 提交前跑一遍合规检查（`AGENTS.md` §6.4：检索被禁字面量，命中即判失败；正则形式可命中多空格写法，`.github/` 不再排除）：
 
