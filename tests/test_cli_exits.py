@@ -392,3 +392,32 @@ def test_protect_with_an_out_of_range_carrier_exits_two(tmp_path: Path, monkeypa
     assert "carrier" in capsys.readouterr().err
     assert not out.exists()
 
+
+def test_protect_with_a_directory_output_fails_before_reading_the_input(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """P28: ``-o`` pointing at a directory must be rejected early, not at the final swap.
+
+    Pre-fix the run completed the whole pipeline and only the final ``os.replace`` failed,
+    so stderr was the generic ``failed to write …`` wrap. The early guard must name the
+    directory instead, and it must fire before the input is even opened.
+    """
+    from photo_guard import outputs, pipeline
+
+    src = tmp_path / "in.jpg"
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    _seed_textured(src)
+
+    def _explode(*_args, **_kwargs):
+        raise AssertionError("the input must not be read when the output is a directory")
+
+    monkeypatch.setattr(pipeline.Image, "open", _explode)
+
+    assert main(["protect", str(src), "-o", str(out_dir)]) == 2
+    err = capsys.readouterr().err
+    assert "output path is a directory" in err
+    assert "failed to write" not in err
+    assert list(out_dir.iterdir()) == []
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+

@@ -22,7 +22,7 @@ def _build_parser() -> argparse.ArgumentParser:
               "Choosing noise or sd automatically enables perturb"),
     )
     protect.add_argument("--perturber", default=config.DEFAULT_PERTURBER, choices=perturb.available())
-    protect.add_argument("--visible-mode", default=config.DEFAULT_VISIBLE_MODE, choices=["subject", "tile", "center"])
+    protect.add_argument("--visible-mode", default=config.DEFAULT_VISIBLE_MODE, choices=config.VISIBLE_MODES)
     protect.add_argument("--visible-text", default=config.DEFAULT_VISIBLE_TEXT)
     protect.add_argument("--visible-alpha", type=float, default=config.DEFAULT_VISIBLE_ALPHA)
     protect.add_argument("--long-edge", type=int, default=config.DEFAULT_LONG_EDGE, help="0 keeps original size")

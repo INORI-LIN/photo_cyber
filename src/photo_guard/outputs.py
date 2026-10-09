@@ -64,11 +64,14 @@ def save_image_atomic(
     the previous file or no file — never a truncated image under the final name.
     """
     destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    previous_mode = destination.stat().st_mode & 0o7777 if destination.exists() else None
+    previous_mode: int | None = None
     unprotected = False  # True while the swap has lifted the destination's write protection
     temp: Path | None = None
     try:
+        # P28: creating the parent directory and probing the previous mode are part of the
+        # write, so their failures carry the same `failed to write` wrap as everything below.
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        previous_mode = destination.stat().st_mode & 0o7777 if destination.exists() else None
         temp = _create_temp_file(destination.parent)
         save_kwargs: dict[str, object] = {"format": image_format, "optimize": True}
         if quality is not None:

@@ -84,6 +84,82 @@ def test_atomic_write_temp_creation_failure_names_the_target(tmp_path, monkeypat
     assert str(destination) in str(excinfo.value)
 
 
+def test_atomic_write_wraps_mkdir_failure_when_parent_is_a_file(tmp_path) -> None:
+    """P28: a parent path that is a file must fail with the ``failed to write`` wrap.
+
+    Pre-fix the ``mkdir``/``stat`` probes sat outside the ``try``, so this raised a bare
+    ``FileExistsError`` that never named the destination.
+    """
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    destination = blocker / "out.jpg"
+
+    with pytest.raises(OSError, match="failed to write") as excinfo:
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    assert str(destination) in str(excinfo.value)
+
+
+def test_atomic_write_wraps_mkdir_failure_itself(tmp_path, monkeypatch) -> None:
+    """P28: ``mkdir`` failing on its own (e.g. permission denied) must carry the wrap too.
+
+    Simulated with monkeypatch rather than a POSIX-only chmod so the case runs on every
+    platform without a conditional skip; the real-filesystem sibling above covers the
+    cross-platform "parent is a file" origin.
+    """
+    destination = tmp_path / "ro" / "nested" / "out.jpg"
+
+    def boom(_self, *_args, **_kwargs):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "mkdir", boom)
+
+    with pytest.raises(OSError, match="failed to write") as excinfo:
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    assert str(destination) in str(excinfo.value)
+
+
+def test_atomic_write_wraps_stat_failure(tmp_path, monkeypatch) -> None:
+    """P28: the ``stat`` probe for the previous mode is inside the wrap now.
+
+    ``Path.exists`` swallows ``OSError``, so a deterministic stat failure needs both
+    methods patched — ``exists`` reports True and ``stat`` raises. Pre-fix this escaped
+    unwrapped, because the probe ran before the ``try``.
+    """
+    destination = tmp_path / "out.jpg"
+    monkeypatch.setattr(Path, "exists", lambda _self: True)
+
+    def boom(_self):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "stat", boom)
+
+    with pytest.raises(OSError, match="failed to write") as excinfo:
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    assert str(destination) in str(excinfo.value)
+
+
+def test_protect_rejects_a_symlink_that_points_at_a_directory(tmp_path, textured_jpg) -> None:
+    """P28 (D4): the directory guard follows symlinks — a deliberate tightening.
+
+    ``Path.is_dir()`` resolves the link, so ``-o <symlink→dir>`` used to replace the link
+    itself with the image (exit 0). It is now refused up front; pinned so the surprising
+    old behaviour cannot be restored as a "fix".
+    """
+    target = tmp_path / "real-dir"
+    target.mkdir()
+    link = tmp_path / "link-out"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation is not available in this environment")
+
+    with pytest.raises(ValueError, match="output path is a directory"):
+        pipeline.protect(textured_jpg, link, pipeline.ProtectOptions())
+
+
 def test_atomic_write_output_is_decodable_at_the_final_path(tmp_path) -> None:
     destination = tmp_path / "nested" / "out.jpg"
     outputs.save_image_atomic(Image.new("RGB", (32, 24)), destination, quality=80)

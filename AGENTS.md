@@ -180,7 +180,7 @@ uv run photo-guard protect input.jpg
 
 | 模块 | 职责 / 边界 | 可整体替换 |
 |---|---|---|
-| `pipeline.py` | 唯一编排；`_same_file` 拒绝输出路径等于输入 | 否 |
+| `pipeline.py` | 唯一编排；输出路径守卫：拒绝等于输入（`_same_file`）或**指向已存在的目录**（P28，含跟随符号链接的收紧） | 否 |
 | `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名 | 是 |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |

@@ -102,6 +102,52 @@ def test_load_settings_only_overrides_provided_keys() -> None:
     assert values["output_dir"] == DEFAULTS["output_dir"]
 
 
+def test_load_settings_rejects_an_unknown_visible_mode() -> None:
+    """P29: a stored mode outside the widget's set must fall back, not travel on.
+
+    Measured on PySide6 6.11.1: a non-editable ``QComboBox`` ignores text that is not in
+    its list, so the widget path cannot deliver an illegal mode — but ``load_settings``
+    returned the stored string verbatim, and that dict is the settings contract the GUI
+    writes back and programmatic callers read.
+    """
+    assert gui_logic.load_settings({"mode": "Bogus"}, DEFAULTS)["mode"] == DEFAULTS["mode"]
+    assert gui_logic.load_settings({"mode": "tile"}, DEFAULTS)["mode"] == "tile"
+
+
+def test_validate_options_rejects_an_unknown_visible_mode_when_the_layer_runs() -> None:
+    """P29: the second gate, for programmatic callers that never touch the widget."""
+    with pytest.raises(ValueError, match="visible mode"):
+        pipeline.validate_options(pipeline.ProtectOptions(visible_mode="Bogus"))
+
+    # Same shape as the visible-text check: only enforced when the layer is in play, so a
+    # caller that does not run the visible layer is not newly rejected (P30's lesson).
+    pipeline.validate_options(
+        pipeline.ProtectOptions(
+            visible_mode="Bogus", layers=frozenset({pipeline.LAYER_INVISIBLE})
+        )
+    )
+
+
+def test_validate_output_dir_rule() -> None:
+    """P29: one shared rule — strip, expanduser, then non-empty and absolute."""
+    home = Path.home()
+    assert gui_logic.validate_output_dir(f"  {home}  ") == str(home)
+    assert gui_logic.validate_output_dir("~/pics") == str(home / "pics")
+    for bad in ("", "   ", "out", "../out"):
+        with pytest.raises(ValueError, match="absolute"):
+            gui_logic.validate_output_dir(bad)
+
+
+def test_load_settings_expands_a_tilde_output_dir() -> None:
+    """P29: the shared rule expands ``~`` before the absolute check (deliberate change).
+
+    Before the unification the stored value went through ``os.path.isabs`` without
+    ``expanduser``, so ``~/pics`` was silently replaced by the default.
+    """
+    values = gui_logic.load_settings({"output_dir": "~/pics"}, DEFAULTS)
+    assert values["output_dir"] == str(Path.home() / "pics")
+
+
 def _protect_call_lines(node: ast.AST) -> set[int]:
     return {
         call.lineno

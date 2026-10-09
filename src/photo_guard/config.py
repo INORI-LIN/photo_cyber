@@ -72,6 +72,9 @@ PHOTOGUARD_STEPS = 10
 # watermark to a detected face/saliency box, which is the most faithful
 # realisation. `tile` and `center` are kept as fallbacks / stylistic choices.
 DEFAULT_VISIBLE_MODE = "subject"
+# P29: single source for the accepted visible modes — argparse `choices`, the GUI settings
+# whitelist and `pipeline.validate_options` all read this tuple.
+VISIBLE_MODES = ("subject", "tile", "center")
 DEFAULT_VISIBLE_TEXT = "© photo-guard"
 DEFAULT_VISIBLE_ALPHA = 0.10  # AGENTS.md 三③: 5%–15% 平铺
 DEFAULT_VISIBLE_FONT_SIZE = 36

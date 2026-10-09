@@ -7,6 +7,7 @@ be modified by them.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -88,6 +89,50 @@ def test_plan_items_gives_two_distinct_outputs_for_same_stem_batch(window, tmp_p
     assert len(set(names)) == 2, names
     assert names[0] == "IMG_0001" + outputs.DEFAULT_SUFFIX + ".jpg"
     assert all(item.output.parent == tmp_path for item in items)
+
+
+def test_plan_items_rejects_a_relative_or_empty_output_dir(window, tmp_path) -> None:
+    """P29: the live field must obey the same rule the settings layer applies on load.
+
+    Pre-fix a relative string resolved against the process CWD and ``save_image_atomic``
+    silently created the directory tree there.
+    """
+    source = tmp_path / "in.jpg"
+    Image.new("RGB", (320, 240), (90, 100, 110)).save(source, quality=90)
+
+    for bad in ("out", "", "   "):
+        window.output_dir.setText(bad)
+        with pytest.raises(ValueError, match="absolute"):
+            window._plan_items([source])
+
+
+def test_start_protect_routes_a_bad_output_dir_to_the_error_channel(window, monkeypatch) -> None:
+    """P29: the guard fires before any worker starts and reports through ``_error``."""
+    tmp = Path(window.output_dir.text())
+    source = tmp / "in.jpg"
+    Image.new("RGB", (320, 240), (90, 100, 110)).save(source, quality=90)
+    window.protect_files.add_paths([source])
+    window.output_dir.setText("relative-out")
+    shown: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: shown.append(str(message)))
+
+    window.start_protect()
+
+    assert shown and "absolute" in shown[0]
+    assert not window._threads  # no worker was ever started
+
+
+def test_visible_mode_combo_ignores_text_outside_its_list(window) -> None:
+    """P29 probe, measured on PySide6 6.11.1: a non-editable combo keeps its value.
+
+    This is why the widget path cannot smuggle an illegal mode into ``apply`` — the guard
+    that matters is the settings-layer whitelist plus ``validate_options``. The pin exists
+    so that making the combo editable later cannot silently remove that assumption.
+    """
+    window.visible_mode.setCurrentText("Bogus")
+    assert window.visible_mode.currentText() == config.DEFAULT_VISIBLE_MODE
+    window.visible_mode.setCurrentText("tile")
+    assert window.visible_mode.currentText() == "tile"
 
 
 def test_help_exits_zero_without_starting_the_event_loop() -> None:

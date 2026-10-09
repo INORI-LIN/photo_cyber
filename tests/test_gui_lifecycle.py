@@ -89,6 +89,29 @@ def window(tmp_path, monkeypatch):
         win.close()
 
 
+def test_export_csv_failure_goes_through_the_error_channel(window, monkeypatch, tmp_path) -> None:
+    """P29: an unwritable target must surface as a dialog, not as an unhandled slot error.
+
+    Pre-fix the bare ``open()`` let ``OSError`` escape the slot — the failure mode P25
+    measured as a process abort for worker slots.
+    """
+    window.verify_results = [("in.jpg", "成功", "out.jpg")]
+    target = tmp_path / "missing-dir" / "x.csv"
+    monkeypatch.setattr(
+        gui.QFileDialog,
+        "getSaveFileName",
+        lambda *_args, **_kwargs: (str(target), ""),
+    )
+    shown: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: shown.append(str(message)))
+
+    window.export_csv()
+
+    assert shown, "the OSError must be reported through _error"
+    assert "导出失败" in shown[0]
+    assert not target.exists()
+
+
 def test_two_consecutive_protect_runs_each_release_their_thread(window) -> None:
     for round_number in (1, 2):
         window.start_protect()  # pre-fix: the second call dereferences the deleted QThread

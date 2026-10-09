@@ -430,19 +430,24 @@ class MainWindow(QMainWindow):
         if not self.verify_results: return self._error("没有可导出的验证结果")
         path, _ = QFileDialog.getSaveFileName(self, "导出 CSV", "photo-guard-verify.csv", "CSV (*.csv)")
         if not path: return
-        with open(path, "w", newline="", encoding="utf-8-sig") as handle:
-            writer = csv.writer(handle); writer.writerow(["文件", "结果", "详情"]); writer.writerows(self.verify_results)
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as handle:
+                writer = csv.writer(handle); writer.writerow(["文件", "结果", "详情"]); writer.writerows(self.verify_results)
+        except OSError as exc:
+            # P29: an unwrapped OSError here escapes the slot, and PySide6 aborts the
+            # process on unhandled slot exceptions (the failure mode P25 measured).
+            return self._error(f"导出失败: {exc}")
 
     def _plan_items(self, paths: list[Path]) -> list[BatchItem]:
         """Resolve the whole batch's output paths up front, with in-batch uniqueness.
 
         Naming lives in ``outputs`` so the CLI, the GUI and the tests share one
         implementation; ``zip(strict=True)`` keeps the pairing honest if either side
-        ever changes length.
+        ever changes length. P29: the live field runs through the same rule the settings
+        layer applies on load, so a relative path cannot resolve against the process CWD.
         """
-        planned = outputs.plan_batch(
-            Path(self.output_dir.text()).expanduser(), paths, self.suffix.text()
-        )
+        directory = Path(gui_logic.validate_output_dir(self.output_dir.text()))
+        planned = outputs.plan_batch(directory, paths, self.suffix.text())
         return [BatchItem(source, target) for source, target in zip(paths, planned, strict=True)]
 
     def _error(self, message: str):

@@ -36,6 +36,61 @@ def test_noop_perturb_layer_rejected() -> None:
         )
 
 
+class _RecordingPerturber:
+    """A stand-in for a caller-supplied perturber: records that it ran, changes nothing."""
+
+    name = "recording"
+
+    def __init__(self, *, falsy: bool = False) -> None:
+        self.calls = 0
+        self._falsy = falsy
+
+    def __bool__(self) -> bool:
+        return not self._falsy
+
+    def apply(self, image):
+        self.calls += 1
+        return image
+
+
+def test_noop_perturber_with_an_instance_is_accepted_and_used(
+    textured_jpg, tmp_path
+) -> None:
+    """P30: ``validate_options`` used to reject a combination ``protect`` handles fine.
+
+    The rejection must only fire when there is no instance to fall back on; when one is
+    supplied, the layer has to run it — not the ``noop`` factory it shadows.
+    """
+    instance = _RecordingPerturber()
+    options = pipeline.ProtectOptions(
+        layers=frozenset({"perturb"}), perturber="noop", perturber_instance=instance
+    )
+    pipeline.validate_options(options)  # pre-fix: ValueError("perturb layer uses noop")
+
+    pipeline.protect(textured_jpg, tmp_path / "out.jpg", options)
+
+    assert instance.calls == 1
+
+
+def test_a_falsy_instance_is_still_used_not_silently_replaced(
+    textured_jpg, tmp_path
+) -> None:
+    """P30, closing the reverse direction: a falsy instance must not fall into the factory.
+
+    ``protect`` used to pick ``opts.perturber_instance or perturb.get(...)``; an object
+    whose truthiness is False would pass the new gate and then be silently swapped for the
+    noop factory — reporting success with zero perturbation.
+    """
+    instance = _RecordingPerturber(falsy=True)
+    options = pipeline.ProtectOptions(
+        layers=frozenset({"perturb"}), perturber="noop", perturber_instance=instance
+    )
+
+    pipeline.protect(textured_jpg, tmp_path / "out.jpg", options)
+
+    assert instance.calls == 1
+
+
 def test_payload_envelope_crc_round_trip() -> None:
     stored = watermark_invisible.pack_payload("owner:alice")
     payload, verified = watermark_invisible.unpack_payload(stored)

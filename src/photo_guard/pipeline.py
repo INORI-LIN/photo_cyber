@@ -73,7 +73,22 @@ def validate_options(opts: ProtectOptions) -> None:
         raise ValueError("invisible watermark payload must not be empty")
     if LAYER_VISIBLE in opts.layers and not opts.visible_text:
         raise ValueError("visible watermark text must not be empty")
-    if LAYER_PERTURB in opts.layers and opts.perturber == "noop":
+    # P29: the second gate for programmatic callers — the GUI widget path cannot smuggle an
+    # unknown mode through (non-editable combo), but ``ProtectOptions`` can. Conditional on
+    # the layer for the same reason as the text check above: an unused mode is not an error.
+    if LAYER_VISIBLE in opts.layers and opts.visible_mode not in config.VISIBLE_MODES:
+        raise ValueError(
+            f"unknown visible mode {opts.visible_mode!r}; "
+            f"expected one of {', '.join(config.VISIBLE_MODES)}"
+        )
+    # P30: only reject `noop` when there is no instance to fall back on — `protect` uses a
+    # caller-supplied instance in preference to the factory, so the old unconditional check
+    # rejected combinations it actually handles.
+    if (
+        LAYER_PERTURB in opts.layers
+        and opts.perturber_instance is None
+        and opts.perturber == "noop"
+    ):
         raise ValueError("perturb layer uses noop; choose noise or sd, or disable the layer")
 
 
@@ -85,6 +100,11 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         raise ValueError(
             "refusing to overwrite the input file; choose a different output path"
         )
+    # P28: `os.replace` onto a directory would only fail at the very end of the pipeline
+    # (after resize/embed and, for the SD perturber, a full PGD run). Refuse it up front —
+    # this is the shared contract point for the CLI, the GUI and programmatic callers.
+    if output_path.is_dir():
+        raise ValueError(f"output path is a directory: {output_path}")
     with Image.open(input_path) as opened:
         opened.load()
         src = opened.convert("RGB")
@@ -99,8 +119,12 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
 
     perturber_name = None
     if LAYER_PERTURB in opts.layers:
-        selected = opts.perturber_instance or perturb.get(
-            opts.perturber, **opts.perturber_kwargs
+        # P30: `is not None`, not truthiness — a falsy instance must be used as given, not
+        # silently replaced by the factory (which would report success with zero perturbation).
+        selected = (
+            opts.perturber_instance
+            if opts.perturber_instance is not None
+            else perturb.get(opts.perturber, **opts.perturber_kwargs)
         )
         bgr = selected.apply(bgr)
         perturber_name = selected.name
