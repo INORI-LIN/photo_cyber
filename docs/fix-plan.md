@@ -23,14 +23,14 @@
 | P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [ ] 未开始 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [ ] 未开始 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
-| P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [ ] 未开始 |
+| P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [x] 批次 L 已落地（2026-10-09）：唯一 loader `_load_oriented_rgb`（EXIF 方向 + 剥 EXIF + 留 ICC）+ 4 个调用点收口；先红 10 例、含 verify 侧 pin；见 §10.13 |
 | P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [ ] 未开始（仅余 subject.py 代码面；2026-09-28 批次 C 开工前裁定不并入，待排批次） |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
 | G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [x] 批次 D1 已落地（`22ce170` 先红 + `fbeed66` 转绿，2026-09-29）；G5/G2/P15/P19 属同批 D2/D3，未开工 |
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；S1 已验，S2/S3 待 CI/Windows |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
-| G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [ ] 未开始 |
+| G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [x] 批次 L 已落地（2026-10-09）：格式表 / 64 MP 上限 / 单帧 / 透明叠白，guard 全在 `.load()` 前且 JPEG `draft` 居中；先红 9 例；HEIC 递延（裁定见 §10.13） |
 | G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1/A2/A7/A8 本机实测，A3/A4/A5/A6 待推送与 Windows |
 | P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
 | P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
@@ -75,10 +75,10 @@
 | 批次 | 内容 | 验收门槛 |
 |---|---|---|
 | 1 | P3, G3 | `uv run pytest -m 'not slow' -q` 全绿；`protect in.jpg -o in.jpg` 退 2 且原图 sha256 不变，`protect in.jpg -o out.jpg && verify out.jpg` 退 0 且 stdout 恰为原 payload；`git diff --stat AGENTS.md` 为空。**批次 1 已完成（2026-09-23）：见 §6 各项的实施记录。** |
-| 2 | **P10 修复 + P11（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。**批次 2 部分完成（2026-09-23）：P10 与 P11 已落地（`910a298`）；P8、P4 尚未开工，本节验收门槛中的 EXIF 与容量两条仍待落地后回写。** |
+| 2 | **P10 修复 + P11（前置）** → P8, P4 | 既有 fast 用例无一变红（基线 = 落地前实测，HEAD `2810e31` 为 58）；orientation=6 的 JPEG 输入输出 `size=(300,600)`；320×320 + 超容量 payload 退 2 且不落文件，200×200 退 2 且消息含 `65536`。**批次 2 部分完成（2026-09-23）：P10 与 P11 已落地（`910a298`）。P8 已迁批 L 并于 2026-10-09 落地（§10.13），P4 归批 M——本行验收门槛中的 EXIF 与容量两条分别由批 L 与批 M 承接。** |
 | 3 | P9→P2, P9→P1 | fast 全绿且 collect 数 = 落地前实测 + 新增（不写绝对值）；`--extra desktop` 后 `uv run pytest -m gui` 全过、0 skip；`grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出。 |
 | 4 | G1, G5, G2 | 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0；`uv lock --check` 绿、`generate_notices.py --check` 退 0、release 的 verify 变红时两个构建 job 未启动。 |
-| 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。 |
+| 5 | P6→P5, G4, P7 | `uv run python bench/efficacy_matrix.py --out-dir /tmp/pg-bench --perturber noise` 退 0 且 identity 与 jpeg_q85 在 textured_detail 上 100%、两 CSV 行数 == `len(images)*12`；`protect -o out.png` 退 0 且 stderr 含 `warning: writing PNG, not JPEG`、`-o out.bmp` 退 2 不落文件；fast 全绿。**归属已重切（2026-10-09）：G4 迁批 L 并已落地（§10.13）；P6→P5 归批 M、P7 归批 O——本行中的 bench 与 PNG 验收分别由批 M 与批 O 承接。** |
 | A（二次审计） | P24 文档纠错 → P12（H1）→ P13（M1） | 先复现后修：`uv run --no-sync pytest -m 'not slow' -q` 全绿；`uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；`uv run --no-sync python -m photo_guard --help` 退 0；H1 复现脚本重跑 `h1a` 无 `RuntimeError`、`h1b` 退出码 0；M1 复现脚本重跑两个只差大小写的输入互不覆盖。**批次 A 已完成（2026-09-28，`def0a80`）：P12/P13/P24 全部落地并勾选；验证时新发现的 P25/P26 已入文档（批次 C）。** |
 | B | P14、P16、P18（三条均已实测、纯代码） | 三条复现脚本修复后重跑为绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；1080×6000 的 tile 明水印三段改动像素均 > 0（旧码第三段为 0）；超容量 `--payload-bytes` 在进入提取循环前被拒。**批次 B 已完成（2026-09-28，`81411cb`+`677478e`+`d5fe104`）：三条全部落地并勾选；fast 155 passed（`--collect-only -q` 实测 155 collected）；1080×6000 三带 45771/45675/45858（旧码 32245/1061/0）；`--payload-bytes 100000` 退 2 且 stderr 含容量；gpu_bench 在 core 环境退 0、打印前置条件提示且无残留。** |
 | C | P2（落地时一并处理 G6 的 GUI 入口点）、P17、P21、P25、P26 | `uv run --no-sync pytest -m gui -q`（desktop 档）全过、0 skip；P17 与 P25 的替换断言/新用例在旧实现上必红（先红后绿）；P26 的 spike 结论落档（平台差异或修复后新增「offscreen + `show()` + 两轮」用例）；`uv run --no-sync pytest -m 'not slow' -q` 全绿。**批次 C 已完成（2026-09-28，`ab816d0`+`1162ac9`+`af97a09`+`46f1a8b`+`aadf27d`）：五项全部落地并勾选；fast 193 passed（`--collect-only -q` 实测 193 collected）；`-m gui -q` 15 passed、0 skip；P26 结论为「仓库可修」（绑定槽投递主线程）并落档。** |
@@ -88,7 +88,7 @@
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。四个提交（`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed`）已推送到 `origin/main`，推送后 CI 结论见 §9.10。** |
 | **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | **技术实现与原定真链验证已收口**：G9①④/P33 的旧手工构建 #4 成功；G10 双 wheel 与 G8①②③④ 两轮 CI `eef7b48`→`9b1ba41` 成功；G9②③ 和 tag-only `publish` 在正式 `v0.1.0` run `37878702620` 四 job success，公开 Release 两份二进制 SHA256 与各自清单一致，另核对了两份清单内容（§10.7–§10.10）。不把此结论外推为人工第三方二进制法律审核、签名/公证或 G11③ 跨 run 并发已解决。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。**批次 K 已完成（2026-10-09）：三项全部落地；先红实测 13 例 + 1 条 Qt 行为 pin（旧码即绿）+ 1 条 D4 收紧 pin；fast 271 passed（`--collect-only -q` 实测 271）、GUI 档 19 passed 0 skipped；两处关键更正（旧码 `-o <dir>` 已是退 2 的**晚失败**而非无包装；P29③ 控件路径实测不可达）与 D1–D8 登记见 §10.12。** |
-| **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
+| **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。**批次 L 已完成（2026-10-09）：四项裁定按 §3 推荐全部确认（ICC 原样保留 / 损坏 EXIF 硬拒 / HEIC 递延 / 上限固定 64 MP）；P8 与 G4 全部落地（两个新测试文件共 32 例，先红 19 例）；fast 304 passed（`--collect-only -q` 实测 304）、GUI 档 20 passed 0 skipped；两处关键更正与 L1–L8 登记见 §10.13。** |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
 | **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步**待 CI 取证**。 |
 | **O** | P7、P20 | 非 JPEG 输出策略先裁定；P20 先 spike 语义（内容已落盘 + `chmod` 抛错仍退 0 且内容完整）。 |
@@ -122,14 +122,14 @@
   | 9 | Spike A 1×1 进真 VAE / C 64×64 步进 `max|Δ|` 与 objective / D 镜像内字节可复现 / E SD-cell 门控 / F 手工 docker preflight+慢档 | P1 | P1（batch 3）的第 2/4/5 步与验收第 3 条；E 失败路由 P3/P6 | A 同形 u8；C `max|Δ|<=8` 且 ratio<1；D 两次同 seed 逐位相同；E `verify out_sd.jpg --payload-bytes 7` == `ci-test`；F 四条真 + passed>0 |
 
   另有三个非门禁 spike：P2 的 S1/S2/S3（S1 因只读环境未跑，须在首次 desktop 档执行前补做）、P5 的 Spike A/B（Spike A 为 PR 必附的人工实测，无结论则该 PR 的闸门不成立）、P7 的单条条件性 spike（`_thread_stopped` 先于 `deleteLater` 连接）。
-- [ ] P8 与 G4 对 ICC 的归属：顺序已由 R3/R4 定死（P8 创建唯一 loader、G4 只扩 `draft_long_edge` 与 guard；save 助手一次谈定为 `save_image_atomic(image, path, *, image_format="JPEG", quality=None, icc_profile=None)` 并穿透），但「成品是否把源 ICC 归一化到 sRGB」仍是策略选择。 — 影响 P8、G4、P7、G3 — 建议：原样保留源 ICC、不做色彩管理（透明叠白只作用于像素），并在 README 明写「不做色彩空间转换」。
+- [x] P8 与 G4 对 ICC 的归属：顺序已由 R3/R4 定死（P8 创建唯一 loader、G4 只扩 `draft_long_edge` 与 guard；save 助手一次谈定为 `save_image_atomic(image, path, *, image_format="JPEG", quality=None, icc_profile=None)` 并穿透），但「成品是否把源 ICC 归一化到 sRGB」仍是策略选择。 — 影响 P8、G4、P7、G3 — 建议：原样保留源 ICC、不做色彩管理（透明叠白只作用于像素），并在 README 明写「不做色彩空间转换」。 → **已裁定（2026-10-09，批 L 开工前）：原样保留源 ICC、不做色彩管理**；README「输入契约」段与已知边界已明写；实现：loader 取出 ICC → `save_image_atomic(..., icc_profile=icc)`（形参 G3 时已就绪），零像素改动（§10.13 L1）。
 - [ ] 是否允许非 JPEG 输出（P7 的 `save_format` 允许 `-o out.png` 退 0 + 警告）与 AGENTS.md 五「成品应为预压缩 JPEG」的张力。 — 影响 P7、G3、P4、P6 — 建议：取读法 A（allow+warn）：`-o out.png` 退 0 并打 `warning: writing PNG, not JPEG`，`-o out.bmp`/未知名退 2、不落文件；若取读法 B（视为禁令）则 PNG 也退 2，并须删除相应回环用例。
 - [ ] G2 的阻塞项：项目许可与版权行（holder、year、是否使用 `pyproject.toml:7` 的邮箱）。 — 影响 G2、G5 — 建议：MIT 正文 + `Copyright (c) 2026 <holder>`，holder 由用户给定，邮箱只留在 pyproject 作者字段。
 - [ ] 是否继续随包再分发 SD VAE 权重，以及是否把「许可与署名」写进 AGENTS.md。 — 影响 G2、G5、P6 — 建议：继续分发，但在 notices 里把权重钉死到 configured repo（MIT）并加 `--check` 门；AGENTS.md 本次不改，把「是否入规范」记为独立待办。
-- [ ] G4 的 HEIC 支持与像素上限形态：递延还是现在 `uv add pillow-heif`；上限固定还是 `--max-input-pixels` 可调。 — 影响 G4、P8、P6 — 建议：HEIC 递延（懒调 `register_heif_opener()` 属依赖变更，离线不可验证），上限先固定 `MAX_INPUT_PIXELS = 64_000_000`。
+- [x] G4 的 HEIC 支持与像素上限形态：递延还是现在 `uv add pillow-heif`；上限固定还是 `--max-input-pixels` 可调。 — 影响 G4、P8、P6 — 建议：HEIC 递延（懒调 `register_heif_opener()` 属依赖变更，离线不可验证），上限先固定 `MAX_INPUT_PIXELS = 64_000_000`。 → **已裁定（2026-10-09，批 L 开工前）：HEIC 递延（不新增依赖、无新 ID；今天 HEIC 已因 `UnidentifiedImageError`→OSError 退 2，本次只补可操作话术）、上限固定 `64_000_000`（无新 CLI 旗标）**（§10.13 L2/L4）。
 - [ ] G5 的两处：smoke 在 `UV_PROJECT_ENVIRONMENT=$TMP/venv`（项目外）跑，与 AGENTS.md:88「依赖装项目本地 `.venv`」的张力；以及仓库 public/private 决定 macOS leg 每 PR 跑还是转 nightly。 — 影响 G5、P2 — 建议：接受项目外隔离 venv（冲突显式标注）或改「复制 checkout 再 sync」；macOS 建议 `ci.yml` 加 `macos-15` 每 PR 跑，并只在 Linux 上跑 smoke。
 - [ ] P5/P6 的契约与阈值：AGENTS.md 三-②「输出崩坏、失真」强于可证明者，是 README 如实降级还是用户自行补边界；P6 首轮若 portrait_like/smooth_lowtex 的 q85 <100% 走哪条产品决策。 — 影响 P5、P6、P1 — 建议：README 如实写「只实现 encoder-attack 变体、强度未测量、提高成本非必然崩坏」，并把与 AGENTS.md 的差异上报；首轮不达则按 Q2 改默认 payload 长度或只在 README 限定承诺范围，禁缩语料、禁降钉。
-- [ ] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。
+- [x] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。 → **已裁定（2026-10-09，批 L 开工前）：硬拒绝 → exit 2**；限定「EXIF 存在且解析失败」——缺失 EXIF 不受影响（§10.13 L3）。
 - [ ] P19 的线索路径（`--payload-bytes` 分支）是否改独立退出码（如 3）？ — 影响 P19、cli.py、README 退出码表、`docker.yml` 断言、P3 的结论 — 建议：采纳独立退出码 3，把「线索（未验证）」与「证据」在机器可读通道上分开；落地时同步 README 与 `docker.yml` 断言，并用新用例钉住。
 - [ ] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。
 - [x] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。 → **已裁定（2026-09-28，批次 B 开工前）：改 2**；护栏只落在 `extract` 与 `extract_legacy`，`extract_envelope`（`--expected-payload` 路径）未动——加它会把该路径从 exit 1 变 2，属另一项契约变更，登记为同类残留。
@@ -140,14 +140,14 @@
 
 | 待定主题 | 影响批次 | 阻塞对象 |
 |---|---|---|
-| P8/G4 的 ICC 归属（原样保留源 ICC vs 归一 sRGB） | 批次 2（P8）/ E（G4） | P8、G4、P7 |
+| P8/G4 的 ICC 归属（原样保留源 ICC vs 归一 sRGB） | 批次 2（P8）/ E（G4）→ **批 L** | P8、G4、P7 —— **已裁定（2026-10-09）：原样保留（§10.13 L1）** |
 | 是否允许非 JPEG 输出（P7 的 allow+warn vs 视为禁令） | E | P7、G3、P4、P6 |
 | G2 的许可与版权行（holder / year / 是否用 pyproject 邮箱） | D | G2、G5 |
 | SD VAE 权重重分发与是否把「许可与署名」写进 AGENTS | D | G2、G5、P6 |
-| G4 的 HEIC 支持与像素上限形态（递延 vs 现在加依赖；固定上限 vs 可调） | E | G4、P8、P6 |
+| G4 的 HEIC 支持与像素上限形态（递延 vs 现在加依赖；固定上限 vs 可调） | E → **批 L** | G4、P8、P6 —— **已裁定（2026-10-09）：HEIC 递延、上限固定 64 MP（§10.13 L2/L4）** |
 | G5 的 smoke 隔离 venv 口径与 macOS leg 频率 | D | G5、P2 |
 | P5/P6 的契约与阈值（README 降级口径；首轮未达时的产品决策） | E | P5、P6、P1 |
-| P8 的损坏 EXIF 语义（硬拒绝 vs 警告后继续） | 批次 2（P8） | P8、G4 |
+| P8 的损坏 EXIF 语义（硬拒绝 vs 警告后继续） | 批次 2（P8）→ **批 L** | P8、G4 —— **已裁定（2026-10-09）：硬拒绝 exit 2（§10.13 L3）** |
 | P19 的线索路径是否改独立退码 3 | D | P19、cli、README、docker.yml |
 | P15 的 `use_safetensors` 硬失败与 `revision` 钉法 | D | P15、photoguard、download |
 
@@ -686,6 +686,8 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 
 ### P8 — EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图）
 
+> **[x] 批次 L 已落地（2026-10-09）**：唯一 loader `_load_oriented_rgb` + 4 个调用点收口 + `icc_profile` 穿透；实施记录、两处关键更正与决策编号见 §10.13。
+
 **严重度**：P1-high
 **工作量**：M
 **批次**：2
@@ -731,9 +733,9 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 另 6 条：test_untagged_source_is_not_rotated、test_source_icc_profile_is_preserved、test_tagged_png_source_is_transposed、test_tagged_tiff_is_not_double_rotated、test_corrupt_exif_exits_two_jfif_unit0/_unit1。
 
 **验收标准**
-- [ ] `uv run pytest tests/test_exif_orientation.py -q` 全绿（12 条）。
-- [ ] `uv run pytest -m 'not slow' -q`：既有 58 条零变红、新增 12 条被收集。
-- [ ] protect orientation=6 JPEG 得 `size=` 宽<高、输出 `(300,600)`；`jfif_unit=0/1` 均 exit 2。
+- [x] `uv run pytest tests/test_exif_orientation.py -q` 全绿（落地实测 16 例，含本批补充的缺失 EXIF / `--long-edge 0` / verify 侧损坏 EXIF / helper 契约 4 例）。
+- [x] `uv run pytest -m 'not slow' -q`：既有用例零变红、新增用例被收集（落地实测 **304 passed / 304 collected**——现场实测，替换本节历史「既有 58 条」口径，符合 §4 R10）。
+- [x] protect orientation=6 JPEG 得 `size=` 宽<高、输出 `(300,600)`；损坏 EXIF（两种坏头）均 exit 2（protect 与 verify 双侧）。
 
 **风险与未知**
 - 损坏 EXIF 由静默横图+exit 0 变 exit 2（唯一硬变更）；G3×P7×P8 同改 93-94，`icc_profile` 须到达最终 save；容差不许放宽，须真实 `uv run` 复测。
@@ -1215,6 +1217,8 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 
 ### G4 — 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC）
 
+> **[x] 批次 L 已落地（2026-10-09）**：`SUPPORTED_INPUT_FORMATS` / `MAX_INPUT_PIXELS` / `ALPHA_MATTE` + `_validate_input` / `_rgb_on_matte` 并入同一 loader（guard → fresh EXIF → draft → load → matte 的固定体序）；GUI 过滤表由格式表推导；实施记录见 §10.13。
+
 **严重度**：P2-medium
 **工作量**：S-M（~90-120 行；6 例）
 **批次**：5
@@ -1259,8 +1263,8 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 | 同 | large_jpeg_keeps_long_edge | fast | 长边 1080 |
 
 **验收标准**
-- [ ] `uv run pytest -m 'not slow' -q`：既有 58 条零变红、本文件 6 条被收集（不写预测总数）；文档不出现 55/~66。
-- [ ] 2 MP JPEG exit 0、`:27` 绿、verify 取回 payload；拒绝路径（HEIC/header PNG/多帧→2、单页 0、Alpha 白）；【手工/发版前】48 MP 成功。
+- [x] `uv run pytest -m 'not slow' -q`：既有用例零变红、本文件用例被收集（落地实测 **304 passed**，现场 `--collect-only` 实测 304；不写预测总数），文档不出现 55/~66。
+- [x] 2 MP JPEG exit 0、`test_untagged_source_is_not_rotated` 绿、verify 取回 payload；拒绝路径（HEIC/GIF/格式表外→2、header PNG 超限→2、多帧→2、单页 0、Alpha 叠白）；【手工/发版前】48 MP 成功——本地以 4000×3000（12 MP）draft 分支实证，48 MP 手工门保留给发版前（§10.13 残留登记）。
 
 **风险与未知**
 - 回归：**58 个既有 fast 用例无一变红**（draft 对 1600×1200 conftest fixture 与 640×480 Docker 输入均 s=1 no-op；`FileNotFoundError` 仍 cli.py:132→2；`test_verify_no_payload_exits_one` 仍 1）；HEIC 仍不支持；alpha 叠白静默；多帧从此响亮失败；GUI 边界见 :266-270。
@@ -2299,3 +2303,18 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **新增残留登记**：① `stat` 分支的 TOCTOU 竞态本身无法以真实文件系统确定性复现，现以 monkeypatch 用例钉住「被包装」的修复形态；② `export_csv` 只捕 `OSError`，POSIX 文件名 surrogate 进入 CSV 行的 `UnicodeEncodeError` 仍会逃逸（低概率，归 P37 邻域）；③ `Path.is_dir()` 跟随链接的语义与 P34 同面，P34 复现时一并复核。
 - **落地后独立复核（2026-10-09，只读 workflow，2 名审查者）**：**0 条被证伪**；采纳并修复 3 条 —— ① `gui.py` 组合框 items 改用 `config.VISIBLE_MODES`（消除第 4 份拷贝，「单源」自此对 argparse / settings 白名单 / `validate_options` / combo 四处成立，顺序实测不变）；② `test_atomic_write_wraps_stat_failure` 改为**定向 patch**（只对 destination 生效）并做**突变验证**：把 stat 探针单独挪回 try 外该例即红、复原即绿（此前的全量 patch 版实际锁的是 `mkdir` 的包装而非第 74 行，审查者 A 指出）；③ 本节两处用词更正（**D2/D3 显式标注**、chmod 归属更正见上）。残留（只登记）：D1–D8 的标签与批次 D1/D2/D3 **撞名**，后续引用建议改称「批 K 决策 1–8」。
 - **推送状态**：本批提交（修复含 README/AGENTS、回写与复核收口）仅本地；远端 `main` 与 `v0.1.0` peeled 仍是 `9b1ba41`，推送待用户显式授权。
+
+### 10.13 批 L 落地记录（2026-10-09）
+
+- **范围与前置**：基线 HEAD `27c6f0d`；开工前跑一轮只读复核 workflow（3 核对者 + 2 批评者）——P8/G4 事实前提**全部成立**（唯一 loader 尚不存在、verify 三路 + protect 共 4 个读图调用点、`outputs.save_image_atomic` 的 `icc_profile` 形参已就绪），并抓到 5 个计划盲点（下列 ③–⑤ 与两处关键更正），全部并入。
+- **四项裁定（开工前用户逐条确认；§3 原条目与待定登记表已勾选）**：**L1** ICC 原样保留、不做色彩管理（不改像素；成品新增 APP2 字节）；**L2** HEIC 递延（不新增依赖、无新 ID；今天已退 2，本次只补可操作话术）；**L3** 损坏 EXIF 硬拒绝 → exit 2（限定「EXIF 存在且解析失败」，缺失 EXIF 不受影响）；**L4** 像素上限固定 `64_000_000`（无新 CLI 旗标）。
+- **两处关键更正（推翻计划的字面写法）**：① **缺失 EXIF ≠ 损坏 EXIF**：无 EXIF 的 JPEG 没有 `info["exif"]`，字面 `Image.Exif().load(info["exif"])` 会把全部现有 fixture 拒成 2 → 实现取 `info.get("exif")`、`None` 跳过；② **`draft` 对 `--long-edge 0` 会除零** → loader 仅在 `draft_long_edge > 0` 时 draft，并新增 `--long-edge 0` 保尺寸用例。
+- **另三个盲点（批评者发现，一并落地）**：③ verify 侧补损坏 EXIF / 多帧 / 超上限 pin（R11 同契约）；④ helper 返回图**显式剔除** `info['exif']/['xmp']`（`convert/transpose` 会复制 info，「剔全部 EXIF」不再只靠 numpy 往返兜底）；⑤ GUI `_IMAGE_FILTER` 改为由 `SUPPORTED_INPUT_FORMATS` 推导 + gui 档行为 pin（monkeypatch 格式表即变）。
+- **实现骨架（固定体序，R3 原文映射入仓）**：`Image.open`（`DecompressionBombError`→含「pixels」的可操作文案；HEIC 话术）→ `_validate_input`（格式 → 像素 → 帧数，**全在 `.load()` 前**）→ fresh EXIF 重解析（`Image.Exif().load(info.get("exif"))`）→ `draft`（仅 `>0`；JPEG 生效、基类 no-op）→ `.load()` → ICC → `_rgb_on_matte`（`mode ∈ {RGBA,LA,PA}` 或 `transparency in info` → 叠白）→ 剔 `exif`/`xmp`。4 个调用点全部收口：`protect` 与 `verify_legacy`/`discover_payload`/`verify_expected`（`verify()` 为薄封装）；save 传 `icc_profile=icc`（**`outputs.py` 未改**——R4 前置已由 G3 就绪）。
+- **R 绑定映射入仓**（原定义在仓外、不入版控的 workflow 脚本，本次随计划带入）：R2＝唯一 loader 是 `pipeline._load_oriented_rgb`（P8 创建、G4 扩展，禁建 `_load_bgr`）；R3＝guard 全在 `.load()` 前、`draft` 居中、fresh EXIF 在 `_validate_input` 之后；R4＝`save_image_atomic(..., icc_profile=None)` 单助手签名与穿透；R10＝不写死用例数；R11＝verify 同输入契约；R12＝`pipeline.py` docstring 归 P8。
+- **测试与先红**：新文件 `tests/test_exif_orientation.py`（16 例）与 `tests/test_input_contract.py`（16 例）+ gui 档 1 例；**先红实测 19 例**（P8 10 / G4 9），其余 13 例为等价 pin（旧码即绿，含 TIFF 由 Pillow 插件自理方向这一事实）。修正过程中的两处测试缺陷已修：fixture 方向映射曾用 `ROTATE_270`（尺寸自检掩盖 180° 内容反向；改用 `ROTATE_90` 并加**内容级**角标自检）；`draft` 探针须 patch `JpegImagePlugin.JpegImageFile.draft`（JPEG 子类覆盖基类方法）。
+- **验收实测**：fast **304 passed**、`--collect-only -q` **304 collected**；GUI 档 `QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -m gui -q` **20 passed、0 skipped**；`tests/test_compliance.py` **18 passed**；draft 分支以 4000×3000（scale-2）+ spy 钉住、长边 1080 精确。
+- **文档同步**：README 新增「输入契约」段 + 已知边界一条 + 退码表补四类新 exit 2（损坏 EXIF / 不支持格式 / 超 64 MP / 多帧）；`AGENTS.md` §8.3 的 `pipeline.py` 行改行（唯一 loader 与输入契约；不新增模块行）；§一–§七 未动。
+- **不扩面（显式）**：不实现 `save_format`/按扩展名选容器/PNG 警告（批 O）；不碰 P34–P37/DOC3、P20、P4/P6/P5；不改 `outputs.py`；HEIC 不加依赖。
+- **残留登记**：① 48 MP 手工门未做（本地以 12 MP 的 draft 分支实证，发版前补）；② 损坏 EXIF 的 spike 原件（`jfif_unit=0/1`）在仓外，本次以等价「不可解析 APP1 头」重建（Pillow 12.2.0 对非头级损坏只告警，两例均为坏头）；③ verify 对带 tag/alpha 的嫌疑图从此按显示方向/叠白解释（有意收紧，README 与本节已写明）。
+- **推送状态**：本批提交（修复 + 回写）仅本地；远端 `main` 与 `v0.1.0` peeled 仍是 `9b1ba41`，推送待用户显式授权。
