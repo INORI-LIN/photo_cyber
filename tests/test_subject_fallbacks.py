@@ -67,8 +67,12 @@ def test_centre_fallback_when_saliency_raises(
 
 
 def test_centre_box_is_never_empty() -> None:
-    """P9 clamp: a 1x1 image must still yield a >=1px box (pre-P9 inline logic gave
-    Box(0, 0, 1, 1); a naive extraction would give Box(0, 0, 0, 0))."""
+    """P9 clamp: a 1x1 image must still yield a >=1px box from the centre tier.
+
+    Pre-P9 the *inline* fallback gave ``Box(0, 0, 0, 0)`` here (``int(0.6) == 0``); the
+    pre-P9 observable result for a 1x1 image was ``Box(0, 0, 1, 1)``, but that came from the
+    old saliency tier. The clamp keeps the centre tier usable on its own.
+    """
     assert subject._centre_box(np.zeros((1, 1, 3), dtype=np.uint8)) == subject.Box(0, 0, 1, 1)
 
 

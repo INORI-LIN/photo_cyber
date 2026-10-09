@@ -210,7 +210,7 @@
 1. photoguard.py：attack() 校验（:71-72/:76-77）移到 :69 前；PGDConfig 加 `seed`（`PHOTOGUARD_SEED=0`）；:88-92 用 CPU `Generator` 抽样；:87 加恒等性注释。
 2. perturb.py：SDEncoderPerturber 加 keyword-only `seed` 转发进 PGDConfig；noise 加 `np.clip(noise,-scale,scale)`；cli.py:80 → `eps<=0 or step_size<=0`。
 3. test_photoguard_slow.py（新）：`pytestmark=[slow,<3 skipif>]`；顶层禁 import torch/diffusers；skipif = `find_spec`+模型目录 `is_dir()`；fixture 只加载 1 次模型。
-4. shape.py 删 :8-9/:12-19 改 `parametrize`；registry.py::test_noise_within_epsilon 改真 L∞；cli_exits.py 加 `test_zero_epsilon_is_rejected`；config.py :19 改「L∞ 界」；Dockerfile:65 → `--group dev`；pyproject.toml:46 改描述。
+4. shape.py 删 :8-9/:12-19 改 `parametrize`；registry.py::test_noise_within_epsilon 改真 L∞；cli_exits.py 加 `test_zero_epsilon_is_rejected`；config.py :19 改「L∞ 界」；Dockerfile:65 → `--group dev`；pyproject.toml:46 改描述。**口径更新（2026-10-09，批 N）**：Dockerfile 部分由裁定 **N-2 取代**——不在单镜像上改 dev 组（会碎 G8 的 notices 硬门），改为**显式 `test` target**（dev 组 + bind-mount tests），发布镜像保持 `--no-dev`；其余各项已按本条落地（shape.py 的旧算术断言早由 P17 消解，改为 `test_attack_rejects_bad_input`）。
 5. docker.yml：:91-107 后加 preflight（torch/diffusers、模型目录、/app 下 photo_guard）+ `pytest -m slow -v -rs`；P4 的 SD-cell 闸门补 `verify out_sd.jpg --payload-bytes 7`。
 
 **被驳回或部分采纳的验证者意见**
@@ -801,8 +801,8 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 | 同上 | `test_saliency_tier_lands_on_high_contrast`（`:25-30`） | fast | `salient is not None` |
 
 **验收标准**
-- [ ] `grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出（禁裸 `grep 55`）。
-- [ ] `uv run pytest -m 'not slow' -q` 全绿；collect 数 = 落地前实测 + 1（不写绝对值）；该文件 `-v` 含两个新名字
+- [x] `grep -rn "55 项\|≈55 cases" README.md AGENTS.md` 无输出（禁裸 `grep 55`；批 N 复核实测 0 命中）。
+- [x] `uv run pytest -m 'not slow' -q` 全绿；collect 实测 **320 = 落地前 318 + 2**（原表误写 +1；该文件 4 → 6 用例）；`-v` 含两个新名字（复核更正 2026-10-09）。
 - [x] 反向实验（删判据 / 去降级）失败输出已记录：分别 1 failed 与 2 failed（见 §10.16；commit `78732f8` 描述）。
 - [x] `uv run pytest -m slow --collect-only -q`：**退 5**、输出 `no tests collected (320 deselected)`（P9 单提交态实测；P1 落地后转为 ≥10 条，见 P1 验收）。
 - [x] `git diff --stat pyproject.toml uv.lock` 空；P9 单提交只含 subject.py、test_subject_fallbacks.py、conftest.py **三个路径**（README 半边已随合并消解，白名单按实际收窄）。
@@ -2363,3 +2363,4 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **文档同步**：`pyproject.toml` marker 文案；README 冒烟段（补 SD 线索回环与慢档 ③）与 slow 现状段；AGENTS §九（冒烟链补 SD 回环/test target/慢档）与 §十（slow 现状据实 + 覆盖口径）；`bench/README.md`（seed 已落地，sd 仍不作门禁）。
 - **残留**：**9F**（真镜像 preflight + 慢档 + notices 门保持绿）与「docker 慢档步 passed>0」**待推送授权后取证**；`-m slow` 的 CUDA/MPS 字节复现不承诺（文档已限定）。
 - **本批自身的一处流程登记**：回写 §10.16 时曾在「方法注记」里写出被禁安装命令字面量（含 `uv` 前缀的示例外壳也命中），**由 fast 档的 compliance 门当轮拦下**（`test_no_forbidden_install_in_code_or_scripts`），已在 `1943349` 修正。教训：文档里引用该命令族时必须改写成不含「pip + 空白 + install」的描述性文字。
+- **落地后独立复核（2026-10-09，只读 workflow，2 名审查者）**：抓到 **1 处 critical 与 2 处记录/口径问题，均已修**：① **Dockerfile test stage 的 `RUN uv sync` 早于 `WORKDIR /app`**（继承 runtime 的 `/work`，无 pyproject → `--target test` 必败）→ 已将 `WORKDIR /app` 移到 sync 之前；② P9 的 1×1 **历史归因写错**（旧 inline fallback 给 `Box(0,0,0,0)`；`Box(0,0,1,1)` 是旧**显著性档**的观测）→ subject.py 与测试 docstring 按实更正；③ AGENTS §十 / README 写死「11 例」**违反同节的『不写死用例数』**→ 改为「现场跑 `-m slow --collect-only -q` 取数」。另订正 §6 P9 验收的「+1」为实测 **+2**（4→6 用例）并勾选两框。**登记（不改）**：裸 `docker build` 与既有发布构建同法，test target 是否入本地 daemon 由 9F 一并核对；`test_cli_exits.py` 新增用例与上一函数间仅一空行（E302，无 lint 门）；§6 P1 推荐方案第 4 条的 Dockerfile 口径已注明由 N-2 取代。

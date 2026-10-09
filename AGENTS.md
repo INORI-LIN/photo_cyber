@@ -238,7 +238,7 @@ uv run photo-guard protect input.jpg
 
 - 快速档：`uv run pytest -m 'not slow' -q`（先 `uv sync --frozen --group dev`）。
 - **不写死任何用例数**（总数、增量都算）；要取值现场跑 `uv run pytest --collect-only -q`。
-- `slow` 档现状据实：`tests/test_photoguard_slow.py`（P1，11 例）标记 `slow`，跑在 `docker.yml` 的慢档步（显式 `test` target）与本机（`uv sync --frozen --extra photoguard` + `photo-guard download-models`）；核心环境下全 skip 且理由含补齐命令（已用临时 core venv 实测）。fast 档以 `-m 'not slow'` 排除；`-m slow --collect-only` 现场取数。
+- `slow` 档现状据实：`tests/test_photoguard_slow.py`（P1 建立）标记 `slow`，跑在 `docker.yml` 的慢档步（显式 `test` target）与本机（`uv sync --frozen --extra photoguard` + `photo-guard download-models`）；核心环境下全 skip 且理由含补齐命令（已用临时 core venv 实测）。fast 档以 `-m 'not slow'` 排除；用例数一律现场跑 `-m slow --collect-only -q` 取。
 - **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖为 `docker.yml` 的 `--network none` SD 冒烟**加强档真断言**（`test` target + `pytest -m slow`，字节复现只在 CPU/float32 承诺）。
 - `ci.yml`：`test` job 跑 ubuntu-latest / windows-latest / macos-15 三腿矩阵（fail-fast: false）；另有独立 `gui` job（ubuntu-latest，装 desktop extra 后以 offscreen 跑 `-m gui`，并验证 `photo-guard-gui --help` 不启动 Qt）。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，仅 Linux 腿跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
 - `docker.yml` 构建全合一镜像并冒烟，**不推送**。用 `jlumbroso/free-disk-space` 的原因：托管 ubuntu runner 约 14GB 可用，而 torch + nvidia wheel + SD VAE 解包约 6GB，不腾空间易「no space left on device」。

@@ -64,8 +64,10 @@ def detect_faces(image_bgr: np.ndarray) -> list[Box]:
 def _centre_box(image_bgr: np.ndarray) -> Box:
     """The 60%-of-image central box, clamped to at least 1x1 (P9).
 
-    Without the clamp a 1x1 image would yield ``Box(0, 0, 0, 0)`` (``int(0.6) == 0``)
-    where the pre-P9 inline fallback produced ``Box(0, 0, 1, 1)``.
+    The clamp matters for tiny images: without it a 1x1 input would yield ``Box(0, 0, 0, 0)``
+    (``int(0.6) == 0``) — the pre-P9 inline fallback did exactly that, while the *observable*
+    pre-P9 result for a 1x1 image came from the saliency tier (``Box(0, 0, 1, 1)``). With the
+    clamp the centre tier returns a usable 1px box in its own right.
     """
     h, w = image_bgr.shape[:2]
     bw, bh = max(1, int(w * 0.6)), max(1, int(h * 0.6))

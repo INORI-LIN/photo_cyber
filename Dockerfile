@@ -122,10 +122,12 @@ CMD ["--help"]
 # plain `docker build .` keeps producing it (Docker builds the *last* stage by default).
 FROM runtime AS test
 
-# dev group = pytest; `.dockerignore` keeps tests/ out of the build context on purpose, so the
-# tier is run against a bind-mounted copy instead of a COPY here.
-RUN uv sync --frozen --extra photoguard --group dev
-
+# WORKDIR must switch to /app *before* the sync: `runtime` ends on /work (the user mount
+# point), which has no pyproject.toml, so a sync there would fail. dev group = pytest; the
+# tests themselves arrive via a bind mount (`.dockerignore` keeps them out of the build
+# context on purpose).
 WORKDIR /app
+
+RUN uv sync --frozen --extra photoguard --group dev
 
 FROM runtime AS release
