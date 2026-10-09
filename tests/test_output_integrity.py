@@ -123,17 +123,25 @@ def test_atomic_write_wraps_mkdir_failure_itself(tmp_path, monkeypatch) -> None:
 def test_atomic_write_wraps_stat_failure(tmp_path, monkeypatch) -> None:
     """P28: the ``stat`` probe for the previous mode is inside the wrap now.
 
-    ``Path.exists`` swallows ``OSError``, so a deterministic stat failure needs both
-    methods patched — ``exists`` reports True and ``stat`` raises. Pre-fix this escaped
-    unwrapped, because the probe ran before the ``try``.
+    The patches target only the destination path on purpose: a blanket ``Path.stat`` patch
+    would make ``parent.mkdir``'s own ``FileExistsError``/``is_dir`` bookkeeping raise first
+    (pathlib internals) and the test would pass even with the probe still outside the
+    ``try``. This shape fails if *just the probe* moves back out.
     """
     destination = tmp_path / "out.jpg"
-    monkeypatch.setattr(Path, "exists", lambda _self: True)
+    original_exists = Path.exists
+    original_stat = Path.stat
 
-    def boom(_self):
-        raise OSError(13, "Permission denied")
+    monkeypatch.setattr(
+        Path, "exists", lambda self: True if self == destination else original_exists(self)
+    )
 
-    monkeypatch.setattr(Path, "stat", boom)
+    def stat_boom(self, *args, **kwargs):
+        if self == destination:
+            raise OSError(13, "Permission denied")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat_boom)
 
     with pytest.raises(OSError, match="failed to write") as excinfo:
         outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)

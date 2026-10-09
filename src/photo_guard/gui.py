@@ -222,7 +222,7 @@ class MainWindow(QMainWindow):
         settings = QGroupBox("水印与输出设置"); form = QFormLayout(settings)
         self.payload = QLineEdit(config.DEFAULT_PAYLOAD)
         self.visible_text = QLineEdit(config.DEFAULT_VISIBLE_TEXT)
-        self.visible_mode = QComboBox(); self.visible_mode.addItems(["subject", "tile", "center"])
+        self.visible_mode = QComboBox(); self.visible_mode.addItems(config.VISIBLE_MODES)
         self.alpha = QDoubleSpinBox(); self.alpha.setRange(0, 1); self.alpha.setSingleStep(.01); self.alpha.setValue(config.DEFAULT_VISIBLE_ALPHA)
         self.long_edge = QSpinBox(); self.long_edge.setRange(0, 10000); self.long_edge.setValue(config.DEFAULT_LONG_EDGE); self.long_edge.setSpecialValueText("保持原尺寸")
         self.quality = QSpinBox(); self.quality.setRange(1, 100); self.quality.setValue(config.DEFAULT_JPEG_QUALITY)
