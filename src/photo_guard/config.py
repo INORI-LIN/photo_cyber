@@ -84,3 +84,14 @@ DEFAULT_VISIBLE_TILE_GAP = 220  # px
 # Precompress (AGENTS.md 五)
 DEFAULT_LONG_EDGE = 1080
 DEFAULT_JPEG_QUALITY = 85
+
+# Input contract (G4/P8). Formats the loader accepts; `image.format` must be in this set,
+# so anything else (GIF, HEIC, …) is refused actionably instead of half-processed.
+SUPPORTED_INPUT_FORMATS = ("JPEG", "PNG", "WEBP", "BMP", "TIFF")
+# Decode-time pixel ceiling. Derivation: 64_000_000 = 8000x8000, comfortably below
+# Pillow's own warn line MAX_IMAGE_PIXELS = 89_478_485 (between warn and 2x, Pillow only
+# warns and then decodes the whole image — exactly the silent full decode G4 removes).
+MAX_INPUT_PIXELS = 64_000_000
+# Transparent pixels are flattened onto this matte before the RGB conversion, so hidden
+# RGB values under alpha=0 can never leak into the protected output.
+ALPHA_MATTE = (255, 255, 255)

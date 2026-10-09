@@ -135,6 +135,16 @@ def test_visible_mode_combo_ignores_text_outside_its_list(window) -> None:
     assert window.visible_mode.currentText() == "tile"
 
 
+def test_image_filter_follows_the_supported_formats(monkeypatch) -> None:
+    """G4: the dialog filter is derived from the loader's format table, not a copy."""
+    base = gui._image_filter()
+    assert "*.jpg" in base and "*.jpeg" in base and "*.tiff" in base
+    assert ".gif" not in base and ".heic" not in base
+
+    monkeypatch.setattr(config, "SUPPORTED_INPUT_FORMATS", ("PNG",))
+    assert gui._image_filter() == "Images (*.png)"
+
+
 def test_help_exits_zero_without_starting_the_event_loop() -> None:
     """G6: ``--help`` used to fall through to ``app.exec()`` and block until killed."""
     with pytest.raises(SystemExit) as excinfo:

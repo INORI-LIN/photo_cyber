@@ -21,7 +21,24 @@ from shiboken6 import isValid
 
 from . import config, device, gui_logic, outputs, perturb, pipeline
 
-_IMAGE_FILTER = "Images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
+_FORMAT_EXTENSIONS = {
+    "JPEG": ("jpg", "jpeg"),
+    "PNG": ("png",),
+    "WEBP": ("webp",),
+    "BMP": ("bmp",),
+    "TIFF": ("tif", "tiff"),
+}
+
+
+def _image_filter() -> str:
+    """The file-dialog filter, derived from the loader's format table (G4)."""
+    extensions = [
+        ext for fmt in config.SUPPORTED_INPUT_FORMATS for ext in _FORMAT_EXTENSIONS[fmt]
+    ]
+    return "Images (" + " ".join(f"*.{ext}" for ext in extensions) + ")"
+
+
+_IMAGE_FILTER = _image_filter()
 
 
 class FileListWidget(QListWidget):

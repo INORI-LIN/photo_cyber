@@ -1,4 +1,5 @@
-"""Canonical pipeline: resize → invisible → perturb → visible → JPEG."""
+"""Canonical pipeline: load (decode + orientation + strip EXIF + keep ICC) → resize →
+invisible → perturb → visible → JPEG."""
 from __future__ import annotations
 
 import os
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from . import compress, config, outputs, perturb, watermark_invisible, watermark_visible
 
@@ -39,6 +40,96 @@ def _pil_rgb_to_bgr(image: Image.Image) -> np.ndarray:
 
 def _bgr_to_pil_rgb(arr: np.ndarray) -> Image.Image:
     return Image.fromarray(arr[:, :, ::-1].copy(), mode="RGB")
+
+
+_HEIC_SUFFIXES = (".heic", ".heif", ".avif")
+
+
+def _validate_input(image: Image.Image, path: Path) -> None:
+    """Refuse contract-breaking inputs — every check runs before ``.load()`` (G4).
+
+    Order inside the loader: format → pixel ceiling → frame count. The ceiling uses the
+    pre-draft ``image.size``, so a JPEG cannot be silently downsampled past the check.
+    """
+    if image.format not in config.SUPPORTED_INPUT_FORMATS:
+        raise ValueError(
+            f"unsupported input format {image.format!r} "
+            f"(supported: {', '.join(config.SUPPORTED_INPUT_FORMATS)}): {path}"
+        )
+    width, height = image.size
+    if width * height > config.MAX_INPUT_PIXELS:
+        raise ValueError(
+            f"input has {width * height} pixels, above the {config.MAX_INPUT_PIXELS}-pixel "
+            f"limit: {path}"
+        )
+    frames = getattr(image, "n_frames", 1)
+    if frames > 1:
+        raise ValueError(
+            f"input has {frames} frames; only single-frame images are supported: {path}"
+        )
+
+
+def _rgb_on_matte(image: Image.Image) -> Image.Image:
+    """Flatten transparency onto the configured matte, then convert to RGB (G4).
+
+    ``convert("RGB")`` alone would keep the RGB values hidden under alpha=0 — or under a
+    P-mode transparency index — and copy them straight into the protected output.
+    """
+    if image.mode in {"RGBA", "LA", "PA"} or "transparency" in image.info:
+        rgba = image.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (*config.ALPHA_MATTE, 255))
+        return Image.alpha_composite(background, rgba).convert("RGB")
+    return image.convert("RGB")
+
+
+def _load_oriented_rgb(
+    path: Path, *, draft_long_edge: int | None = None
+) -> tuple[Image.Image, bytes | None]:
+    """The single image loader: decode, contract guards, orientation, EXIF strip, ICC.
+
+    Body order is load-bearing (P8/G4 binding, do not reorder):
+    ``Image.open`` → :func:`_validate_input` → fresh EXIF re-parse → JPEG ``draft`` →
+    ``.load()`` → ICC → orient+matte. The guards must run before ``.load()`` so the full
+    pixel budget is never spent on a refused input; ``draft`` must sit after the guards
+    (its size comes from the pre-draft dimensions) and before ``.load()``.
+
+    The EXIF re-parse is deliberate: while opening a JPEG, Pillow swallows a corrupt
+    EXIF ``SyntaxError`` and caches an empty Exif, so ``image.getexif()`` can no longer
+    fail — only a fresh ``Image.Exif().load()`` sees corruption. Missing EXIF (``None``)
+    is not corrupt and passes through untouched.
+    """
+    try:
+        opened = Image.open(path)
+    except Image.DecompressionBombError as exc:
+        raise ValueError(
+            f"input is too large to decode (limit: {config.MAX_INPUT_PIXELS} pixels): {path}"
+        ) from exc
+    except (OSError, SyntaxError) as exc:
+        hint = ""
+        if path.suffix.lower() in _HEIC_SUFFIXES or any(
+            token in str(exc).upper() for token in ("HEIC", "HEIF", "AVIF")
+        ):
+            hint = " (HEIC/HEIF is not supported; convert the photo to JPEG or PNG first)"
+        raise ValueError(f"cannot read {path}: {exc}{hint}") from exc
+    with opened:
+        _validate_input(opened, path)
+        raw_exif = opened.info.get("exif")
+        if raw_exif:
+            try:
+                Image.Exif().load(raw_exif)
+            except (SyntaxError, OSError, ValueError) as exc:
+                raise ValueError(f"input EXIF metadata is unreadable ({exc}): {path}") from exc
+        if draft_long_edge:
+            # 0 keeps the original size (README §参数表); draft((0, 0)) would divide by zero.
+            opened.draft("RGB", (draft_long_edge, draft_long_edge))
+        opened.load()
+        icc = opened.info.get("icc_profile")
+        rgb = _rgb_on_matte(ImageOps.exif_transpose(opened))
+    # convert()/transpose() copy ``info``; strip the metadata the product must not carry
+    # (GPS/XMP) instead of relying on the later numpy round trip to drop it by accident.
+    for key in ("exif", "xmp"):
+        rgb.info.pop(key, None)
+    return rgb, icc
 
 
 def _same_file(first: Path, second: Path) -> bool:
@@ -105,9 +196,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     # this is the shared contract point for the CLI, the GUI and programmatic callers.
     if output_path.is_dir():
         raise ValueError(f"output path is a directory: {output_path}")
-    with Image.open(input_path) as opened:
-        opened.load()
-        src = opened.convert("RGB")
+    src, icc = _load_oriented_rgb(input_path, draft_long_edge=opts.long_edge)
     src = compress.fit_long_edge(src, opts.long_edge)
     bgr = _pil_rgb_to_bgr(src)
 
@@ -137,7 +226,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         if LAYER_VISIBLE in opts.layers
         else rgb
     )
-    outputs.save_image_atomic(final, output_path, quality=opts.quality)
+    outputs.save_image_atomic(final, output_path, quality=opts.quality, icc_profile=icc)
     return {
         "output": str(output_path),
         "size": final.size,
@@ -151,12 +240,10 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
 def verify_legacy(suspect_path: Path, payload_bytes: int) -> watermark_invisible.LegacyExtraction:
     """Decode a checksum-less payload as a clue, with its advisory metrics.
 
-    The read is inline rather than a shared loader on purpose: P8 lands the single
-    ``_load_oriented_rgb`` helper in the next batch and will consolidate these call sites.
+    Reads through the shared :func:`_load_oriented_rgb` loader (P8), so the input contract
+    and the display-orientation interpretation are the same as ``protect``.
     """
-    with Image.open(suspect_path) as image:
-        image.load()
-        bgr = _pil_rgb_to_bgr(image)
+    bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
     return watermark_invisible.extract_legacy(bgr, payload_bytes)
 
 
@@ -172,9 +259,7 @@ def verify(suspect_path: Path, payload_bytes: int) -> str:
 
 def discover_payload(suspect_path: Path, max_bytes: int | None = None) -> str:
     """Blind search for a CRC-protected envelope: no prior knowledge required."""
-    with Image.open(suspect_path) as image:
-        image.load()
-        bgr = _pil_rgb_to_bgr(image)
+    bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
     found = watermark_invisible.find_envelope(bgr, max_bytes)
     if found is None:
         raise watermark_invisible.NoPayloadError("no photo-guard envelope found")
@@ -189,9 +274,7 @@ def verify_expected(suspect_path: Path, expected_payload: str) -> dict:
     can flip bits at the correct length (spike P3-B).
     """
     size = watermark_invisible.packed_size(expected_payload)
-    with Image.open(suspect_path) as image:
-        image.load()
-        bgr = _pil_rgb_to_bgr(image)
+    bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
     payload = watermark_invisible.extract_envelope(bgr, size)
     if payload != expected_payload:
         raise ValueError("watermark payload does not match the expected payload")
