@@ -176,7 +176,7 @@ uv run photo-guard devices
 
 退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`--expected-payload` 与图内信封不符、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
-`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个目标文件是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换，且成功路径不回贴原权限位，目标文件的写位会保留。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
+`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个链接目标已是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换；替换成功后原权限位只回贴到替换后的新产物（路径不是符号链接时，效果是只读的输出文件写后仍只读）；符号链接的旧目标不在回贴范围内，其被解除的写保护不一定恢复（P34，待复现）。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 
 ## 固定处理顺序
 
@@ -364,7 +364,7 @@ uv run python packaging/build_desktop.py
 - `licenses/LICENSE-3RD-PARTY-opencv.txt`：保留锁定版本 OpenCV wheel 随附的完整第三方声明，包含 FFmpeg 的 LGPL-2.1 原文；仓内转录的 MIT 来源/署名另见 `THIRD_PARTY_NOTICES.md` 的手工段；
 - Docker 镜像、macOS bundle 与 Windows 安装器都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md` 与 `licenses/`。
 
-刷新本平台段：`uv run python packaging/generate_notices.py`（须在装了完整依赖的环境里跑）；发布前用 `--check` 校验——它只比当前平台段，缺失或多出都判失败。许可正文与声明属手写件，生成器只读不写。
+刷新本平台段：`uv run python packaging/generate_notices.py`（须在装了完整依赖的环境里跑）；发布前用 `--check` 校验——它只比当前平台段，缺失或多出都判失败。`LICENSE` 与 `licenses/*.txt` 属手写件，生成器只读不写；`THIRD_PARTY_NOTICES.md` 的平台段由生成器重写（只动当前平台段，其它平台段与手工声明原样保留）。
 
 ## 已知边界
 

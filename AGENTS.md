@@ -174,7 +174,7 @@ uv run photo-guard protect input.jpg
 ### 8.2 两个反直觉决策（改之前先读理由）
 
 - **`config.WATERMARK_METHOD = "dwtDctSvd"`**，不是普通 `dwtDct`：库里的 `dwtDct` 在 JPEG q≤95 就崩，SVD 变体 q≥75 仍存活。
-- **载体 `CARRIER_CHANNEL=0` / `CARRIER_SCALE=72`，外加 `LEGACY_CARRIERS=((1, 36),)`**：P10 前载荷走在色度（通道 1）；4:2:0 重编码淡化色度、抹掉块投票，故移到亮度并抬高 step。载体不匹配会**打乱**读回（双向比特错误），读侧必须依次尝试候选，不得写死单一载体。`_CarrierEmbed` 另修了 `imwatermark` 的 H/V 细节带互换（P11）。
+- **载体 `CARRIER_CHANNEL=0` / `CARRIER_SCALE=72`，外加 `LEGACY_CARRIERS=((1, 36),)`**：P10 前载荷走在色度（通道 1）；4:2:0 重编码淡化色度、抹掉块投票，故移到亮度并抬高 step。载体不匹配会**打乱**读回（双向比特错误），读侧必须依次尝试候选，不得写死单一载体。`_CarrierEmbed` 以子类覆盖修掉仓内转录稿（`_dwt_dct_svd.py`）的 H/V 细节带互换（P11）。
 
 ### 8.3 模块职责与可替换性
 
@@ -185,6 +185,7 @@ uv run photo-guard protect input.jpg
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |
 | `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（可判真伪）、无校验和原始路径（只是**线索**） | 是（整文件） |
+| `_dwt_dct_svd.py` | 层① 的算式底座：invisible-watermark 0.2.0 `dwtDctSvd.py` 的仓内逐字转录（含 MIT 许可正文与 H/V 互换等上游怪癖），仅依赖 cv2/numpy/pywt，导出 `embed_bits`/`decode_bits`；类区与类名必须与上游逐字一致（不得改/私有化），P11 修正只在 `watermark_invisible._CarrierEmbed` 子类里做 | 否（逐字转录） |
 | `perturb.py` | 层②。`Perturber` ABC + `_REGISTRY`；`get(name, **kwargs)` 是工厂 | 加类注册即可 |
 | `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重 | 是 |
 | `download.py` | `download-models`；**唯一**允许联网的模块，不得扩面 | 否（刻意最小） |
@@ -210,8 +211,8 @@ uv run photo-guard protect input.jpg
 ### 8.6 依赖布局
 
 - `.python-version` = `3.11`（由 uv 托管）。
-- `pyproject.toml`：`photoguard` extra = accelerate / diffusers / safetensors；`desktop` extra = PySide6；`package` group = Nuitka；`dev` group = pytest。
-- **torch 目前不在 extra 隔离之内**：它由 core 依赖 `invisible-watermark` 传递引入（core 环境同样会装上 torch）。不要把「重依赖已隔离进 `photoguard` extra」写进任何文档。
+- `pyproject.toml`：`photoguard` extra = accelerate / diffusers / huggingface-hub / safetensors / torch；`desktop` extra = PySide6；`package` group = Nuitka；`dev` group = pytest。
+- **torch 已隔离在 `photoguard` extra 内**：core 依赖只有 numpy / opencv-python-headless / pillow / pywavelets（层① 的 DWT-DCT-SVD 算式由仓内 `_dwt_dct_svd.py` 转录实现，G1），core 环境不含 torch；CI 的 `Core-only contract` 步骤会硬校验这一点。
 
 ### 8.7 桌面与打包
 
@@ -229,7 +230,7 @@ uv run photo-guard protect input.jpg
 3. 运行镜像设 `LANG`/`LC_ALL=C.UTF-8` 与 `PYTHONIOENCODING=utf-8`；CLI 有中文输出，针对它的 CI 断言必须**整行精确相等**，不得为绕编码问题降级为子串匹配。
 4. `.dockerignore` **必须**排除 `models/` 与 `.venv/`：本地模型/虚拟环境会撑爆构建上下文，并掩盖镜像内下载步骤的 bug。
 
-冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线校验真实 Linux 第三方依赖段（G8；首轮引导只打印真实行，第二轮改为硬 `--check`）→ noise protect+verify → `--network none` 跑 `--perturber sd` 证明模型真在镜像里。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
+冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
 
 ---
 
@@ -238,8 +239,8 @@ uv run photo-guard protect input.jpg
 - 快速档：`uv run pytest -m 'not slow' -q`（先 `uv sync --frozen --group dev`）。
 - **不写死任何用例数**（总数、增量都算）；要取值现场跑 `uv run pytest --collect-only -q`。
 - `slow` 现状据实：marker 已在 `pyproject.toml` 注册，但全仓当前**没有任何** `@pytest.mark.slow` 标记（`-m slow` 收集 0 例）；真实 SD 慢档尚未建立。将来要跑需 `uv sync --frozen --extra photoguard` 加本地模型（`photo-guard download-models`）。
-- **快速档全绿 ≠ SD 真实路径有效**：快速档不加载 diffusers、不跑真实 SD VAE（torch 仍会随 `imwatermark` 链被导入，但不走 SD 编码器路径）。
-- `ci.yml` 跑 ubuntu-latest + windows-latest 矩阵。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，Windows 腿不跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
+- **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖目前只有 `docker.yml` 的 `--network none` 冒烟（慢档尚未建立）。
+- `ci.yml`：`test` job 跑 ubuntu-latest / windows-latest / macos-15 三腿矩阵（fail-fast: false）；另有独立 `gui` job（ubuntu-latest，装 desktop extra 后以 offscreen 跑 `-m gui`，并验证 `photo-guard-gui --help` 不启动 Qt）。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，仅 Linux 腿跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
 - `docker.yml` 构建全合一镜像并冒烟，**不推送**。用 `jlumbroso/free-disk-space` 的原因：托管 ubuntu runner 约 14GB 可用，而 torch + nvidia wheel + SD VAE 解包约 6GB，不腾空间易「no space left on device」。
 - 四条 fail-loud 回归锁（动相关代码前先读它们保护的决策）：
   - `tests/test_invisible_watermark_roundtrip.py::test_embed_survives_jpeg85_and_visible_watermark` — 钉住 `dwtDctSvd`；把 `config.WATERMARK_METHOD` 改回 `dwtDct` 立即变红。
