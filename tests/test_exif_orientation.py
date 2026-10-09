@@ -99,6 +99,10 @@ def test_orientation6_output_is_upright(tmp_path) -> None:
     assert info["size"] == (300, 600)
     with Image.open(out) as image:
         assert image.size == (300, 600)
+        corner = np.asarray(image)[8:16, 8:16]
+    # Content check, not just dimensions: both rotations swap width/height, so only the
+    # marker's position can tell a correct 90° mapping from a 180° reversal.
+    assert corner[:, :, 0].mean() > 150 and corner[:, :, 1].mean() < 100
 
 
 def test_orientation_tagged_output_carries_no_exif(tmp_path) -> None:

@@ -140,6 +140,9 @@ def test_image_filter_follows_the_supported_formats(monkeypatch) -> None:
     base = gui._image_filter()
     assert "*.jpg" in base and "*.jpeg" in base and "*.tiff" in base
     assert ".gif" not in base and ".heic" not in base
+    # The import-time constant must be the function's output, so a hardcoded copy that
+    # silently diverges from the table cannot stay green.
+    assert gui._IMAGE_FILTER == gui._image_filter()
 
     monkeypatch.setattr(config, "SUPPORTED_INPUT_FORMATS", ("PNG",))
     assert gui._image_filter() == "Images (*.png)"
