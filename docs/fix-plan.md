@@ -50,9 +50,9 @@
 | P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P27 | verify 退码口径不一致 + `extract_envelope` 缺容量护栏 | med | S | I | 「整图找不到信封」在 `--expected-payload` 路径退 2，另两条 verify 路径同语义退 1；`extract_envelope` 未接 P14 的 `_require_capacity`。 | [x] 批次 I 已落地（`a3fffbd`） |
-| P28 | 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口 | low-med | S | K | `-o` 指向目录要跑完 resize+embed（+PGD）才在 `os.replace` 炸；`save_image_atomic` 的 `mkdir`/`stat` 在 try 之外，报错不带 `failed to write <dest>`。 | [ ] 未开始（批 K） |
-| P29 | GUI 三处纪律缺口（导出 / 活动 output_dir / 模式白名单） | med | S | K | `export_csv` 裸 `open()` 可终止 GUI；活动 output_dir 绕过设置层的绝对路径校验；设置层无 `visible_mode` 白名单。 | [ ] 未开始（批 K；注入路径待复现） |
-| P30 | `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突 | low | S | K | 校验拒绝 `noop`+`{perturb}`，而 `protect` 会优先用调用方实例；编程调用方被误拒。 | [ ] 未开始（批 K） |
+| P28 | 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口 | low-med | S | K | `-o` 指向目录要跑完 resize+embed（+PGD）才在 `os.replace` 炸；`save_image_atomic` 的 `mkdir`/`stat` 在 try 之外，报错不带 `failed to write <dest>`。 | [x] 批次 K 已落地（2026-10-09）：早失败上移到 `pipeline.protect`（D1，显式登记）；`mkdir`/`stat` 入 try 统一包装（§10.12） |
+| P29 | GUI 三处纪律缺口（导出 / 活动 output_dir / 模式白名单） | med | S | K | `export_csv` 裸 `open()` 可终止 GUI；活动 output_dir 绕过设置层的绝对路径校验；设置层无 `visible_mode` 白名单。 | [x] 批次 K 已落地（2026-10-09）：导出异常接 `_error`、目录校验抽 `gui_logic.validate_output_dir` 共用、`config.VISIBLE_MODES` 单源 + 按层门；探针实测控件路径不可达（走向 A，纵深防御），见 §10.3 与 §10.12 |
+| P30 | `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突 | low | S | K | 校验拒绝 `noop`+`{perturb}`，而 `protect` 会优先用调用方实例；编程调用方被误拒。 | [x] 批次 K 已落地（2026-10-09）：校验加 `perturber_instance is None` 条件 + `protect` 改 `is not None` 闭合 falsy 残余（§10.12） |
 | P31 | 层① 入口校验：空载荷 / ndim / 通道 | med | S | I | `pack_payload("")` 产出永不可发现的 13 字符信封、`embed("")` 抛 `ZeroDivisionError`；非 3 通道输入抛 `cv2.error` 逃出 exit 2 映射。 | [x] 批次 I 已落地（`a3fffbd`；4 通道实为静默接受，见 §10.5） |
 | P32 | 死符号与冗余 handler 收口 | low | S | I | `resources.model_dir` 零调用方；`cli` 的 `InterruptedError` 冗余、末尾 `return 2` 无说明。 | [x] 批次 I 已落地（`a3fffbd`） |
 | G8 | 许可与合规门四处（转录署名 / opencv LGPL / Linux 段 / 正则门） | med | M | J | 转录来源和轮内 FFmpeg LGPL-2.1 完整声明已随包；Linux 镜像真实段已生成且离线 --check、两道禁令均响亮；保留人工二进制许可审阅边界。 | [x] ①②③④ 技术门经两轮 CI 验证（`eef7b48` / `9b1ba41`，§10.9）；正式 tag 包含新增许可材料且真机构建通过（§10.10），但人工二进制许可义务仍待审核 |
@@ -87,7 +87,7 @@
 | **H** | DOC1（除 §十一 正则句）+ DOC2 | 纯文档同步：逐条 `grep` 复核失实句已与代码一致；`uv run --no-sync pytest -m 'not slow' -q` 全绿；AGENTS 只动 §八–§十一。**批次 H 已完成（2026-10-09，`8ecbb65` + 回写）：DOC1 六条与 DOC2 两条全部落地，另有一条显式登记的同句延伸（ADJ1：「Windows 腿不跑」→「仅 Linux 腿跑」）；逐条 grep / diff 范围 / 表行 NF=5 / 两道合规门全过；fast 256 passed（`--collect-only -q` 实测 256）。相邻残留 R1–R4 只登记不改，见 §10.11。** |
 | **I** | P27 → P31 → P32 | 三条新增退码用例在旧实现上先红后绿；`uv run --no-sync pytest -m 'not slow' -q` 全绿；干净图 `--expected-payload x` 退 1、超容量退 2、信封在但 CRC 不符退 2。**批次 I 已完成（2026-09-29，`a3fffbd` + 回写）：三条全部落地；先红 6 例、等价 pin 3 例；fast 230 passed（`--collect-only -q` 实测 230 collected，落地前 221）；落地记录与两处审计更正见 §10.5。四个提交（`661b7eb`/`a3fffbd`/`893c1be`/`26e11ed`）已推送到 `origin/main`，推送后 CI 结论见 §9.10。** |
 | **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | **技术实现与原定真链验证已收口**：G9①④/P33 的旧手工构建 #4 成功；G10 双 wheel 与 G8①②③④ 两轮 CI `eef7b48`→`9b1ba41` 成功；G9②③ 和 tag-only `publish` 在正式 `v0.1.0` run `37878702620` 四 job success，公开 Release 两份二进制 SHA256 与各自清单一致，另核对了两份清单内容（§10.7–§10.10）。不把此结论外推为人工第三方二进制法律审核、签名/公证或 G11③ 跨 run 并发已解决。 |
-| **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。 |
+| **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。**批次 K 已完成（2026-10-09）：三项全部落地；先红实测 13 例 + 1 条 Qt 行为 pin（旧码即绿）+ 1 条 D4 收紧 pin；fast 271 passed（`--collect-only -q` 实测 271）、GUI 档 19 passed 0 skipped；两处关键更正（旧码 `-o <dir>` 已是退 2 的**晚失败**而非无包装；P29③ 控件路径实测不可达）与 D1–D8 登记见 §10.12。** |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。 |
 | **M** | P4 → P6 → P5 | P4 落地前先确认 `sat-selfcheck` 结论已落档；`bench/efficacy_matrix.py` 在 core 环境退 0；P5 的 README 数字取自 P6 的 CSV（不写死）。 |
 | **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步**待 CI 取证**。 |
@@ -2087,6 +2087,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 #### P28 — 输出契约：`-o <dir>` 晚失败 + 原子写报错包装缺口（low-med，批 K）
 
+> **[x] 批次 K 已落地（2026-10-09）**：早失败落点由 CLI 上移到 `pipeline.protect`（D1），`mkdir`/`stat` 入 try；两处关键更正与红态证据见 §10.12。
+
 - **现象**（读码）：`-o` 指向已存在的目录时，`os.replace(temp, dir)` 在**流程末尾**才抛 `IsADirectoryError`（resize + 隐水印，SD 档还要跑完整 PGD）；`save_image_atomic` 开头的 `destination.parent.mkdir(...)` 与 `destination.stat()` 在 `try` **之前**，父路径是文件或权限不足时的 `OSError` 不带 `failed to write <dest>` 前缀，与同函数其它失败路径不一致。
 - **证据**：`cli.py:117` 直接调 `protect`；`outputs.py:67-68` 对比 `try`（`:71`）与包装（`:107-108`）；`tests/test_output_integrity.py` 只钉了临时文件创建点。
 - **方案**：① `protect` 分支解析后立刻 `if args.output.is_dir(): raise ValueError(...)`（早失败、exit 2、不落文件）；② `mkdir`/`stat` 挪进 `try`（`previous_mode` 语义不变）。
@@ -2095,6 +2097,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 #### P29 — GUI 三处纪律缺口（med，批 K；注入路径待复现）
 
+> **[x] 批次 K 已落地（2026-10-09）**：①②③ 全部落地；③ 的到达路径已复现为「控件不可达」（走向 A），改动按纵深防御表述，见 §10.3 与 §10.12。
+
 - **现象**（读码 / 待复现）：① `export_csv` 在主线程槽里裸 `open()`，`OSError` 无人接（按 P25 的结论，PySide6 对未捕获槽异常会终止进程）；② 活动 output_dir 输入框的值不与设置层的「非空 + 绝对路径」校验对齐，手打相对路径会让产物落到进程 CWD；③ 设置层只强转数字键、`mode` 取任意字符串，而 `validate_options` 不校验 `visible_mode`，非法模式要深入 `watermark_visible.apply("")` 才暴露。**③ 的到达路径待复现**（见 §10.3），批内先跑离屏复现脚本再定改法。
 - **证据**：`gui.py:429-434`（导出）、`:443-445`（活动目录）、`gui_logic.load_settings`（数字键强转，无模式集合）、`pipeline.validate_options:60-77`（无 `visible_mode`）。
 - **方案**：① 导出包 `try/except OSError` → 走既有 `_error` 通道；② 目录校验抽一处供设置层与活动框共用；③ 设置层加 `{subject,tile,center}` 白名单回落，`validate_options` 补第二道同集合校验。
@@ -2102,6 +2106,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验收**：`-m gui -q` 全过、0 skip；fast 全绿。
 
 #### P30 — `validate_options` 与 `protect` 对 `perturber_instance` 口径冲突（low，批 K）
+
+> **[x] 批次 K 已落地（2026-10-09）**：校验收紧 + `protect` 改 `is not None` 闭合 falsy 实例残余，见 §10.12。
 
 - **现象**（读码）：`ProtectOptions(perturber="noop", perturber_instance=<实例>, layers={perturb})` 被 `validate_options` 拒绝，但 `protect` 会优先用实例、根本不会用到 `noop` 工厂。
 - **证据**：`pipeline.py:76-77` 对比 `:102`（`opts.perturber_instance or perturb.get(...)`）。
@@ -2195,7 +2201,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 ### 10.3 待复现与非既成事实
 
-1. **GUI 非法 `visible_mode` 的到达路径待复现**：机制推断为「设置层取任意字符串 + `validate_options` 不查该字段」，但 `QComboBox.setCurrentText` 对非 editable 组合框遇未知文本的实际行为未实测（可能静默忽略，使 `currentText()` 保留旧值或变空串，两条后果不同）。P29 落地前先跑离屏复现脚本，结论写回本条。
+1. **GUI 非法 `visible_mode` 的到达路径待复现**：机制推断为「设置层取任意字符串 + `validate_options` 不查该字段」，但 `QComboBox.setCurrentText` 对非 editable 组合框遇未知文本的实际行为未实测（可能静默忽略，使 `currentText()` 保留旧值或变空串，两条后果不同）。P29 落地前先跑离屏复现脚本，结论写回本条。 → **已复现（2026-10-09，批 K）：走向 A（控件不可达）** —— PySide6/Qt 6.11.1 下非 editable `QComboBox` 的 `setCurrentText` 对列表外文本（`Bogus`）与空串均不改动 `currentText`/`currentIndex`（保持 `subject`/0），仅命中列表的值生效；种 `QSettings(mode=Bogus)` 后窗口 combo 仍为 `subject`，控件路径**不可达** `apply`。但 `gui_logic.load_settings` 对同一输入**原样返回 `Bogus`**（实测），设置层与编程调用方仍是可达面。处置：设置层白名单回落 + `validate_options` 按层第二道门，文案按「纵深防御」写；实测脚本与判读见 §10.12。
 2. **`.dockerignore` 更正**：已含 `dist/`，只缺 `release/`、`docs/`（审计初稿的「缺 dist」有误）。
 3. **§3 spike 表第 6 行的落点结论被证伪（半对，2026-09-29）**：`--include-data-files` 带进 bundle 的 `LICENSE`/`THIRD_PARTY_NOTICES.md` 落 `Contents/MacOS`，只有 `--include-data-dir` 的产物落 `Contents/Resources`。证据见 §9.9，处置见 P33；此前一切「材料落 `Contents/Resources`」的推断（含 S2 的验收口径与 macOS 侧的排查方向）都按本条更新。
 
@@ -2276,3 +2282,19 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **落地后独立复核（2026-10-09，只读 workflow，2 名审查者）**：审查者 A 对九处新文案逐条对抗性证伪 —— **8 条 confirmed、0 条 refuted**，全部 hedge 均在文案内保留（P34 待复现、慢档未建立、docker 只断言非零而「退 2」属 CLI 映射、转录「逐字」＝类区级）；审查者 B 范围与记录审查 **clean** —— 提交范围、hunk 起点（177/187/213/232/241 ≥ §八 的 162）、§一–§七 零改动、无清单外第 10 处、R1–R4 未被顺手修、合规新增行无被禁字面量、提交信息与内容一致。两项 counting（18 passed / 256 passed）在只读约束下由审查者静态重建与自述吻合，本会话实测复核为 **18 passed / 256 passed / collect 256**，已由 uncertain 升为已证。
 - **非本批瑕疵登记（不改 §10.1 历史记录）**：§10.1 DOC2.2 引 `README.md:366`，现为 367（`eef7b48` 给 README 加行后的漂移）；本节 ⑦⑧ 已用正确行号。
 - **推送状态**：本批三个提交（`8ecbb65`、回写 `a07ede9` 与本次复核记录提交）仅本地；连同更早的 `51187a8` / `8f66767`（§10.10 末尾「未提交」句随即由 `8f66767` 落为本地提交）均**未推 main**，推送待用户显式授权。远端 `main` 与 `v0.1.0` 的 peeled SHA 仍是 `9b1ba41`，未受影响。
+
+### 10.12 批 K 落地记录（2026-10-09）
+
+- **范围与前置**：基线 HEAD `6665492`；开工前跑一轮只读复核 workflow（3 核对者 + 2 批评者），三项技术前提全部成立，但抓到两处关键更正（下条）——它们直接改写了「先红」口径与一处落点。
+- **两处关键更正**：① P28 的旧码 `-o <dir>` **已经**退 2 且不落文件（`os.replace` 的 `IsADirectoryError` 在 `outputs.py:107-108` 被包成 `failed to write`、temp 在 finally 清理），缺陷是**晚失败**而非「无包装」；且 temp 建在 `destination.parent`（目标目录的父目录），「目录内无新文件」是空断言 —— 新红点改为「断言新文案 `output path is a directory` 且 stderr **不含** `failed to write`」。② 「父目录不可写（已存在目录 chmod 0o500）」旧码**已带包装**（失败点在 try 内的 `_create_temp_file`）不先红，第二例改为「需新建的中间目录不可写」，实现取 monkeypatch `Path.mkdir`（跨平台、免条件 skip；§10.1 的字面 chmod 写法被替换，显式登记）。
+- **落地清单**：
+  - **P28**：`pipeline.protect` 在 `validate_options` 后、`_same_file` 相邻新增目录守卫（**D1：落点由 CLI 分支上移到共享契约点**，一次覆盖 CLI/GUI/编程调用方，CLI 退码语义不变）；`outputs.save_image_atomic` 的 `previous_mode` 显式初始化、`mkdir`/`stat` 移入 try（成功路径与 `previous_mode` 时序不变）。新增 4 例先红后绿；**D4 收紧**：守卫跟随符号链接，`-o <symlink→目录>` 由旧 exit 0（替换链接本身为图片）变 exit 2，已加 pin（symlink 不可用的环境 skip）。
+  - **P29**：`export_csv` 包 `except OSError → _error`；**D5** 新增 `gui_logic.validate_output_dir`（strip→expanduser→非空且绝对），`load_settings` 与 `_plan_items` 共用 —— 语义统一使 `~/x` 由「读回被拒」变「接受」（显式登记 + 新 pin），空串/相对在两端都拒；**D6** `config.VISIBLE_MODES` 单源（`cli.py:25` 复用，`--help` 取值顺序不变）、`load_settings` 非法 mode 回落、`validate_options` 按 `LAYER_VISIBLE in layers` 加门。新增 7 例先红后绿；另 1 条 pin 钉 Qt 控件行为（旧码即绿）。
+  - **P30**：`validate_options` 加 `perturber_instance is None` 条件；**D7** `protect` 的选择改 `is not None`，闭合 falsy 实例被 noop 工厂静默顶替的残余。新增 2 例先红后绿；两条等价 pin（无实例的 noop 仍拒、CLI stderr 前缀）未动。
+- **探针实测（D8，走向 A）**：PySide6/Qt 6.11.1 离屏 —— A0–A3：非 editable combo `setCurrentText('Bogus')`/`''` 均被忽略（text 保持 `subject`、index 0），`tile` 生效；B1：QSettings 种 `mode=Bogus` 后窗口仍 `subject`；B2：`load_settings` 原样返回 `Bogus`（可达面在设置层/编程调用方）；B4/B5：默认组校验通过、`apply` 正常。结论与处置已写回 §10.3 第 1 条；文案按「纵深防御」而非「修复真实可达故障」。
+- **红态实测证据（意外收获）**：P29② 的 GUI 新例在旧码下**真的把产物写进了进程 CWD** —— 红态运行在仓库根留下 `relative-out/in_protected.jpg`（1709 bytes），即该缺陷的现场复现；测试残留已清理。
+- **验收实测**：fast `uv run --no-sync pytest -m 'not slow' -q` **271 passed**、`--collect-only -q` **271 collected**（现场实测，不写推算）；GUI 档 `QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -m gui -q` **19 passed、0 skipped**（desktop extra 在本机 `.venv`，须 `--no-sync`）；`tests/test_compliance.py` **18 passed**；四条 fail-loud 回归锁未受影响（本批未碰其保护面）。先红实测 13 例（P28 4 + P29 7 + P30 2），另有 1 条 Qt 行为 pin 与 1 条 D4 收紧 pin。
+- **文档同步**：`README.md:177` 退码 2 括号加「`-o` 指向已存在的目录」；`AGENTS.md` §8.3 的 `pipeline.py` 行补「或**指向已存在的目录**（P28，含跟随符号链接的收紧）」。
+- **范围注记**：D1–D8 逐条按节内标注登记；不新增 ID、不新增/回收退出码；`outputs.py:94-106`（P20）与 symlink 文件语义（P34）未动；P29 未扩到 P35/P36/P37；新 GUI 用例无条件 skip。
+- **新增残留登记**：① `stat` 分支的 TOCTOU 竞态本身无法以真实文件系统确定性复现，现以 monkeypatch 用例钉住「被包装」的修复形态；② `export_csv` 只捕 `OSError`，POSIX 文件名 surrogate 进入 CSV 行的 `UnicodeEncodeError` 仍会逃逸（低概率，归 P37 邻域）；③ `Path.is_dir()` 跟随链接的语义与 P34 同面，P34 复现时一并复核。
+- **推送状态**：本批提交（修复含 README/AGENTS 与本回写）仅本地；远端 `main` 与 `v0.1.0` peeled 仍是 `9b1ba41`，推送待用户显式授权。
