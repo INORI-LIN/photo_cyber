@@ -72,9 +72,12 @@ def test_paired_control_is_byte_deterministic(tmp_path) -> None:
 def test_save_path_transmits_the_perturbation(tmp_path) -> None:
     """The delivered difference survives the q85 path far above the injected bound.
 
-    Thresholds are format- and quality-robust (they hold for a lossless container and
-    for q100 as well): what they pin is that the perturbation is *not* erased by the
-    delivery chain, not the current magnitude of the quantization coupling.
+    Thresholds are quality-robust rather than magnitude-pinned: they hold for the
+    current q85 delivery and for q100 (both measured) — what they pin is that the
+    perturbation is *not* erased by the delivery chain, not the current size of the
+    quantization coupling. (The default save path is JPEG; a lossless container is not
+    reachable through `protect` today, and there the delivered difference sits exactly
+    at the injected bound — the assertion floor by design.)
     """
     source = tmp_path / "in.jpg"
     _textured().save(source, quality=92)

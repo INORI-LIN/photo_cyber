@@ -325,7 +325,7 @@ uv run photo-guard-gui               # 启动 PySide6 桌面界面
 
 快速档覆盖原有三层顺序、所有层组合、隐水印 JPEG 回环、参数校验、CRC envelope、设备发现；用例数见 `uv run pytest --collect-only -q`。
 
-`slow` marker 已在 `pyproject.toml` 注册，真 SD 慢档用例在 `tests/test_photoguard_slow.py`（P1 建立：seed 确定性、L∞ 预算、目标下降、1×1 等形状、protect 字节复现；**用例数一律现场跑 `-m slow --collect-only -q` 取**）。它跑在两处：`docker.yml` 的 slow tier（显式 `test` target，`--network none`）与本机 `uv sync --frozen --extra photoguard` + `uv run photo-guard download-models` 之后；核心环境下这些用例全部 **skip 且理由给出补齐命令**（已用临时 core venv 实测）。快速档全绿不等于 SD 路径有效——同理，慢档只覆盖 CPU/float32 的字节可复现，CUDA/MPS 不承诺逐位一致。
+`slow` marker 已在 `pyproject.toml` 注册，真 SD 慢档用例在 `tests/test_photoguard_slow.py`（P1 建立：seed 确定性、L∞ 预算、目标下降、1×1 等形状、protect 字节复现；P5/M2 追加 `latent_norm` 量测；**用例数一律现场跑 `-m slow --collect-only -q` 取**）。它跑在两处：`docker.yml` 的 slow tier（显式 `test` target，`--network none`）与本机 `uv sync --frozen --extra photoguard` + `uv run photo-guard download-models` 之后；核心环境下这些用例全部 **skip 且理由给出补齐命令**（已用临时 core venv 实测）。快速档全绿不等于 SD 路径有效——同理，慢档只覆盖 CPU/float32 的字节可复现，CUDA/MPS 不承诺逐位一致。
 
 提交前跑一遍合规检查（`AGENTS.md` §6.4：检索被禁字面量，命中即判失败；正则形式可命中多空格写法，`.github/` 不再排除）：
 
