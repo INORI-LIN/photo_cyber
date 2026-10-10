@@ -20,7 +20,7 @@
 | P2 | GUI 零真实测试 + 自证式假覆盖 | P1-high | M | C | 413 行 gui.py 从未被测试 import，两个「GUI 测试」抄逻辑自证；本 issue 抽出 Qt-free 的 gui_logic 与 gui 档覆盖。 | [x] 批次 C 已落地（`ab816d0`+`aadf27d`） |
 | P3 | 验证无法盲检 + 旧版 raw 验证启发式可能误判通过 | P0 | M | 1 | verify 必须先给长度（忘了长度 envelope 便不可达），旧版 raw 又只查「坏字符过半」，故错长度/局部损坏会 exit 0 报出错误 payload；改为密集梯度 CRC 盲检 + 严格旧版判据。 | [x] 批次 1 已完成 |
 | P4 | 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0 | P1 | S-M（改 `:94` 时转 P6/P7） | 2 → **M1** | 隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。 | [x] 批 M1 已落地（2026-10-09）：写侧预检只做结构上界 + temp 先验后 replace 的成品自检；先红 11 例；见 §10.14 |
-| P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 → **M2** | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [ ] 未开始（**顺延为 M2**，排 N（P9→P1）之后；理由见 §2 M 行与 §10.14） |
+| P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 → **M2** | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [x] 批 M2 已落地（2026-10-10）：docstring 偏差清单 + `latent_norm` + 保留率两例（用例 2 的「低频>高频」指标经六轮探针实测不可达，经用户裁定改测「扰动残存」）+ Spike A 直连出数；README 降级句与带日期+sha 数字；见 §10.17 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 → **M1** | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [x] 批 M1 已落地（2026-10-09）：bench 12 格 + weekly efficacy.yml；本地 noise 档 30/36 pass（复核修正口径，见 §10.14）；S1/S2/S4 结论与读端降级自证法见 §10.14 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [x] 批次 L 已落地（2026-10-09）：唯一 loader `_load_oriented_rgb`（EXIF 方向 + 剥 EXIF + 留 ICC）+ 4 个调用点收口；先红 10 例、含 verify 侧 pin；见 §10.13 |
@@ -89,7 +89,7 @@
 | **J** | G9（②③）、G10、G8（含 AGENTS §十一 正则句） | **技术实现与原定真链验证已收口**：G9①④/P33 的旧手工构建 #4 成功；G10 双 wheel 与 G8①②③④ 两轮 CI `eef7b48`→`9b1ba41` 成功；G9②③ 和 tag-only `publish` 在正式 `v0.1.0` run `37878702620` 四 job success，公开 Release 两份二进制 SHA256 与各自清单一致，另核对了两份清单内容（§10.7–§10.10）。不把此结论外推为人工第三方二进制法律审核、签名/公证或 G11③ 跨 run 并发已解决。 |
 | **K** | P28 → P29 → P30（P28 先于 P8） | `-o <dir>` 退 2 且不落文件；`mkdir`/`stat` 失败带 `failed to write` 包装；P29 的注入路径先跑离屏复现脚本再定改法；`-m gui -q` 全过、0 skip。**批次 K 已完成（2026-10-09）：三项全部落地；先红实测 13 例 + 1 条 Qt 行为 pin（旧码即绿）+ 1 条 D4 收紧 pin；fast 271 passed（`--collect-only -q` 实测 271）、GUI 档 19 passed 0 skipped；两处关键更正（旧码 `-o <dir>` 已是退 2 的**晚失败**而非无包装；P29③ 控件路径实测不可达）与 D1–D8 登记见 §10.12。** |
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。**批次 L 已完成（2026-10-09）：四项裁定按 §3 推荐全部确认（ICC 原样保留 / 损坏 EXIF 硬拒 / HEIC 递延 / 上限固定 64 MP）；P8 与 G4 全部落地（两个新测试文件共 32 例，按最终形态先红 18 例、pin 14 例）；fast 304 passed（`--collect-only -q` 实测 304）、GUI 档 20 passed 0 skipped；两处关键更正与 L1–L4 登记见 §10.13。** |
-| **M** | P4 → P6 → P5（**拆分推进，2026-10-09 用户裁定**：M1=P4+P6 本轮；**M2=P5 顺延到 N（P9→P1）之后**——P5 硬依赖 P1 的 seed 与由 P1 新建的 `test_photoguard_slow.py`，且 M 原排在 N 之前） | M1：P4 落地前先确认 `sat-selfcheck` 结论已落档（已由 §10.14 落定，口径以该节为准）；`bench/efficacy_matrix.py` 在 core 环境退 0；先红后绿（含 config 依赖例的中间态标注）+ fixture 矩阵先行。M2：P5 的 README 数字取自 P6 的 CSV（带日期+sha、不被测试钉住；正文行号须按内容重定位）。**M1 已完成（2026-10-09）：P4+P6 全部落地——先红 11 例、fixture 矩阵 7/7 PASS、bench noise 档 30/36 pass（钉住行真实 100%；首轮产品发现 downscale_720/combo_repost 各 0/3）、fast 318 passed（collected 与落地前一致）、GUI 20/0 skip、compliance 18 passed、四份 workflow PyYAML 全过；S1/S2/S4、自证法与复核修正（首版 pass 列读错对象已修）见 §10.14。** |
+| **M** | P4 → P6 → P5（**拆分推进，2026-10-09 用户裁定**：M1=P4+P6 本轮；**M2=P5 顺延到 N（P9→P1）之后**——P5 硬依赖 P1 的 seed 与由 P1 新建的 `test_photoguard_slow.py`，且 M 原排在 N 之前） | M1：P4 落地前先确认 `sat-selfcheck` 结论已落档（已由 §10.14 落定，口径以该节为准）；`bench/efficacy_matrix.py` 在 core 环境退 0；先红后绿（含 config 依赖例的中间态标注）+ fixture 矩阵先行。M2：P5 的 README 数字取自 P6 的 CSV（带日期+sha、不被测试钉住；正文行号须按内容重定位）。**M1 已完成（2026-10-09）：P4+P6 全部落地——先红 11 例、fixture 矩阵 7/7 PASS、bench noise 档 30/36 pass（钉住行真实 100%；首轮产品发现 downscale_720/combo_repost 各 0/3）、fast 318 passed（collected 与落地前一致）、GUI 20/0 skip、compliance 18 passed、四份 workflow PyYAML 全过；S1/S2/S4、自证法与复核修正（首版 pass 列读错对象已修）见 §10.14。**M2 已完成（2026-10-10）：P5 全部落地——docstring 偏差清单、`_validate_bgr`/`_to_tensor` 抽取与 `latent_norm`（slow 先红 1 例后绿）、`test_perturb_retention.py` 两例（用例 2 改测「扰动残存」，用户裁定）、slow 第 12 例；README 降级句 + 带日期+sha 数字（`138022c` 口径，M2 期复跑同值 30/36）；AGENTS 零 diff；Spike A 直连执行出数（`linf_before=8` 饱和、无频率选择性）；见 §10.17。** |
 | **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步已 CI 取证（docker `37918657113`，慢档 11 passed）。**批次 N 已完成（2026-10-09，`78732f8` P9 + `895b837` P1 + `9d2feaf` docker + 回写）：P9 代码面与 P1 全部落地；spike H1/9A/9C/9D/9E 全过、9F 推送后已取证（docker 18/18 步全绿）；fast 323 passed（collect 334）、slow 11 passed（本机 extra+模型）、临时 core venv 下 slow 全 skip 带理由、gui 20/0 skip、compliance 18、四份 workflow PyYAML + docker.yml 九个 run 块 bash -n 全过；三条裁定（ε 真 L∞、独立 test target、临时 venv 取证）与 M2 接口冻结见 §10.16。** |
 | **O** | P7、P20 | 非 JPEG 输出策略先裁定；P20 先 spike 语义（内容已落盘 + `chmod` 抛错仍退 0 且内容完整）。 |
 | F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11） | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、**`.github/workflows/` 目录 glob 下的全部 workflow 本地 PyYAML 解析（现为四份：`ci`/`docker`/`release-desktop`/`efficacy`——口径已由「三个」升级，防漏解析新增文件）**；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）。 |
@@ -520,13 +520,13 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 | 文件 | 用例名 | 档 | 断言 |
 |---|---|---|---|
 | test_perturb_retention.py | test_paired_control_is_byte_deterministic | fast | 两次 `protect` 输出逐字节相同 |
-| 同上 | test_save_path_preserves_low_freq_better_than_high_freq | fast | 低频 `res.max()>=1`；低频>高频 |
+| 同上 | test_save_path_transmits_the_perturbation | fast | 保存后差异 `res.max() >= 注入 max`、`res.mean >= 1.0`、非零占比 `>= 50%`（原「低频>高频」经六轮探针实测不可达，2026-10-10 用户裁定改测残存；证据见 §10.17） |
 | test_photoguard_slow.py | test_latent_delivery_ratio_is_measurable | slow | `latent_norm` 有限正数 |
 
 **验收标准**
 
-- [ ] `uv run pytest -m 'not slow' -q` 全绿；首轮实测后落数；新文件无 torch/diffusers import；`--collect-only` 含 P1 用例加本方案 1 条（skip 理由含 `download-models`）。
-- [ ] docstring grep 命中 `zero target`/`diffusion attack`/`uint8`/`JPEG`/`fp16`；`protect --help` 与 `test_cli_exits.py` 不改；AGENTS.md/workflows 零 diff；README 无数字；无 Spike A 则闸门不成立。
+- [x] fast 全绿（**325 passed**；`--collect-only` 实测 **337** = 落地前 334 + 2 fast + 1 slow）；新文件无 torch/diffusers import；slow **12 例**（含本方案 1 条，skip 理由含 `download-models`；本机 extra+模型 12 passed，core 环境 skip 语义见 §10.17）。
+- [x] docstring 五词命中且 `src/` 全仓 `scaling_factor` 0 命中（负查）；`protect --help` 与 `test_cli_exits.py` 零 diff；AGENTS.md/workflows 零 diff；README 数字按 §10.14 口径（带日期+sha、不被测试钉住——原「README 无数字」条款由该口径取代）；Spike A 已直连执行出数（见下与 §10.17）。
 
 **风险与未知**
 
@@ -535,13 +535,13 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 
 **spike（如需）**
 
-- Spike A（人工，PR 必附）：假设 = q85 交付文件仍可测出扰动、低频相关性高于近 Nyquist。实验 = `uv sync --frozen --extra photoguard` → `uv run photo-guard download-models` → `uv run python bench/efficacy_matrix.py --perturber sd --out-dir <dir>`，3 张 1600×1200、ε=8/255、steps=10、CPU；记录 `linf_before`、相关系数、`latent_*`、SOF 采样因子进 `bench/README.md`。通过 = 有数且低频 ≫ 高频；失败 = bench 脚本缺失或 `linf_before` 恒 0。
+- Spike A（人工，**已执行 2026-10-10，直连可执行版**）：3 张合成图（1600×1200 → protect 缩到长边 1080，等价登记）、ε=8/255、steps=10、CPU（`--device cpu`）、seed 0；对照 = noise ε=0.0；记录 `linf_before`、相关系数、`latent_*`、SOF 采样因子入 `bench/README.md` 新增「Spike A 首轮」小节。**实测：`linf_before=8`（预算饱和、未出现恒 0）；交付差异 max 49–57、`corr(res, δ)≈0.427`、`latent_ratio_saved≈0.65–0.68`（两阈值之间、未触发分支）；原判据「低频 ≫ 高频」实测不成立（FFT 低/高 ≈0.197，与 fast 用例 Step-0 同向），按 M2 同一政策改记「显著残存 + 与 δ 相关」——见 §10.17。**
 - Spike B：CUDA/MPS 同攻击记 `max|δ_q|` 与 dtype。
 
 **开放问题**
 
-- `AGENTS.md` 三②「输出崩坏、失真」强于可证明者：README 如实说明，还是用户自行补边界？**AGENTS.md 冲突，需用户裁定。**
-- P5/P6 契约与阈值请一并裁定。
+- `AGENTS.md` 三②「输出崩坏、失真」强于可证明者：**已裁定（2026-10-10，M2-1）：保持 §一–§七 不动；README 如实降级，差异在本节与 §10.17 留档**；Spike A 出数（2026-10-10）后再评估是否发起规格修改。
+- P5/P6 契约与阈值：已裁定（2026-10-09，见 §3「P5/P6 的契约与阈值」行：README 降级口径采纳、Q2 留待首轮数据、Q5=(a)）。
 
 > 摘要：两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。
 
@@ -2365,3 +2365,16 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **本批自身的一处流程登记**：回写 §10.16 时曾在「方法注记」里写出被禁安装命令字面量（含 `uv` 前缀的示例外壳也命中），**由 fast 档的 compliance 门当轮拦下**（`test_no_forbidden_install_in_code_or_scripts`），已在 `1943349` 修正。教训：文档里引用该命令族时必须改写成不含「pip + 空白 + install」的描述性文字。
 - **落地后独立复核（2026-10-09，只读 workflow，2 名审查者）**：抓到 **1 处 critical 与 2 处记录/口径问题，均已修**：① **Dockerfile test stage 的 `RUN uv sync` 早于 `WORKDIR /app`**（继承 runtime 的 `/work`，无 pyproject → `--target test` 必败）→ 已将 `WORKDIR /app` 移到 sync 之前；② P9 的 1×1 **历史归因写错**（旧 inline fallback 给 `Box(0,0,0,0)`；`Box(0,0,1,1)` 是旧**显著性档**的观测）→ subject.py 与测试 docstring 按实更正；③ AGENTS §十 / README 写死「11 例」**违反同节的『不写死用例数』**→ 改为「现场跑 `-m slow --collect-only -q` 取数」。另订正 §6 P9 验收的「+1」为实测 **+2**（4→6 用例）并勾选两框。**登记（不改）**：裸 `docker build` 与既有发布构建同法，test target 是否入本地 daemon 由 9F 一并核对；`test_cli_exits.py` 新增用例与上一函数间仅一空行（E302，无 lint 门）；§6 P1 推荐方案第 4 条的 Dockerfile 口径已注明由 N-2 取代。
 - **推送与 9F 取证（2026-10-09）**：`git push origin main` 一次（`69c4a06..6b05801`，7 提交、非强推、不带 tag；`v0.1.0` peeled 仍 `9b1ba41` 未动）。触发 `ci`（run `37918657179`）与 `docker`（run `37918657113`），**两条全绿**：ci 三腿各 **303 passed, 2 skipped, 11 deselected**（core 环境口径——303 = 本机 323 减 20 个 gui 用例；+5 相对 M1 推送的 298 = P9 2 + P1 3；慢档 11 例由 `-m 'not slow'` 在设计上排除、由 docker 慢档步覆盖），`gui` job **20 passed, 314 deselected**（0 skip）；docker **18/18 步全绿**，新增四步逐一取证：`Build test image (dev group, slow tier)`（N-2 独立 target 成立）、`Slow-tier preflight`（日志 `slow-tier preflight OK`）、`Slow tier — real SD assertions`（**11 passed in 11.98s** = 9F 核心）、`SD product clue round-trip`（`recovered: 线索（未验证）: ci-test` 整行精确）；**`Linux third-party notices must match the image` 保持绿**（`notices OK for Linux / x86_64 (62 rows)`——N-2「发布镜像保持 `--no-dev`」的零连锁得证）与 P15 拒载步同绿。裸 `docker build` 的 test target 本地 daemon 问题由 CI `--target test` 的构建与运行成功直接覆盖。`release-desktop` 与 `efficacy.yml` 未触发（符合预期）。
+
+### 10.17 批 M2 落地记录（P5，2026-10-10）
+
+- **范围与前置**：基线 = 远端 `6b05801` + 本地回写 `56cd488`。开工前只读复核 workflow（3 核对者 + 2 批评者，6m34s）确认 P5 事实全部成立；抓到：用例 2 指标全无定义（字面自相矛盾）、`latent_norm` 公式缺 `_ensure_loaded`/no_grad、Spike A 原文不可照跑、锚点漂移（README:270 / Dockerfile:59 / config:33-35 / CLAUDE.md）、§6「README 无数字」与 §10.14 冲突。两条裁定：**M2-1** AGENTS 三② 保持不动 + 留档；**M2-2** Spike A = 直连可执行版（bench 代码零改动）。
+- **Step 0（六轮探针，480×360 纹理 / ALL_LAYERS / tile / q85 默认）**：预保存 δ 经 P1 clip 约束为 ±2；保存后差异 **max 33 / mean 6.05 / 59% 像素 >4**，q100 对照 mean 1.68 ⇒ **q85 量化边界翻转是放大器**；「低频>高频」在五种表述（max 分带 σ=1–3、δ 分量相关三通道、仅亮度、q100–75 扫描、FFT 径向能量低/高 ≈0.06）**全部 False**；结构化双频带探针（`perturber_instance`，λ64+Nyquist/λ8/λ4、A=4–8）被 **P4 自检全部拒绝**（相干高频 δ 打掉隐水印，白噪声 ≤±8 不会），豁免自检后两频带保留率均 ≈1（无选择性）。**结论：「低频>高频」在任何可行振幅/表述下不可达；用户裁定（方案 A）用例 2 改测「扰动残存」。**
+- **实现（photoguard.py）**：docstring 偏差清单（五词命中 + `scaling_factor` src/ 全仓 0 命中负查）；抽 `_validate_bgr`/`_to_tensor`（保序保消息，`test_photoguard_shape` 7 例零影响）；新增 `latent_norm`（`_validate_bgr → _ensure_loaded → _to_tensor → torch.no_grad → .float().norm() → float`）。
+- **测试**：新 `tests/test_perturb_retention.py`（fast、core-only、顶层无 torch）：`test_paired_control_is_byte_deterministic`（两臂走工厂路径、两次 protect 逐字节相同；等价 pin）＋ `test_save_path_transmits_the_perturbation`（`res.max ≥ 注入 max`：33≥2；`mean ≥ 1.0`：6.05；非零占比 ≥ 50%：98.2%——对格式/质量变化鲁棒；等价 pin，docstring 记录 Step-0 实测）；slow 追加 `test_latent_delivery_ratio_is_measurable`（65×47 非 8 倍数钉 pad 路径；**先红 1 例**：旧码 AttributeError）。
+- **Spike A（直连版，2026-10-10）**：数字表见 `bench/README.md`「Spike A 首轮」；要旨：`linf_before=8`（预算饱和）、交付差异 max 49–57、`corr(res,δ)≈0.427`、FFT 低/高 ≈0.197（原「低频 ≫ 高频」判据不成立，按 M2 同一政策改记「显著残存 + 与 δ 相关」）、潜下降 0.366→0.241 ⇒ `latent_ratio_saved ≈0.65–0.68`（3/3，落两阈值（≥0.9/≤0.5）之间、未触发分支）、SOF=4:2:0、单图 58–73s。偏离登记：合成几何等价（protect 反正缩到 1080）、非 bench CLI（其无 device 旗标）、记录为仓外一次性脚本。
+- **文档同步**：README 五处（intro 两句、已知边界 PhotoGuard 全句、历史数字注记、bench 段带日期+sha 数字）；AGENTS **零 diff**（M2-1）；`bench/README.md` 新增 Spike A 小节；fix-plan 活索引（§1 P5 行、§2 M 行、§6 测试清单/验收两框/开放问题/Spike A 段）+ 本节。
+- **历史字段登记（先例 §10.13）**：CLAUDE.md 已不存在；§6 P5 触及文件列的 CLAUDE.md、「README.md:270」「Dockerfile:59」（现 :70）、「config.py:33-35 仅注释」（现 PHOTOGUARD_* 位于 :55-74 且注释充分，无操作空间）为时点记录；P5:515 的「现状传递 import torch；G1 落地才可变」括注过时。
+- **验收实测**：fast **325 passed**（`--collect-only` **337** = 落地前 334 + 2 fast + 1 slow）；slow **12 passed**（本机 extra+模型）；**core venv**（`UV_PROJECT_ENVIRONMENT=/tmp/pg-core-venv uv sync --frozen --group dev`）无 torch、fast **305 passed / 2 skipped**、slow **12 skipped** 且理由含补齐命令；gui **20 passed / 0 skip**；compliance **18 passed**；四份 workflow PyYAML 全过；bench noise 复跑 **30/36**（与 `138022c` 首轮同值、同两格失败、钉住行 100%）。
+- **不扩面**：bench 代码零改动（含 efficacy.yml）；无新 CLI 旗标/退码/ID（`latent_norm` 为唯一公开符号增量）；`protect --help` 与 `test_cli_exits.py` 零 diff；P7/P20、G11/P22/P23/G7、P34–P37/DOC3、R1–R4、`detect_faces` 开放问题均未动。
+- **推送状态**：本批提交仅本地；远端 `main` 仍 `6b05801`，推送待用户显式授权。
