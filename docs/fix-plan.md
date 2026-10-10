@@ -2402,3 +2402,5 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 **合并范围**：连同 §10.11 已登记的四条 R1–R4（README :214 / :126 / :321-324、AGENTS :176；「只登记不改」原文不动）一并作为 DOC4 的验收面。
 
 **后续排批**：DOC4 属文档面；可独立小批，或并入后续批次的回写窗口；不改变 §2 的五条硬定序。「P34/P35 优先复现」仅为报告排批建议，不随本条登记。
+
+**推送与 CI 取证（2026-10-10）**：`git push origin main` 一次（`350049a..bc7fbcd`，2 提交、非强推、不带 tag；`v0.1.0` tag 对象 `994de7a5` / peeled `9b1ba41` 未动），连同 §10.18 的 `d0e6eef` 一并上远端。触发 `ci`（run `38032615125`）与 `docker`（run `38032615119`），**两条全绿**：ci 三腿（ubuntu/macos-15/windows）各 **305 passed, 2 skipped, 12 deselected**、`gui` **20 passed / 317 deselected**（0 skip）；docker **18/18 步**——`Linux third-party notices must match the image`（notices OK，62 行）、慢档 **12 passed in 10.73s**、SD 回环 `线索（未验证）: ci-test` 整行（noise/SD 两处）、`slow-tier preflight OK`。`release-desktop` / `efficacy` 未触发（符合预期）。
