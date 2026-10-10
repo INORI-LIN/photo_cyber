@@ -3,10 +3,10 @@
 一个离线优先的照片防盗工具，通过三层组合保护降低直接搬运和 AI 二次编辑风险：
 
 1. **隐形水印**：DWT-DCT-SVD 频域嵌入，用于事后确权；
-2. **PhotoGuard 对抗扰动**：攻击 Stable Diffusion VAE encoder，增加 AI 去水印、换脸和重绘成本；
+2. **PhotoGuard 对抗扰动**：攻击 Stable Diffusion VAE encoder，增加 AI 去水印、换脸和重绘成本（只实现 encoder-attack 变体，强度未测量；见「已知边界」）；
 3. **明水印**：绑定人脸或主体区域，或以低透明度网格覆盖全图。
 
-> 本工具用于抬高盗用成本并提供确权线索，不承诺阻止保存、截图、全图重绘或未来模型攻击。
+> 本工具用于抬高盗用成本并提供确权线索，不承诺阻止保存、截图、全图重绘或未来模型攻击（PhotoGuard 扰动亦然：抬高成本，非必然崩坏）。
 
 ## 功能概览
 
@@ -381,13 +381,13 @@ uv run python packaging/build_desktop.py
 ## 已知边界
 
 - 隐水印可能在大幅裁剪、多轮强压缩或全图重绘后丢失；
-- **信封回环不是长度无关的**：实测（2026-09-23，两张测试图 × payload 1–66 字节）修复前本机成品的验真通过率仅 31/66 与 17/66，且失败长度取决于图像与 payload 内容；载体改到亮度通道 + step 72 并修掉库的细节带互换后，本机成品与再叠一轮平台压缩均已 66/66（见 `docs/fix-plan.md` P10/P11）；
+- **信封回环不是长度无关的**：历史实测（2026-09-23，两张测试图 × payload 1–66 字节；该轮未记录 commit sha）修复前本机成品的验真通过率仅 31/66 与 17/66，且失败长度取决于图像与 payload 内容；载体改到亮度通道 + step 72 并修掉库的细节带互换后，本机成品与再叠一轮平台压缩均已 66/66（见 `docs/fix-plan.md` P10/P11）；
 - **平台二次压缩是验真的主要敌人**：上传后平台会按 4:2:0 重新采样色度（本机保存同样如此）。实测把成品缩小一半再放大后，**四个参数组合全部无法验真** —— 请把 `verify` 的通过理解为「这个本地文件可读」，不要理解为「上传后仍可验真」；
 - Haar 人脸检测对侧脸、遮挡和多人场景能力有限；
 - 输入契约（见上文）之外的边界：HEIC/HEIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）、ICC 原样保留但**不做色彩管理**（源在何种色域，成品仍在何种色域）；
-- PhotoGuard 效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
+- **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零）；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
 - 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
-- 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。
+- 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。首轮实测（2026-10-09，`138022c`，本机 noise 档）：36 格中 **30 格通过**，其中指定格 textured_detail 的 identity 与 jpeg_q85 均 100%（37 B 信封 / 296 bit）；`downscale_720` 与 `combo_repost` 全数失败——与「缩小后无法验真」的已知边界一致。
 
 ## 参考
 
