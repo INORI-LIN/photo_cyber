@@ -131,3 +131,24 @@ def test_protect_sd_is_byte_reproducible(tmp_path) -> None:
     pipeline.protect(source, second, options)
 
     assert first.read_bytes() == second.read_bytes()
+
+
+def test_latent_delivery_ratio_is_measurable(attack) -> None:
+    """P5: `latent_norm` measures the encoder response on a real image (CPU).
+
+    `latent_norm` is the accessor the P5 retention statement is measured with; the
+    pair (clean, delivered) must yield finite positive norms, and the encoder attack
+    must move the delivered norm below the clean one (its objective is MSE toward a
+    zero latent, and MSE(latent, 0) is proportional to the squared norm). The size is
+    a non-multiple of 8 on purpose, so the pad path inside `_to_tensor` is exercised
+    for real.
+    """
+    import math
+
+    image = _image(size=(65, 47))
+    clean = attack.latent_norm(image)
+    delivered = attack.latent_norm(attack.attack(image))
+
+    assert math.isfinite(clean) and clean > 0
+    assert math.isfinite(delivered) and delivered > 0
+    assert 0.0 < delivered / clean < 1.0

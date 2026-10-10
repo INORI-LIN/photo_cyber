@@ -1,4 +1,21 @@
-"""Offline PhotoGuard-style PGD attack against a Stable Diffusion VAE encoder."""
+"""Offline PhotoGuard-style PGD attack against a Stable Diffusion VAE encoder.
+
+Scope and known deviations, deliberate and recorded for P5:
+
+- ``zero target``: this implements the *encoder-attack* variant only (push the
+  encoder latents toward zero). The diffusion attack variant is not implemented,
+  and no measured comparison of the two exists.
+- The input is the image *after* the invisible layer, so a delivered product carries
+  the composed watermark + perturbation; this module never sees the raw source.
+- The delivered perturbation is quantized to ``uint8`` (respecting the L-inf budget,
+  ±``epsilon``, 8/255 by default) and then written as ``JPEG`` (q85) by the save
+  path: the delivered bytes are never the raw PGD tensor, and this code makes no
+  claim about how much of it survives that re-encode.
+- The visible watermark is composited after the attack and scales the residual by
+  roughly (1 - alpha).
+- ``fp16`` on CUDA/MPS is untested: byte-level reproducibility is promised for
+  CPU/float32 only (P1).
+"""
 from __future__ import annotations
 
 import os
@@ -100,24 +117,41 @@ class _SDEncoderAttack:
         except (RuntimeError, TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _validate_bgr(image_bgr: np.ndarray) -> None:
+        """Cheap input checks (P1 ran them before the model load; P5 extracted them).
+
+        The two messages and the "validation precedes loading" order are pinned by
+        ``tests/test_photoguard_shape.py``.
+        """
+        if image_bgr.ndim != 3 or image_bgr.shape[2] != 3:
+            raise ValueError("PhotoGuard expects a three-channel BGR image")
+        if image_bgr.shape[0] == 0 or image_bgr.shape[1] == 0:
+            raise ValueError("PhotoGuard cannot process an empty image")
+
+    def _to_tensor(self, image_bgr: np.ndarray):
+        """BGR uint8 → padded [-1,1] tensor on this attack's device/dtype (P5).
+
+        Pure conversion — no validation, no lazy load — so :meth:`attack` and
+        :meth:`latent_norm` share one preprocessing path and keep their own ordering.
+        """
+        rgb = image_bgr[:, :, ::-1].astype(np.float32) / 255.0
+        rgb = pad_to_multiple_of_8(rgb)
+        x = self._torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(
+            self._device, dtype=self._dtype
+        )
+        return x * 2.0 - 1.0
+
     def attack(self, image_bgr: np.ndarray) -> np.ndarray:
         # P1: input validation runs *before* the model load — a bad call must fail fast and
         # cheaply (and the fast-tier bad-input test must not depend on torch being installed).
-        if image_bgr.ndim != 3 or image_bgr.shape[2] != 3:
-            raise ValueError("PhotoGuard expects a three-channel BGR image")
-        h, w = image_bgr.shape[:2]
-        if h == 0 or w == 0:
-            raise ValueError("PhotoGuard cannot process an empty image")
+        self._validate_bgr(image_bgr)
 
         self._ensure_loaded()
         torch = self._torch
 
-        rgb = image_bgr[:, :, ::-1].astype(np.float32) / 255.0
-        rgb = pad_to_multiple_of_8(rgb)
-        x_orig = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0).to(
-            self._device, dtype=self._dtype
-        )
-        x_orig = x_orig * 2.0 - 1.0
+        h, w = image_bgr.shape[:2]
+        x_orig = self._to_tensor(image_bgr)
 
         # The image spans [0,1] but PGD works on [-1,1], so the budget and the step are
         # doubled exactly once here; `delta` is clamped back in that same doubled space.
@@ -150,6 +184,21 @@ class _SDEncoderAttack:
         out = out.clamp(0.0, 1.0).squeeze(0).permute(1, 2, 0).cpu().numpy()
         out = out[:h, :w]
         return ((out * 255.0 + 0.5).astype(np.uint8))[:, :, ::-1].copy()
+
+    def latent_norm(self, image_bgr: np.ndarray) -> float:
+        """L2 norm of the encoder's mean latent for ``image_bgr`` (P5).
+
+        The retention measurement applies this to the clean and the perturbed product;
+        it shares :meth:`_to_tensor` with :meth:`attack` so both see identical
+        preprocessing. Validation runs before the load (P1), and the reduction is
+        no-grad and cast to float32 first so fp16 devices cannot overflow it into
+        ``inf`` (CPU is a no-op).
+        """
+        self._validate_bgr(image_bgr)
+        self._ensure_loaded()
+        with self._torch.no_grad():
+            latent = self._encode_mean(self._to_tensor(image_bgr))
+            return float(latent.float().norm())
 
     def _encode_mean(self, x):
         return self._vae.encode(x).latent_dist.mean
