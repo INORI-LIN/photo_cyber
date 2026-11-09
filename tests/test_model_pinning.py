@@ -93,3 +93,28 @@ def test_the_download_pins_the_revision_and_filters_formats(monkeypatch, tmp_pat
     assert tuple(kwargs["allow_patterns"]) == ("*.json", "*.safetensors"), kwargs
     # Removed in P15: huggingface_hub 1.19 no longer has this parameter at all.
     assert "local_dir_use_symlinks" not in kwargs, kwargs
+
+
+def test_download_without_huggingface_hub_is_actionable(monkeypatch, tmp_path) -> None:
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)
+    with pytest.raises(RuntimeError, match="uv sync --extra photoguard"):
+        download.download_sd_vae(dest=tmp_path / "model")
+
+
+def test_download_defaults_to_models_dir_and_creates_parent(monkeypatch, tmp_path) -> None:
+    captured: list[dict] = []
+
+    def fake_snapshot_download(**kwargs):
+        captured.append(kwargs)
+        return str(kwargs["local_dir"])
+
+    _stub(monkeypatch, "huggingface_hub", snapshot_download=fake_snapshot_download)
+    models_dir = tmp_path / "models"
+    monkeypatch.setattr(config, "PHOTOGUARD_MODELS_DIR", models_dir)
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_NAME", "sd-vae-ft-mse")
+
+    dest = download.download_sd_vae()
+
+    assert dest == models_dir / "sd-vae-ft-mse"
+    assert dest.parent.is_dir()
+    assert captured[0]["local_dir"] == str(dest)
