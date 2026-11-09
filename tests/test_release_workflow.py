@@ -203,3 +203,16 @@ def test_wheel_smoke_installs_both_built_wheels_not_the_source_tree() -> None:
     assert body.index('"$wheel" >>') < body.index('"$UV" pip sync')
     assert body.index('"$UV" pip sync') < body.index("import photo_guard")
     assert "License-Expression" in body and 'photo-guard" --help' in body
+
+
+# P23：ISCC 必须先解析再调用；缺失时由 resolver 与显式退码检查共同响亮失败。
+def test_windows_installer_resolves_iscc_before_building() -> None:
+    locate = _code(_step_containing("find_iscc.py", job="windows"))
+    assert "uv run --no-sync python packaging\\find_iscc.py" in locate
+    assert "$LASTEXITCODE" in locate and "throw" in locate
+    assert "GITHUB_ENV" in locate
+
+    build = _code(_step_containing("windows-installer.iss", job="windows"))
+    assert "C:\\Program Files" not in build
+    assert "$env:ISCC" in build
+    assert build.index("$env:ISCC") < build.index("$LASTEXITCODE")

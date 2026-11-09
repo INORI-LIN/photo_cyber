@@ -217,7 +217,7 @@ uv run photo-guard protect input.jpg
 ### 8.7 桌面与打包
 
 - 图像处理必须在 worker 线程（`QThread` + `moveToThread`），**绝不**跑在 Qt 主线程。
-- 打包入口 `packaging/desktop_entry.py`（支持 `--smoke-test`）；`packaging/build_desktop.py` **必须在目标 OS 上运行**（Windows x64 / Apple Silicon macOS，不支持 Intel macOS）。
+- 打包入口 `packaging/desktop_entry.py`（支持 `--smoke-test`）；`packaging/build_desktop.py` **必须在目标 OS 上运行**（Windows x64 / Apple Silicon macOS，不支持 Intel macOS）。Windows 安装器的 ISCC 路径由 `packaging/find_iscc.py` 解析（`ISCC_PATH` → PATH → 注册表 → 默认目录）；显式 `ISCC_PATH` 无效或全部候选缺失时 release 步骤响亮失败，不得回退硬编码路径。
 
 ---
 

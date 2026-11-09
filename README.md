@@ -284,6 +284,7 @@ src/photo_guard/
 
 packaging/
 ├── build_desktop.py         # Nuitka 分平台构建（版本只从 pyproject.toml 读）
+├── find_iscc.py             # ISCC 路径解析（ISCC_PATH → PATH → 注册表 → 默认目录）
 ├── windows-installer.iss    # Windows Inno Setup（版本由 /DMyAppVersion 注入）
 ├── create_dmg.sh            # macOS DMG
 ├── smoke_wheel.sh           # sdist/wheel 构建与隔离安装冒烟
@@ -364,6 +365,8 @@ Windows 和 macOS 必须在各自 runner 上构建，不能交叉生成。工作
 5. 执行无 GUI 烟雾测试（同时校验许可材料确实在包内）；
 6. 生成安装包/DMG 和 SHA-256 文件；
 7. 上传 GitHub Actions artifact；tag 推送时同时附到 GitHub Release。
+
+Windows 构建要求 runner 已安装 Inno Setup 6。workflow 通过 `packaging/find_iscc.py` 依次从 `ISCC_PATH`、`PATH`、注册表和默认安装目录解析 `ISCC.exe`；显式设置 `ISCC_PATH` 但路径无效时直接失败，不会静默回退。找不到编译器时该步响亮失败，不会退回硬编码路径。
 
 **版本号只住在 `pyproject.toml`**：Nuitka 的 file/product/macos-app 版本、Inno Setup 的 `AppVersion`（经 `/DMyAppVersion=` 注入）与发布闸门都从它读。改版本后请跑 `uv lock && git diff --exit-code -- uv.lock`，tag 必须是 `v<版本>`。
 

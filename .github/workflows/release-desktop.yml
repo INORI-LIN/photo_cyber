@@ -87,12 +87,30 @@ jobs:
             if (-not $found) { throw "$name is missing from dist\desktop_entry.dist" }
             Write-Host "found: $($found.FullName)"
           }
+      - name: Locate ISCC (P23)
+        shell: powershell
+        run: |
+          # The resolver checks ISCC_PATH -> PATH -> the Inno Setup registry entries
+          # -> the two Program Files locations.  Native commands do not throw on a
+          # non-zero exit under $ErrorActionPreference, so check the code explicitly.
+          $raw = uv run --no-sync python packaging\find_iscc.py
+          $code = $LASTEXITCODE
+          $ISCC = ($raw | Select-Object -Last 1)
+          if ($null -eq $ISCC) { $ISCC = "" } else { $ISCC = $ISCC.Trim() }
+          if ($code -ne 0) { throw "ISCC resolver failed (exit $code)" }
+          if (-not (Test-Path -LiteralPath $ISCC -PathType Leaf)) {
+            throw "ISCC.exe not found at '$ISCC'"
+          }
+          # GITHUB_ENV is shared with later steps; UTF-8 without BOM is what the runner reads.
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "ISCC=$ISCC`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "ISCC: $ISCC"
       - name: Build installer
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           $V = (uv run --no-sync python packaging\build_desktop.py --print-version).Trim()
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$V" packaging\windows-installer.iss
+          & $env:ISCC "/DMyAppVersion=$V" packaging\windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed (exit $LASTEXITCODE)" }
       - name: Checksums (SHA256, sha256sum-compatible)
         shell: powershell
         run: |
