@@ -132,7 +132,7 @@ def test_only_tag_pushes_publish_after_both_platforms_and_verify() -> None:
     ):
         build = _job(job)
         assert "needs: verify" in build
-        assert "actions/upload-artifact@v4" in build
+        assert "actions/upload-artifact@v7" in build
         assert f"name: {artifact}" in build
         assert "contents: write" not in build
         assert "gh release" not in _code(build)
@@ -157,7 +157,7 @@ def test_publish_checks_each_download_before_upload() -> None:
     windows = _step_containing("name: PhotoGuard-Windows-x64", job="publish")
     macos = _step_containing("name: PhotoGuard-macOS-arm64", job="publish")
     for step, directory in ((windows, "windows"), (macos, "macos-arm64")):
-        assert "actions/download-artifact@v4" in step
+        assert "actions/download-artifact@v8" in step
         assert f"path: release/{directory}" in step
 
     # 文件存在但未列入清单也不能算已验证；两份清单必须在各自目录核对。

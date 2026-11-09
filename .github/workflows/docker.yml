@@ -9,6 +9,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,39 +23,62 @@ jobs:
     # ~11 min release build plus a cold test-target build and the smokes with headroom.
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GitHub-hosted runners come with ~14GB free; our image exports torch
       # + nvidia-cudnn/cublas + SD VAE which together unpack to ~6GB and
       # that's before buildx's own cache. Free up the language toolchains
-      # we don't use (dotnet, android, ghc, hosted tool cache, swap) — gives
+      # we don't use (dotnet, android, ghc, pre-installed runtimes, swap) — gives
       # ~30GB headroom and is the canonical fix for "no space left on device"
-      # in container builds on ubuntu-latest.
+      # in container builds on ubuntu-latest. Pinned to v2.0.0 (G11): a floating
+      # @main branch would run third-party code with this workflow's token.
       - name: Free up disk space on the runner
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6  # v2.0.0
         with:
-          tool-cache: true
+          preinstalled-runtimes: true
           android: true
           dotnet: true
           haskell: true
           large-packages: false
           swap-storage: true
 
+      - name: Record runner UID/GID
+        # P22: the image's non-root app user must match the host owner of the
+        # bind-mounted fixtures directory, otherwise every docker-run smoke
+        # that writes /work fails with EACCES.
+        run: |
+          test -n "$(id -u)" && test -n "$(id -g)"
+          echo "RUNNER_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "RUNNER_GID=$(id -g)" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: photo-guard:ci
           push: false
           load: true
+          build-args: |
+            UID=${{ env.RUNNER_UID }}
+            GID=${{ env.RUNNER_GID }}
           # Cache the torch+diffusers+model layers across runs — without
           # this, every CI run re-downloads ~5 GB of wheels and the SD
           # VAE.
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: P22 — image runs as the matching non-root user
+        # The entrypoint is the photo-guard CLI, so `docker run <img> id -u`
+        # would pass "id" as a CLI argument; override the entrypoint instead.
+        run: |
+          actual_uid=$(docker run --rm --entrypoint id photo-guard:ci -u)
+          echo "image uid=$actual_uid runner uid=$(id -u)"
+          test "$actual_uid" = "$(id -u)"
+          test "$(docker inspect --format '{{.Config.User}}' photo-guard:ci)" = "app"
+          docker inspect --format '{{json .Config.Healthcheck}}' photo-guard:ci | grep -F 'photo-guard'
 
       # G8：使用刚构建的实际镜像离线核对 Linux 段；缺行或多行直接阻断冒烟。
       - name: Linux third-party notices must match the image
@@ -164,7 +194,10 @@ jobs:
       # (pytest lives there; the release image stays --no-dev so the notices gate above keeps
       # holding). tests/ is out of the build context on purpose — it is bind-mounted instead.
       - name: Build test image (dev group, slow tier)
-        run: docker build --target test -t photo-guard:test .
+        run: |
+          docker build --target test \
+              --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
+              -t photo-guard:test .
 
       - name: Slow-tier preflight (torch, diffusers, photo_guard, model dir)
         run: |

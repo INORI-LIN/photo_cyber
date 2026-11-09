@@ -24,6 +24,9 @@ dependencies = [
 photo-guard = "photo_guard:main"
 photo-guard-gui = "photo_guard.gui:main"
 
+[project.urls]
+Repository = "https://github.com/INORI-LIN/photo_cyber"
+
 [project.optional-dependencies]
 photoguard = [
     "accelerate>=1.14.0",

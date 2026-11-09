@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
@@ -13,10 +20,12 @@ jobs:
       fail-fast: false
       matrix:
         # macos-15 is a release target (see release-desktop.yml), so it runs per PR.
-        os: [ubuntu-latest, windows-latest, macos-15]
+        # F′1-TEMP(sunset 2026-11-19): ubuntu-26.04 is the migration pre-check leg;
+        # ubuntu-latest rolls to 26.04 by then, so remove this leg afterwards.
+        os: [ubuntu-latest, ubuntu-26.04, windows-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Compliance grep (AGENTS.md 6.4)
         # Linux-only because the AGENTS.md §6.4-style grep is shell-specific.
@@ -37,7 +46,7 @@ jobs:
             exit 1
           fi
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -96,11 +105,13 @@ jobs:
   gui:
     # G6: the GUI tier had no coverage anywhere — `-m gui` skipped silently on every leg
     # because the core+dev sync does not install PySide6.
-    runs-on: ubuntu-latest
+    # F′1-TEMP(sunset 2026-11-19): run the GUI tier on 26.04 while ubuntu-latest
+    # is still 24.04; switch back to ubuntu-latest after the migration completes.
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 

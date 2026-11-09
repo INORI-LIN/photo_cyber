@@ -37,6 +37,10 @@ wheels/
 # Local plans / docs that aren't needed at runtime
 .claude/
 .claude-internal/
+docs/
+
+# Desktop packaging outputs (installers/DMGs) — never part of the image context
+release/
 
 # The Dockerfile itself doesn't need to be in the image
 Dockerfile

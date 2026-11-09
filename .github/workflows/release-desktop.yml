@@ -8,13 +8,18 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A release must never be cancelled midway through publishing; queue instead.
+  cancel-in-progress: false
+
 jobs:
   verify:
     # G5/G6: nothing is built until the fast tier is green and the tag matches pyproject.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv python install 3.11
@@ -61,8 +66,8 @@ jobs:
     needs: verify
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv python install 3.11
@@ -106,7 +111,7 @@ jobs:
           # cannot be clobbered by this one in the shared release.
           [System.IO.File]::WriteAllText("$PWD\release\SHA256SUMS-Windows-x64.txt",
             (($sums -join "`n") + "`n"), [System.Text.Encoding]::ASCII)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: PhotoGuard-Windows-x64
           path: release/*
@@ -115,8 +120,8 @@ jobs:
     needs: verify
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv python install 3.11
@@ -174,7 +179,7 @@ jobs:
               case "$f" in SHA256SUMS*) continue;; esac
               shasum -a 256 "$f"
             done ) > release/SHA256SUMS-macOS-arm64.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: PhotoGuard-macOS-arm64
           path: release/*
@@ -186,11 +191,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: PhotoGuard-Windows-x64
           path: release/windows
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: PhotoGuard-macOS-arm64
           path: release/macos-arm64

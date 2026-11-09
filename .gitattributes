@@ -5,3 +5,8 @@
 /LICENSE text eol=lf
 /THIRD_PARTY_NOTICES.md text eol=lf
 /licenses/*.txt text eol=lf
+
+# Shell scripts and the Dockerfile are executed verbatim on Linux; keep LF even
+# when a Windows checkout has core.autocrlf=true (G11).
+*.sh text eol=lf
+Dockerfile text eol=lf

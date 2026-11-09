@@ -200,7 +200,11 @@ PhotoGuard 会先将图像边缘补齐到 8 的倍数，处理后裁回原尺寸
 Docker 镜像包含 PhotoGuard 依赖和本地模型，运行时设置离线模式：
 
 ```bash
-docker build -t photo-guard:dev .
+# 镜像默认以 UID 1000 的 app 用户运行。若宿主机 UID 不同（macOS 常见 501），
+# 构建时必须传入 uid/gid，否则 -v 挂载目录对容器用户不可写。
+docker build \
+  --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
+  -t photo-guard:dev .
 
 docker run --rm -v "$PWD:/work" photo-guard:dev \
   protect /work/input.jpg -o /work/output.jpg \
@@ -213,12 +217,16 @@ docker run --rm --gpus all -v "$PWD:/work" photo-guard:dev \
   --perturber sd
 ```
 
+容器默认以非 root 的 `app` 用户运行（UID/GID 由构建参数决定）。若宿主机 UID 与构建时不一致，可在 `docker run` 上加 `--user "$(id -u):$(id -g)"`，并把 `HOME`、`UV_CACHE_DIR` 指到可写目录；否则 `-v` 挂载目录可能不可写。
+
 ### 冒烟（与 `.github/workflows/docker.yml` 一致）
 
 先在 `fixtures/` 下准备一张 `in.jpg`；镜像名为 `photo-guard:ci`：
 
 ```bash
-docker build -t photo-guard:ci .
+docker build \
+  --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
+  -t photo-guard:ci .
 
 # ① noise 扰动：保护后立刻验证
 docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
@@ -245,7 +253,9 @@ docker run --rm -v "$PWD/fixtures:/work" photo-guard:ci \
 # 同上：整行为 线索（未验证）: ci-test、退出码 3（SD 产物同为 raw payload）
 
 # ③ 真 SD 慢档（P1）：pytest 在显式 test target 里（发布镜像保持 --no-dev，不动许可门）
-docker build --target test -t photo-guard:test .
+docker build --target test \
+  --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
+  -t photo-guard:test .
 docker run --rm --network none -v "$PWD/tests:/app/tests:ro" --entrypoint uv \
   photo-guard:test run --project /app --no-sync \
   pytest -m slow -v -rs /app/tests/test_photoguard_slow.py

@@ -25,7 +25,9 @@
 # official ghcr image, and packages/models from PyPI (`uv sync`) plus this
 # `download-models` step.
 
-FROM python:3.11-slim AS runtime
+# P22: the base is pinned by digest (tag kept for humans) so a rebuild cannot
+# silently pick up a different Debian suite. Refresh the digest deliberately.
+FROM python:3.11-slim-trixie@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS runtime
 
 # The CLI prints Chinese status text (the clue label on the checksum-less verify path), and
 # this base image ships with no locale of its own. CPython's PEP 538 C-locale coercion happens
@@ -39,7 +41,7 @@ ENV LANG=C.UTF-8 \
 # uv binary, copied from Astral's official image — never installed via
 # pip and never via a `curl | sh` bootstrap. AGENTS.md §6 forbids pip;
 # this is the recommended Astral pattern.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 
 # Minimal native deps for the wheels we use.
 # - libgomp1: OpenMP runtime, linked by numpy/torch wheels.
@@ -100,6 +102,22 @@ RUN uv run --no-sync photo-guard download-models
 # G8：模型下载层之后才拷入公告生成器，避免改动触发重装依赖或重新下载模型。
 COPY packaging/generate_notices.py /app/packaging/
 
+# P22: run as a non-root user. The UID/GID are build args so a local build can
+# match the host owner of the bind-mounted work directory (the default 1000 is
+# the usual first Linux user; macOS users should pass `id -u`/`id -g`). The
+# user is created after the model download so changing it does not invalidate
+# the multi-GB torch/model layers.
+ARG UID=1000
+ARG GID=1000
+RUN groupadd --gid "$GID" app \
+ && useradd --uid "$UID" --gid "$GID" --create-home --shell /usr/sbin/nologin app \
+ && install -d -o app -g app /work
+USER app
+# A CLI image has no long-running service to probe; this only proves that the
+# venv and console script still start. It is not a claim about processing health.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD ["/app/.venv/bin/photo-guard", "--help"]
+
 # Lock runtime to offline mode — matches the os.environ.setdefault calls
 # in photoguard.py, but applied unconditionally so users can't accidentally
 # trigger a HuggingFace request from inside the container.
@@ -121,6 +139,11 @@ CMD ["--help"]
 # explicit `test` target, and the `release` stage at the end re-declares the release image so a
 # plain `docker build .` keeps producing it (Docker builds the *last* stage by default).
 FROM runtime AS test
+
+# P22: the sync writes /app/.venv and pytest writes its cache under /app, both
+# owned by root in the runtime layer. Switch back to root for this build-time
+# stage only; the release image above remains the non-root `app` user.
+USER root
 
 # WORKDIR must switch to /app *before* the sync: `runtime` ends on /work (the user mount
 # point), which has no pyproject.toml, so a sync there would fail. dev group = pytest; the
