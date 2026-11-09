@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from photo_guard import config
+from photo_guard import config, device
 
 _ENTRY = Path(__file__).resolve().parents[1] / "packaging" / "desktop_entry.py"
 
@@ -113,3 +113,17 @@ def test_smoke_test_lists_the_roots_it_looked_in(monkeypatch, tmp_path, capsys) 
     err = capsys.readouterr().err
     assert "LICENSE" in err and "THIRD_PARTY_NOTICES.md" in err
     assert str(contents / "Resources") in err and str(macos) in err
+
+
+def test_smoke_test_rejects_a_machine_without_a_cpu_device(monkeypatch, tmp_path) -> None:
+    """A discovery result with only unsupported adapters must fail code 3, not pass."""
+    entry = _load_entry()
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(tmp_path))
+    monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(_bundle_root(tmp_path)))
+    monkeypatch.setattr(
+        device,
+        "discover_devices",
+        lambda **kwargs: [device.DeviceInfo("unsupported", "GPU", supported=False)],
+    )
+
+    assert entry._smoke_test() == 3

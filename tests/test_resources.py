@@ -114,3 +114,49 @@ def test_the_source_tree_layout_is_unchanged(monkeypatch) -> None:
     roots = resources.candidate_roots()
     assert len(roots) == 1
     assert resources.find_resource("pyproject.toml") == roots[0] / "pyproject.toml"
+
+
+def test_compiled_marker_uses_the_frozen_branch(monkeypatch, tmp_path) -> None:
+    """Nuitka sets ``__compiled__`` in the module globals even without ``sys.frozen``."""
+    monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(resources, "__compiled__", True, raising=False)
+    exe = tmp_path / "dist" / "desktop_entry.exe"
+    exe.parent.mkdir()
+    exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(exe))
+
+    assert resources.candidate_roots() == (exe.parent.resolve(),)
+
+
+def test_windows_flat_layout_resolves_beside_the_executable(monkeypatch, tmp_path) -> None:
+    """The Windows standalone build keeps data next to the executable (no app bundle)."""
+    monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delattr(resources, "__compiled__", raising=False)
+    exe = tmp_path / "dist" / "desktop_entry.exe"
+    exe.parent.mkdir()
+    exe.write_text("", encoding="utf-8")
+    (exe.parent / "models").mkdir()
+    (exe.parent / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(exe))
+
+    root = exe.parent.resolve()
+    assert resources.candidate_roots() == (root,)
+    assert resources.find_resource("models") == root / "models"
+    assert resources.find_resource("LICENSE") == root / "LICENSE"
+
+
+def test_override_expands_user(monkeypatch, tmp_path) -> None:
+    """``PHOTO_GUARD_RESOURCE_DIR=~/...`` must expand rather than create a literal ``~``."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", "~/pinned")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    assert resources.candidate_roots() == ((home / "pinned").resolve(),)
