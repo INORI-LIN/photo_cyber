@@ -26,7 +26,10 @@ def _build_parser() -> argparse.ArgumentParser:
     protect.add_argument("--visible-text", default=config.DEFAULT_VISIBLE_TEXT)
     protect.add_argument("--visible-alpha", type=float, default=config.DEFAULT_VISIBLE_ALPHA)
     protect.add_argument("--long-edge", type=int, default=config.DEFAULT_LONG_EDGE, help="0 keeps original size")
-    protect.add_argument("--quality", type=int, default=config.DEFAULT_JPEG_QUALITY)
+    protect.add_argument(
+        "--quality", type=int, default=config.DEFAULT_JPEG_QUALITY,
+        help="JPEG quality 1-100; ignored for PNG output",
+    )
     protect.add_argument("--payload-envelope", action="store_true", help="Embed a versioned payload with CRC integrity checking")
 
     group = protect.add_argument_group("PhotoGuard SD attack")
@@ -111,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("perturber steps must be positive")
                 if args.perturber_eps <= 0 or args.perturber_step_size <= 0:
                     raise ValueError("perturber epsilon/step size are invalid")
+            output_format = pipeline.save_format(args.output)
             kwargs: dict[str, object] = {}
             if args.perturber == "sd":
                 kwargs.update(
@@ -130,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
                     payload_envelope=args.payload_envelope,
                 ),
             )
+            if output_format == "PNG":
+                print("warning: writing PNG, not JPEG", file=sys.stderr)
             print(
                 f"protected: {info['output']} size={info['size'][0]}x{info['size'][1]} "
                 f"layers={'+'.join(info['layers'])} perturber={info['perturber']} "

@@ -1,5 +1,5 @@
 """Canonical pipeline: load (decode + orientation + strip EXIF + keep ICC) → resize →
-invisible → perturb → visible → JPEG."""
+invisible → perturb → visible → save (container chosen by the output extension)."""
 from __future__ import annotations
 
 import os
@@ -32,6 +32,26 @@ class ProtectOptions:
     layers: frozenset[str] = DEFAULT_LAYERS
     payload_envelope: bool = False
     perturber_instance: Any | None = None
+
+
+def save_format(output_path: Path) -> str:
+    """Container implied by the output name: JPEG (default), PNG, or reject.
+
+    ``os.path.splitext`` (not ``Path.suffix``) is deliberate: a trailing dot
+    (``out.``) and a trailing space (``out.jpg ``) must be rejected rather than
+    silently treated as "no extension".  A leading-dot name such as ``.png``
+    has no extension by this rule and keeps the JPEG default.
+    """
+    extension = os.path.splitext(Path(output_path).name)[1]
+    if extension == "":
+        return "JPEG"
+    mapping = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG"}
+    if extension.lower() in mapping:
+        return mapping[extension.lower()]
+    raise ValueError(
+        f"unsupported output extension {extension!r} "
+        f"(supported: .jpg, .jpeg, .png): {output_path}"
+    )
 
 
 def _pil_rgb_to_bgr(image: Image.Image) -> np.ndarray:
@@ -254,6 +274,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     # this is the shared contract point for the CLI, the GUI and programmatic callers.
     if output_path.is_dir():
         raise ValueError(f"output path is a directory: {output_path}")
+    output_format = save_format(output_path)
     src, icc = _load_oriented_rgb(input_path, draft_long_edge=opts.long_edge)
     src = compress.fit_long_edge(src, opts.long_edge)
     bgr = _pil_rgb_to_bgr(src)
@@ -293,7 +314,12 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
             path, opts.payload, envelope=opts.payload_envelope, destination=output_path
         )
     outputs.save_image_atomic(
-        final, output_path, quality=opts.quality, icc_profile=icc, verify=verify
+        final,
+        output_path,
+        image_format=output_format,
+        quality=opts.quality if output_format == "JPEG" else None,
+        icc_profile=icc,
+        verify=verify,
     )
     return {
         "output": str(output_path),

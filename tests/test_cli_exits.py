@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from photo_guard.cli import _tolerate_legacy_console, main
@@ -489,3 +490,60 @@ def test_sd_only_flags_are_ignored_without_perturb_layer(tmp_path: Path) -> None
 
     assert code == 0
     assert out.exists()
+
+
+def test_protect_png_warns_and_exits_zero(tmp_path: Path, capsys) -> None:
+    source = tmp_path / "in.jpg"
+    destination = tmp_path / "out.png"
+    _seed_textured(source)
+    payload = "test#png"
+
+    code = main([
+        "protect", str(source), "-o", str(destination),
+        "--payload", payload, "--payload-envelope",
+    ])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "warning: writing PNG, not JPEG"
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "PNG"
+    assert main(["verify", str(destination)]) == 0
+    assert capsys.readouterr().out.strip() == payload
+
+
+def test_protect_unknown_extension_exits_two_without_writing(tmp_path: Path, capsys) -> None:
+    source = tmp_path / "in.jpg"
+    destination = tmp_path / "out.bmp"
+    _seed_textured(source)
+
+    code = main(["protect", str(source), "-o", str(destination)])
+
+    assert code == 2
+    assert not destination.exists()
+    err = capsys.readouterr().err
+    assert "unsupported output extension '.bmp'" in err
+    assert str(destination) in err
+
+
+@pytest.mark.parametrize("name", ["out.", "out.jpg "])
+def test_protect_bad_tail_exits_two_without_writing(tmp_path: Path, capsys, name: str) -> None:
+    source = tmp_path / "in.jpg"
+    destination = tmp_path / name
+    _seed_textured(source)
+
+    assert main(["protect", str(source), "-o", str(destination)]) == 2
+    assert not destination.exists()
+    assert "unsupported output extension" in capsys.readouterr().err
+
+
+def test_protect_no_extension_stays_jpeg(tmp_path: Path) -> None:
+    source = tmp_path / "in.jpg"
+    destination = tmp_path / "out"
+    _seed_textured(source)
+
+    assert main(["protect", str(source), "-o", str(destination)]) == 0
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "JPEG"
