@@ -44,9 +44,9 @@
 | P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [x] 批次 D3 已落地（2026-09-29）：改独立退码 3 |
 | P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
 | P22 | Dockerfile 无 USER/HEALTHCHECK、base/uv/apt tag 浮动 | low | S | F | 默认 root 运行、镜像 tag 未钉；补非 root 与健康探针、固定 tag。 | [x] F′1 已落地（2026-11-09）：`app` 非 root + UID/GID 构建参数、`HEALTHCHECK`、base digest + uv 0.13.7 钉版；CI 断言见 §10.20 |
-| P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [ ] F′2 待做 |
+| P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [x] F′2 已落地并取证（2026-11-09）：`packaging/find_iscc.py` + workflow 退码闸门；dispatch `42741197178` 的 Windows 真机解析到 `C:\ProgramData\chocolatey\bin\ISCC.exe`，ISCC 编译 424.016s、安装包 SHA 校验 OK，`publish` skipped；见 §10.21 |
 | G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [x] 批次 D2 已落地（`ecdb59d`，并入 G5，不单独立项） |
-| G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [ ] F′2 待做 |
+| G7 | 零覆盖模块：resources/devices/download-models/packaging | med | S-M | F | 打包与联网分支零测试；用环境变量与 monkeypatch 补覆盖。 | [x] F′2 已落地（2026-11-09）：G7a resources+packaging + G7b device/download/CLI 的 core-only 用例；见 §10.21 |
 | P25 | worker 槽抛异常致线程永久存活、窗口关不掉 | low-med | S | C | `run()` 无 try/finally 保证 `finished` 必发；补结构性保证，与 P12 同面。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P26 | 显示窗口下连续两轮保护触发 Qt 重绘异常（offscreen 段错误） | low-med | S | C | 真实平台仅警告、不崩；offscreen 下 SIGSEGV，需 spike 定性（平台 vs 本仓库）。 | [x] 批次 C 已落地（`46f1a8b`） |
 | P27 | verify 退码口径不一致 + `extract_envelope` 缺容量护栏 | med | S | I | 「整图找不到信封」在 `--expected-payload` 路径退 2，另两条 verify 路径同语义退 1；`extract_envelope` 未接 P14 的 `_require_capacity`。 | [x] 批次 I 已落地（`a3fffbd`） |
@@ -93,7 +93,7 @@
 | **M** | P4 → P6 → P5（**拆分推进，2026-10-09 用户裁定**：M1=P4+P6 本轮；**M2=P5 顺延到 N（P9→P1）之后**——P5 硬依赖 P1 的 seed 与由 P1 新建的 `test_photoguard_slow.py`，且 M 原排在 N 之前） | M1：P4 落地前先确认 `sat-selfcheck` 结论已落档（已由 §10.14 落定，口径以该节为准）；`bench/efficacy_matrix.py` 在 core 环境退 0；先红后绿（含 config 依赖例的中间态标注）+ fixture 矩阵先行。M2：P5 的 README 数字取自 P6 的 CSV（带日期+sha、不被测试钉住；正文行号须按内容重定位）。**M1 已完成（2026-10-09）：P4+P6 全部落地——先红 11 例、fixture 矩阵 7/7 PASS、bench noise 档 30/36 pass（钉住行真实 100%；首轮产品发现 downscale_720/combo_repost 各 0/3）、fast 318 passed（collected 与落地前一致）、GUI 20/0 skip、compliance 18 passed、四份 workflow PyYAML 全过；S1/S2/S4、自证法与复核修正（首版 pass 列读错对象已修）见 §10.14。**M2 已完成（2026-10-10）：P5 全部落地——docstring 偏差清单、`_validate_bgr`/`_to_tensor` 抽取与 `latent_norm`（slow 先红 1 例后绿）、`test_perturb_retention.py` 两例（用例 2 改测「扰动残存」，用户裁定）、slow 第 12 例；README 降级句 + 带日期+sha 数字（`138022c` 口径，M2 期复跑同值 30/36）；AGENTS 零 diff；Spike A 直连执行出数（`linf_before=8` 饱和、无频率选择性）；见 §10.17。** |
 | **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步已 CI 取证（docker `37918657113`，慢档 11 passed）。**批次 N 已完成（2026-10-09，`78732f8` P9 + `895b837` P1 + `9d2feaf` docker + 回写）：P9 代码面与 P1 全部落地；spike H1/9A/9C/9D/9E 全过、9F 推送后已取证（docker 18/18 步全绿）；fast 323 passed（collect 334）、slow 11 passed（本机 extra+模型）、临时 core venv 下 slow 全 skip 带理由、gui 20/0 skip、compliance 18、四份 workflow PyYAML + docker.yml 九个 run 块 bash -n 全过；三条裁定（ε 真 L∞、独立 test target、临时 venv 取证）与 M2 接口冻结见 §10.16。** |
 | **O** | P7、P20 | 非 JPEG 输出策略先裁定；P20 先 spike 语义（内容已落盘 + `chmod` 抛错仍退 0 且内容完整）。 |
-| F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11）；**开工首项（2026-10-10）：Ubuntu 26.04 迁移预检 + action 版本升级，详见 §10.18** | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、**`.github/workflows/` 目录 glob 下的全部 workflow 本地 PyYAML 解析（现为四份：`ci`/`docker`/`release-desktop`/`efficacy`——口径已由「三个」升级，防漏解析新增文件）**；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）；**Ubuntu 26.04 预检腿（10-19 前）全绿或豁免登记；run 注解的 Node 20 弃用 warning 清零**。**F′1 已落地（2026-11-09，G11 + P22 + 26.04 第四腿；CI 已取证：ci `42576250788` / docker `42576250849`，见 §10.20）；F′2 = P23 + G7。** |
+| F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11）；**开工首项（2026-10-10）：Ubuntu 26.04 迁移预检 + action 版本升级，详见 §10.18** | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、**`.github/workflows/` 目录 glob 下的全部 workflow 本地 PyYAML 解析（现为四份：`ci`/`docker`/`release-desktop`/`efficacy`——口径已由「三个」升级，防漏解析新增文件）**；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）；**Ubuntu 26.04 预检腿（10-19 前）全绿或豁免登记；run 注解的 Node 20 弃用 warning 清零**。**F′1 已落地（2026-11-09，G11 + P22 + 26.04 第四腿；CI 已取证：ci `42576250788` / docker `42576250849`，见 §10.20）；F′2 已完成（2026-11-09，P23 + G7a/G7b；ci `42588064656` / docker `42588064654` / release dispatch `42741197178`，见 §10.21）。** |
 
 五条硬定序，实施时不得调换：
 
@@ -1776,7 +1776,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - 严重度：low | 工作量：S | 批次：F | 重叠：无 | 触及文件：`packaging/windows-installer.iss`、`release-desktop.yml`
 
 **现象与证据（读码）**
-- `.iss`/workflow 硬编码 `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`。
+- workflow 硬编码 `"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`；`.iss` 本身没有 ISCC 路径（原「.iss/workflow」只对 workflow 成立）。
 - workflow 调用该路径但**无存在性检查**，缺失时的行为没有闸门兜住。
 
 **推荐方案**
@@ -1784,8 +1784,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. 路径改为可配置（环境变量/在 PATH 中查找/注册表探测），不依赖唯一硬编码位置。
 
 **测试与验收**
-- [ ] ISCC 缺失时 workflow 的检查步骤响亮失败（退出非 0）。
-- [ ] 存在时 `.iss` 编译产物可生成（VersionInfo 口径沿用 G5）。
+- [x] ISCC 缺失时 workflow 的检查步骤响亮失败（退出非 0）。—— resolver 的 1/2 分支单测 + `test_windows_installer_resolves_iscc_before_building` 静态锁（2026-11-09）。
+- [x] 存在时 `.iss` 编译产物可生成（VersionInfo 口径沿用 G5）。—— dispatch `42741197178`：resolver `ISCC: C:\ProgramData\chocolatey\bin\ISCC.exe`、`Successful compile (424.016 sec)`、`PhotoGuard-Windows-x64-Setup.exe` 生成，SHA256 清单校验 OK。
 - 命令：在 Windows runner 上触发 `release-desktop.yml` 的检查步骤（本轮未跑，列为待办）
 
 ---
@@ -1849,8 +1849,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 4. `packaging/*`：用 `spec_from_file_location` 加载（G5 已有先例，禁 `import packaging.*`）。
 
 **测试与验收**
-- [ ] 新增用例在 core 环境可收集、可运行（不引联网、不引真模型）；联网相关负控用 monkeypatch 断言错误路由。
-- [ ] fast 档全绿；文档不写死聚合数字。
+- [x] 新增用例在 core 环境可收集、可运行（不引联网、不引真模型）；联网相关负控用 monkeypatch 断言错误路由。—— 2026-11-09：fast 390/402、CI 四腿 370/2/12、gui 20/382；未改 `src/`。
+- [x] fast 档全绿；文档不写死聚合数字。
 - 命令：`uv run --no-sync pytest -m 'not slow' -q`；`uv run --no-sync pytest --collect-only -q`（取值现场跑）
 
 **spike / 裁定与开放问题**
@@ -2416,3 +2416,12 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **本地验证（2026-11-09）**：四份 workflow PyYAML 解析通过；`git check-attr` 显示 `*.sh`/`Dockerfile` 均为 `text eol=lf`，`git ls-files --eol` 全 `i/lf w/lf`（无 renormalize）；`test_ci_hardening.py` + `test_release_workflow.py` 14 passed；fast 档 331 passed / 12 deselected；compliance 18 passed；`~/.local/bin/uv lock --offline` 后 `uv.lock` 零 diff；另用 uv 0.13.7 官方二进制复核同样零 diff（排除 setup-uv v7 默认版本重写锁的风险）。本机无 docker，镜像项只能 CI 取证。
 - **推送与 CI 取证（2026-11-09，sha `e534199`）**：`git push origin main` 一次（`955a910..e534199`，1 提交、非强推、不带 tag；`v0.1.0` tag 对象 `994de7a5` / peeled `9b1ba41` 未动）。**ci run `42576250788` success**：`test (ubuntu-26.04)` / `test (ubuntu-latest)` / `test (macos-15)` / `test (windows-latest)` 各 **311 passed, 2 skipped, 12 deselected**；`gui`（26.04）**20 passed / 323 deselected，0 skip**。**26.04 腿与 gui 首跑即绿**，`smoke_wheel.sh` 在 26.04 上完成双 wheel 构建/隔离安装/入口冒烟。run 注解无 Node 20 弃用；仅剩 setup-uv 缓存争用 warning（两条 ubuntu 腿同键）与 macOS arm64 排队 notice；`ubuntu-latest` 的迁移公告确认 26.04 预检及时。**docker run `42576250849` success**：20 步全绿（含 post/complete），关键证据——P22 步 `image uid=1001 runner uid=1001`、`Config.User=app`、`Healthcheck` 含 `photo-guard`；`notices OK for Linux / x86_64 (62 rows)`；noise/SD 两处 `recovered: 线索（未验证）: ci-test` 整行；test target 构建成功；`slow-tier preflight OK`；慢档 **12 passed in 12.53s**；拒载步 `refusal rc=2`。`release-desktop`/`efficacy` 本轮只做静态锁，未 dispatch；其 action 升版由静态测试与下一次 tag/周一 cron 覆盖。
 - **残留**：P23/G7 留 F′2；`ubuntu-26.04` 第四腿与 gui job 的回切是 2026-11-19 后的独立小提交；base digest 的安全刷新单独排期；头部活进展块仍归 DOC4。两条非阻塞 warning 未在本批处理：setup-uv 缓存争用（两条 ubuntu 腿同键）与 uv 0.13.7 对 `uv_build<0.12` 的 build-system 提示（构建与 wheel 冒烟均成功）。
+
+### 10.21 批 F′2 落地记录（P23 + G7a + G7b，2026-11-09）
+
+- **P23**：新增 `packaging/find_iscc.py`（stdlib only；`ISCC_PATH` → `PATH` → 注册表 `InstallLocation`/`App Paths` → 两个 Program Files 默认目录；0 打印路径、1 未找到、2 显式 env 无效且不回退）。`release-desktop.yml` 的 Windows job 加 `Locate ISCC (P23)`，显式检查 `$LASTEXITCODE`/`Test-Path`，Build installer 改用 `$env:ISCC` 并检查 ISCC 退码。单测 `tests/test_find_iscc.py` 7 例 + `test_release_workflow.py` 静态锁 1 例；README 桌面发布段与 AGENTS §8.7 同步。**真机证据**：dispatch `42741197178` 的 Windows job 中 `Locate ISCC (P23)` success，resolver 输出 `ISCC: C:\ProgramData\chocolatey\bin\ISCC.exe`（PATH 候选，非旧硬编码路径）；`Build installer` success，`Successful compile (424.016 sec)` 生成 `PhotoGuard-Windows-x64-Setup.exe`。
+- **G7a**（resources + packaging）：`test_resources` +3（`__compiled__`、win32 扁平、override `~`）、`test_desktop_entry` +1（无 CPU→3）、新 `test_build_desktop.py` 6 例（print-version 早退、非桌面/Intel mac/缺模型拒绝、Windows/Darwin 命令拼装）、新 `test_generate_notices.py` 9 个测试函数（含 license/source 优先级参数化、compare/replace、`--check` 正负、只改当前段）；`test_find_iscc.py` 7 例归 P23。目标文件 40 passed。
+- **G7b**（device + download + CLI）：`test_device.py` 10 个测试函数（fake torch：no-torch、auto cuda→mps→cpu、显式 cuda index、mps、CPU、`_other_adapters` OSError/坏 JSON/三平台/去重、lspci 缺失、include_unsupported）、`test_model_pinning.py` +2（缺 huggingface_hub、默认 dest+mkdir）、新 `test_cli_setup.py` 4 例（devices 整行、两 help、download 成功/失败退 2）。目标文件 31 passed。
+- **本地验证（2026-11-09）**：fast **390 passed / 12 deselected**、`--collect-only` **402**（现场值，不写死）；compliance 18 passed；`uv.lock` 零 diff；四份 workflow PyYAML 通过。未改 `src/`、`.iss`、依赖或退码。
+- **CI 取证（2026-11-09，sha `de09f9d`）**：ci run `42588064656` **success**——四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **370 passed, 2 skipped, 12 deselected**；gui **20 passed / 382 deselected**。docker run `42588064654` **success**——20 步全绿：P22 `image uid=1001 runner uid=1001`、notices 62 行、noise/SD 两处线索整行、慢档 **12 passed in 12.94s**、拒载 `rc=2`。
+- **release 真机取证（dispatch `42741197178`，2026-11-10）**：`verify` / `windows` / `macos-arm64` 三 job **success**，`publish` **skipped**；Windows 安装包 artifact `PhotoGuard-Windows-x64` 下载后 `shasum -a 256 -c SHA256SUMS-Windows-x64.txt` → **OK**；仓库 Release 仍只有 `v0.1.0`（2026-10-09），未创建新 Release。resolver 走 PATH 找到 Chocolatey 版 ISCC，说明旧硬编码 `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` 并非所有 runner 的可靠位置——P23 的实际价值由本轮真机兑现。
