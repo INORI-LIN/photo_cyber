@@ -153,3 +153,87 @@ def test_help_exits_zero_without_starting_the_event_loop() -> None:
     with pytest.raises(SystemExit) as excinfo:
         gui.main(["--help"])
     assert excinfo.value.code == 0
+
+
+def test_protect_worker_does_not_mutate_caller_options(monkeypatch) -> None:
+    """P7: the worker writes cancel_check/instance into its own copy, never the caller's."""
+    options = pipeline.ProtectOptions(
+        layers=frozenset({pipeline.LAYER_PERTURB}), perturber="sd"
+    )
+    items = [
+        gui.BatchItem(Path("a.jpg"), Path("a_out.jpg")),
+        gui.BatchItem(Path("b.jpg"), Path("b_out.jpg")),
+    ]
+
+    seen: list[pipeline.ProtectOptions] = []
+    monkeypatch.setattr(
+        gui.pipeline, "protect", lambda source, output, opts: seen.append(opts) or {}
+    )
+    sentinel = object()
+    gets: list[tuple[str, dict]] = []
+
+    def fake_get(name, **kwargs):
+        gets.append((name, kwargs))
+        return sentinel
+
+    monkeypatch.setattr(gui.perturb, "get", fake_get)
+
+    worker = gui.ProtectWorker(items, options)
+    worker.run()
+
+    assert worker.options is not options
+    assert options.perturber_kwargs == {}
+    assert options.perturber_instance is None
+    assert len(gets) == 1
+    assert len(seen) == 2 and seen[0] is seen[1] is worker.options
+    assert seen[0].perturber_instance is sentinel
+    assert seen[0].perturber_kwargs["cancel_check"]() is False
+
+
+def test_protect_worker_skips_perturber_without_layer(monkeypatch) -> None:
+    options = pipeline.ProtectOptions(layers=frozenset({pipeline.LAYER_VISIBLE}))
+    items = [gui.BatchItem(Path("a.jpg"), Path("a_out.jpg"))]
+    calls: list[object] = []
+    monkeypatch.setattr(
+        gui.pipeline, "protect", lambda source, output, opts: calls.append(opts) or {}
+    )
+    monkeypatch.setattr(
+        gui.perturb, "get", lambda *a, **k: pytest.fail("must not build a perturber")
+    )
+
+    gui.ProtectWorker(items, options).run()
+
+    assert len(calls) == 1
+
+
+def test_cancel_task_is_idempotent_before_any_task(window) -> None:
+    """P7/T10: a fresh window has no worker; cancel must be a quiet no-op."""
+    window.cancel_task()
+    window.cancel_task()
+
+    assert window.worker is None
+    assert window._threads == []
+
+
+def test_verify_worker_stops_after_current_item_when_cancelled(monkeypatch) -> None:
+    """P7/T10: cancellation is observed between items, not in the middle of one."""
+    calls: list[Path] = []
+    seen: list[str] = []
+    finished: list[bool] = []
+
+    def fake_verify(path, expected):
+        calls.append(path)
+        return {"payload": expected}
+
+    monkeypatch.setattr(gui.pipeline, "verify_expected", fake_verify)
+    worker = gui.VerifyWorker([Path("a.jpg"), Path("b.jpg")], "expected", None)
+    worker.item_done.connect(
+        lambda source, status, detail: (seen.append(source), setattr(worker, "cancelled", True))
+    )
+    worker.finished.connect(finished.append)
+
+    worker.run()
+
+    assert calls == [Path("a.jpg")]
+    assert seen == ["a.jpg"]
+    assert finished == [True]

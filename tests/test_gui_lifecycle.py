@@ -224,3 +224,142 @@ def test_two_shown_rounds_under_offscreen_do_not_crash(tmp_path) -> None:
     )
     assert result.returncode == 0, f"child exited {result.returncode}\n{result.stderr}"
     assert "two shown rounds completed" in result.stdout
+
+
+_CLOSE_ROUNDS = """
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+import time
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from PySide6.QtCore import QEventLoop, QSettings, QTimer
+from PySide6.QtWidgets import QApplication
+
+from photo_guard import config, gui, outputs
+
+work = Path(os.environ["PG_WORK"])
+mode = os.environ["PG_CLOSE_MODE"]
+work_seconds = float(os.environ["PG_WORK_SECONDS"])
+gui._CLOSE_GRACE_SECONDS = float(os.environ["PG_CLOSE_GRACE"])
+gui._CLOSE_RETRY_MS = int(os.environ["PG_CLOSE_RETRY_MS"])
+
+source = work / "in.jpg"
+Image.fromarray(
+    np.random.default_rng(1).integers(40, 210, (240, 320, 3), dtype=np.uint8), "RGB"
+).save(source, quality=90)
+
+
+def fake_protect(source_path, output_path, options):
+    time.sleep(work_seconds)
+    return {}
+
+
+gui.pipeline.protect = fake_protect
+
+
+class CountingWindow(gui.MainWindow):
+    close_events = 0
+
+    def closeEvent(self, event):
+        self.close_events += 1
+        super().closeEvent(event)
+
+
+app = QApplication.instance() or QApplication([])
+app.setQuitOnLastWindowClosed(False)
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(work))
+
+window = CountingWindow()
+window._save_settings = lambda: None
+window.payload.setText(config.DEFAULT_PAYLOAD)
+window.visible_text.setText(config.DEFAULT_VISIBLE_TEXT)
+window.suffix.setText(outputs.DEFAULT_SUFFIX)
+window.layer_invisible.setChecked(False)
+window.layer_sd.setChecked(False)
+window.layer_visible.setChecked(True)
+window.long_edge.setValue(320)
+window.output_dir.setText(str(work))
+window.protect_files.add_paths([source])
+window.show()
+
+
+def pump(milliseconds):
+    loop = QEventLoop()
+    QTimer.singleShot(milliseconds, loop.quit)
+    loop.exec()
+
+
+def pump_until(predicate, timeout_ms=10000):
+    loop = QEventLoop()
+    poll = QTimer()
+    poll.setInterval(10)
+    deadline = QTimer()
+    deadline.setSingleShot(True)
+    poll.timeout.connect(lambda: loop.quit() if predicate() else None)
+    deadline.timeout.connect(loop.quit)
+    poll.start()
+    deadline.start(timeout_ms)
+    loop.exec()
+    poll.stop()
+    assert predicate(), "condition not met"
+
+
+window.start_protect()
+pump(80)  # let the thread start; the fake protect still sleeps
+window.close()
+
+if mode == "within":
+    pump_until(lambda: not window._threads, 10000)
+    pump_until(lambda: not window.isVisible(), 5000)
+    assert window.close_events >= 2, window.close_events
+else:
+    pump(400)
+    assert window.isVisible(), "timeout path must keep the window open"
+    assert window.statusBar().currentMessage() == gui._CLOSE_TIMEOUT_MESSAGE, (
+        window.statusBar().currentMessage()
+    )
+    first = window.close_events
+    pump(300)
+    assert window.close_events == first, (first, window.close_events)
+    pump_until(lambda: not window._threads, 10000)
+    window.close()
+    pump_until(lambda: not window.isVisible(), 5000)
+
+print("CLOSE_OK")
+"""
+
+
+def _run_close_child(tmp_path, *, mode: str, work: float, grace: float, retry_ms: int) -> None:
+    env = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "PG_WORK": str(tmp_path),
+        "PG_CLOSE_MODE": mode,
+        "PG_WORK_SECONDS": str(work),
+        "PG_CLOSE_GRACE": str(grace),
+        "PG_CLOSE_RETRY_MS": str(retry_ms),
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", _CLOSE_ROUNDS],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"child exited {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+    assert "CLOSE_OK" in result.stdout
+    assert "QThread: Destroyed" not in result.stderr
+    assert "Internal C++ object" not in result.stderr
+
+
+def test_close_within_grace_closes_when_worker_finishes(tmp_path) -> None:
+    _run_close_child(tmp_path, mode="within", work=0.3, grace=3.0, retry_ms=20)
+
+
+def test_close_after_grace_keeps_window_and_stops_retrying(tmp_path) -> None:
+    _run_close_child(tmp_path, mode="timeout", work=1.2, grace=0.15, retry_ms=20)

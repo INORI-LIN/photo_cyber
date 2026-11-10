@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse
 import csv
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Iterable
@@ -39,6 +40,13 @@ def _image_filter() -> str:
 
 
 _IMAGE_FILTER = _image_filter()
+
+# P7: a close request during a running batch cancels and retries for a bounded
+# grace period. After the deadline the window stays open with a message; the
+# next explicit close starts a fresh grace period. Never call QThread.terminate().
+_CLOSE_GRACE_SECONDS = 5.0
+_CLOSE_RETRY_MS = 100
+_CLOSE_TIMEOUT_MESSAGE = "任务仍在收尾，窗口保持打开；完成后可再次关闭"
 
 
 class FileListWidget(QListWidget):
@@ -92,7 +100,10 @@ class ProtectWorker(QObject):
     def __init__(self, items: list[BatchItem], options: pipeline.ProtectOptions) -> None:
         super().__init__()
         self.items = items
-        self.options = options
+        # P7: the worker owns a private copy. Writing cancel_check/perturber_instance
+        # into the caller's object made a reused ProtectOptions carry a stale cancel
+        # hook after the batch ended.
+        self.options = replace(options, perturber_kwargs=dict(options.perturber_kwargs))
         self.cancelled = False
 
     @Slot()
@@ -190,6 +201,7 @@ class MainWindow(QMainWindow):
         self._threads: list[QThread] = []
         self.protect_results: list[tuple[str, str, str]] = []
         self.verify_results: list[tuple[str, str, str]] = []
+        self._close_deadline: float | None = None
         tabs = QTabWidget()
         tabs.addTab(self._build_protect_tab(), "照片保护")
         tabs.addTab(self._build_verify_tab(), "水印验证")
@@ -498,8 +510,19 @@ class MainWindow(QMainWindow):
         if self._thread_running():
             self.cancel_task()
             event.ignore()
-            QTimer.singleShot(100, self.close)
+            now = time.monotonic()
+            if self._close_deadline is None:
+                self._close_deadline = now + _CLOSE_GRACE_SECONDS
+                self.statusBar().showMessage("正在取消，当前图片完成后关闭…")
+            if now < self._close_deadline:
+                QTimer.singleShot(_CLOSE_RETRY_MS, self.close)
+            else:
+                # Bounded: stop the automatic re-arm. The user can click close
+                # again to start a new grace period; never terminate the thread.
+                self._close_deadline = None
+                self.statusBar().showMessage(_CLOSE_TIMEOUT_MESSAGE)
             return
+        self._close_deadline = None
         event.accept()
 
 
