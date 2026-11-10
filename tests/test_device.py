@@ -187,8 +187,41 @@ def test_discover_devices_include_unsupported_flag(monkeypatch) -> None:
     monkeypatch.setattr(
         device,
         "_other_adapters",
-        lambda: [device.DeviceInfo("unsupported", "GPU", supported=False)],
+        lambda devices=None: [device.DeviceInfo("unsupported", "GPU", supported=False)],
     )
 
     assert [item.backend for item in device.discover_devices(include_unsupported=False)] == ["cpu"]
     assert [item.backend for item in device.discover_devices()] == ["cpu", "unsupported"]
+
+
+def test_discover_devices_probes_the_ml_backend_once(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def fake_torch_devices():
+        calls["count"] += 1
+        return [device.DeviceInfo("cpu", "CPU")]
+
+    monkeypatch.setattr(device, "_torch_devices", fake_torch_devices)
+    monkeypatch.setattr(device.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(device.shutil, "which", lambda name: None)
+
+    discovered = device.discover_devices()
+
+    assert calls["count"] == 1
+    assert [item.backend for item in discovered] == ["cpu"]
+
+
+def test_other_adapters_reuses_a_supplied_list(monkeypatch) -> None:
+    monkeypatch.setattr(
+        device, "_torch_devices", lambda: pytest.fail("must reuse the supplied device list")
+    )
+    monkeypatch.setattr(device.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        device.subprocess,
+        "run",
+        lambda *a, **k: types.SimpleNamespace(stdout="NVIDIA RTX\nIntel UHD\n"),
+    )
+
+    adapters = device._other_adapters([device.DeviceInfo("cuda", "NVIDIA RTX")])
+
+    assert [item.name for item in adapters] == ["Intel UHD"]

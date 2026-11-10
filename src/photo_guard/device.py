@@ -55,8 +55,13 @@ def _torch_devices() -> list[DeviceInfo]:
     return devices
 
 
-def _other_adapters() -> list[DeviceInfo]:
-    """Best-effort display of adapters not supported by the ML backend."""
+def _other_adapters(devices: list[DeviceInfo] | None = None) -> list[DeviceInfo]:
+    """Best-effort display of adapters not supported by the ML backend.
+
+    ``devices`` lets :func:`discover_devices` reuse the list it already probed;
+    the fallback keeps direct callers working without a second detection.
+    """
+    base = devices if devices is not None else _torch_devices()
     system = platform.system()
     commands: list[list[str]] = []
     if system == "Windows":
@@ -93,7 +98,7 @@ def _other_adapters() -> list[DeviceInfo]:
         else:
             names.extend(x.strip() for x in result.stdout.splitlines() if x.strip())
 
-    supported_names = {d.name.lower() for d in _torch_devices() if d.backend != "cpu"}
+    supported_names = {d.name.lower() for d in base if d.backend != "cpu"}
     return [
         DeviceInfo("unsupported", name, available=True, supported=False)
         for name in dict.fromkeys(names)
@@ -104,7 +109,8 @@ def _other_adapters() -> list[DeviceInfo]:
 def discover_devices(*, include_unsupported: bool = True) -> list[DeviceInfo]:
     devices = _torch_devices()
     if include_unsupported:
-        devices.extend(_other_adapters())
+        extra = _other_adapters(devices)
+        devices.extend(extra)
     return devices
 
 
