@@ -95,7 +95,7 @@ uv run photo-guard protect input.jpg \
   --visible-text "© Alice"
 ```
 
-CLI 默认层为 `invisible,visible`，输出 JPEG 长边默认 1080px、质量 85。`--long-edge 0` 表示保持原尺寸。
+CLI 默认层为 `invisible,visible`；默认输出 JPEG，长边 1080px、质量 85。`-o` 的扩展名决定容器：`.jpg`/`.jpeg` 为 JPEG，`.png` 为 PNG（stderr 打 `warning: writing PNG, not JPEG`，忽略 `--quality`）；`.bmp`/未知扩展名/尾点/尾空格退 2，不落文件。无后缀 `out` 仍按 JPEG。`--long-edge 0` 表示保持原尺寸。
 
 ### 使用新版 CRC payload
 
@@ -165,7 +165,7 @@ uv run photo-guard devices
 | `--visible-text` | `© photo-guard` | 明水印文字 |
 | `--visible-alpha` | `0.10` | 明水印透明度，范围 0–1 |
 | `--long-edge` | `1080` | 输出长边；0 保持原尺寸 |
-| `--quality` | `85` | JPEG 质量，范围 1–100 |
+| `--quality` | `85` | JPEG 质量，范围 1–100；PNG 输出忽略 |
 | `--perturber-eps` | `8/255` | PhotoGuard L∞ 扰动预算 |
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
@@ -176,9 +176,9 @@ uv run photo-guard devices
 
 **输入契约**（唯一 loader，`protect` 与 `verify` 共用）：支持 `JPEG / PNG / WEBP / BMP / TIFF`，其他格式（含 HEIC/HEIF 与 GIF）退 2 并提示先转 JPEG/PNG；像素上限 `64 000 000`（8000×8000），超限在解码前拒绝；只接受单帧图像，多帧输入退 2；按 EXIF Orientation 转置到显示方向后剥除全部 EXIF（含 GPS）；源 ICC 配置文件**原样写入成品、不做色彩空间转换**（源在何种色域，成品仍在何种色域）；透明像素先叠白（`#FFFFFF`）再处理，`alpha=0` 下的隐藏 RGB 不会进入成品。损坏到无法解析的 EXIF 退 2（缺失 EXIF 不受影响）。
 
-退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、不支持的输出扩展名、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
-`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个链接目标已是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换；替换成功后原权限位只回贴到替换后的新产物（路径不是符号链接时，效果是只读的输出文件写后仍只读）；符号链接的旧目标不在回贴范围内，其被解除的写保护不一定恢复（P34，待复现）。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
+`protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask；若内容已落盘但权限回贴失败（exFAT/SMB/NTFS-3G 等不支持 `chmod` 的目标），只发 `RuntimeWarning`，仍以成功退出。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个链接目标已是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换；替换成功后原权限位只回贴到替换后的新产物（路径不是符号链接时，效果是只读的输出文件写后仍只读）；符号链接的旧目标不在回贴范围内，其被解除的写保护不一定恢复（P34，待复现）。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 
 ## 固定处理顺序
 
@@ -188,7 +188,7 @@ uv run photo-guard devices
   → ① 嵌入隐形水印
   → ② 添加对抗扰动
   → ③ 添加明水印
-  → JPEG 保存
+  → 按输出扩展名保存（JPEG/PNG）
 ```
 
 `--layers` 可以关闭某一层，但不能调整执行顺序。缩放放在隐水印之前，是因为 DWT-DCT-SVD 对后续几何重采样较敏感。
@@ -393,6 +393,7 @@ uv run python packaging/build_desktop.py
 
 ## 已知边界
 
+- `-o out.png` 是 CLI 的显式例外：PNG 无损但体积更大，`--quality` 被忽略；默认与桌面发布件仍为 JPEG；
 - 隐水印可能在大幅裁剪、多轮强压缩或全图重绘后丢失；
 - **信封回环不是长度无关的**：历史实测（2026-09-23，两张测试图 × payload 1–66 字节；该轮未记录 commit sha）修复前本机成品的验真通过率仅 31/66 与 17/66，且失败长度取决于图像与 payload 内容；载体改到亮度通道 + step 72 并修掉库的细节带互换后，本机成品与再叠一轮平台压缩均已 66/66（见 `docs/fix-plan.md` P10/P11）；
 - **平台二次压缩是验真的主要敌人**：上传后平台会按 4:2:0 重新采样色度（本机保存同样如此）。实测把成品缩小一半再放大后，**四个参数组合全部无法验真** —— 请把 `verify` 的通过理解为「这个本地文件可读」，不要理解为「上传后仍可验真」；

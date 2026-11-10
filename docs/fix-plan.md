@@ -22,7 +22,7 @@
 | P4 | 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0 | P1 | S-M（改 `:94` 时转 P6/P7） | 2 → **M1** | 隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。 | [x] 批 M1 已落地（2026-10-09）：写侧预检只做结构上界 + temp 先验后 replace 的成品自检；先红 11 例；见 §10.14 |
 | P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 → **M2** | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [x] 批 M2 已落地（2026-10-10）：docstring 偏差清单 + `latent_norm` + 保留率两例（用例 2 的「低频>高频」指标经六轮探针实测不可达，经用户裁定改测「扰动残存」）+ Spike A 直连出数；README 降级句与带日期+sha 数字；见 §10.17 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 → **M1** | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [x] 批 M1 已落地（2026-10-09）：bench 12 格 + weekly efficacy.yml；本地 noise 档 30/36 pass（复核修正口径，见 §10.14）；S1/S2/S4 结论与读端降级自证法见 §10.14 |
-| P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | 5 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [ ] 未开始 |
+| P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | O1 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [x] O1 已落地（2026-11-09）：`save_format` + PNG 警告 + device 复用列表；GUI 取消/共享 options 留 O2（desktop T8/T9/T10） |
 | P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [x] 批次 L 已落地（2026-10-09）：唯一 loader `_load_oriented_rgb`（EXIF 方向 + 剥 EXIF + 留 ICC）+ 4 个调用点收口；先红 10 例、含 verify 侧 pin；见 §10.13 |
 | P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [x] 批 N 已落地（2026-10-09）：`detect_salient_box` 退化返回 `None` + `_centre_box`（clamp ≥1px）+ docstring 如实；先红 2 例、反向实验双红；P9 单提交态 `-m slow --collect-only` 退 5；见 §10.16 |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
@@ -42,7 +42,7 @@
 | P21 | 死符号 `_SCALE`/`to_dict` 与载体通道无护栏 | low | S | C | 无引用符号待清理；`CARRIER_CHANNEL` 越界会静默不嵌入、校验必失败。 | [x] 批次 C 已落地（`af97a09`+`aadf27d`） |
 | P15 | 模型加载未强制 safetensors、download 无 revision 钉住 | med | M（spike + 代码） | D | 目录含 `.bin` 即走 pickle、下载不可复现；spike 后加格式闸门与版本钉。 | [x] 批次 D3 已落地（2026-09-29）；spike 先出结论后改码 |
 | P19 | 线索路径退 0 与「证据」语义混同 | med | S（待裁定） | D | （重叠：P3）「线索（未验证）」复用成功码；是否改独立退出码待裁定。 | [x] 批次 D3 已落地（2026-09-29）：改独立退码 3 |
-| P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | E | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [ ] 未开始 |
+| P20 | 写成功后 `chmod` 失败会误报写失败 | low | S | O1 | `chmod` 非 best-effort，exFAT/SMB 上内容已落盘却报错（待验证）。 | [x] O1 已落地（2026-11-09）：后置 chmod 降级为 `RuntimeWarning`；单测 + CLI 退 0；真实 exFAT/SMB 手工待办 |
 | P22 | Dockerfile 无 USER/HEALTHCHECK、base/uv/apt tag 浮动 | low | S | F | 默认 root 运行、镜像 tag 未钉；补非 root 与健康探针、固定 tag。 | [x] F′1 已落地（2026-11-09）：`app` 非 root + UID/GID 构建参数、`HEALTHCHECK`、base digest + uv 0.13.7 钉版；CI 断言见 §10.20 |
 | P23 | ISCC 路径硬编码且无存在性检查 | low | S | F | `.iss`/workflow 依赖唯一绝对路径，缺失时无响亮失败。 | [x] F′2 已落地并取证（2026-11-09）：`packaging/find_iscc.py` + workflow 退码闸门；dispatch `42741197178` 的 Windows 真机解析到 `C:\ProgramData\chocolatey\bin\ISCC.exe`，ISCC 编译 424.016s、安装包 SHA 校验 OK，`publish` skipped；见 §10.21 |
 | G6 | CI/GUI 入口/发布闸门三点 | med | M | D | （重叠：G5）`--help` 不退出、smoke 不查目录、CI 装不到 desktop extra、release 无闸门；并入 G5。 | [x] 批次 D2 已落地（`ecdb59d`，并入 G5，不单独立项） |
@@ -92,7 +92,7 @@
 | **L** | P8 → G4 | 先按 §3 裁定 ICC 归属 / 损坏 EXIF / HEIC 与像素上限；orientation=6 的 JPEG 进出 `size=(300,600)`；fast 全绿。**批次 L 已完成（2026-10-09）：四项裁定按 §3 推荐全部确认（ICC 原样保留 / 损坏 EXIF 硬拒 / HEIC 递延 / 上限固定 64 MP）；P8 与 G4 全部落地（两个新测试文件共 32 例，按最终形态先红 18 例、pin 14 例）；fast 304 passed（`--collect-only -q` 实测 304）、GUI 档 20 passed 0 skipped；两处关键更正与 L1–L4 登记见 §10.13。** |
 | **M** | P4 → P6 → P5（**拆分推进，2026-10-09 用户裁定**：M1=P4+P6 本轮；**M2=P5 顺延到 N（P9→P1）之后**——P5 硬依赖 P1 的 seed 与由 P1 新建的 `test_photoguard_slow.py`，且 M 原排在 N 之前） | M1：P4 落地前先确认 `sat-selfcheck` 结论已落档（已由 §10.14 落定，口径以该节为准）；`bench/efficacy_matrix.py` 在 core 环境退 0；先红后绿（含 config 依赖例的中间态标注）+ fixture 矩阵先行。M2：P5 的 README 数字取自 P6 的 CSV（带日期+sha、不被测试钉住；正文行号须按内容重定位）。**M1 已完成（2026-10-09）：P4+P6 全部落地——先红 11 例、fixture 矩阵 7/7 PASS、bench noise 档 30/36 pass（钉住行真实 100%；首轮产品发现 downscale_720/combo_repost 各 0/3）、fast 318 passed（collected 与落地前一致）、GUI 20/0 skip、compliance 18 passed、四份 workflow PyYAML 全过；S1/S2/S4、自证法与复核修正（首版 pass 列读错对象已修）见 §10.14。**M2 已完成（2026-10-10）：P5 全部落地——docstring 偏差清单、`_validate_bgr`/`_to_tensor` 抽取与 `latent_norm`（slow 先红 1 例后绿）、`test_perturb_retention.py` 两例（用例 2 改测「扰动残存」，用户裁定）、slow 第 12 例；README 降级句 + 带日期+sha 数字（`138022c` 口径，M2 期复跑同值 30/36）；AGENTS 零 diff；Spike A 直连执行出数（`linf_before=8` 饱和、无频率选择性）；见 §10.17。** |
 | **N** | P9(subject) → P1 | 需 `--extra photoguard` + 本地模型跑慢档；P1 的 seed 用例钉「同 seed 逐位相同」；镜像内慢档步已 CI 取证（docker `37918657113`，慢档 11 passed）。**批次 N 已完成（2026-10-09，`78732f8` P9 + `895b837` P1 + `9d2feaf` docker + 回写）：P9 代码面与 P1 全部落地；spike H1/9A/9C/9D/9E 全过、9F 推送后已取证（docker 18/18 步全绿）；fast 323 passed（collect 334）、slow 11 passed（本机 extra+模型）、临时 core venv 下 slow 全 skip 带理由、gui 20/0 skip、compliance 18、四份 workflow PyYAML + docker.yml 九个 run 块 bash -n 全过；三条裁定（ε 真 L∞、独立 test target、临时 venv 取证）与 M2 接口冻结见 §10.16。** |
-| **O** | P7、P20 | 非 JPEG 输出策略先裁定；P20 先 spike 语义（内容已落盘 + `chmod` 抛错仍退 0 且内容完整）。 |
+| **O** | P7、P20 | **O1 已完成（2026-11-09）**：P7 输出格式 + device + P20（allow PNG+warn；P20 RuntimeWarning）。**O2 = P7 GUI 取消/共享可变 options**，含 desktop T8/T9/T10，未开工。 |
 | F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11）；**开工首项（2026-10-10）：Ubuntu 26.04 迁移预检 + action 版本升级，详见 §10.18** | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、**`.github/workflows/` 目录 glob 下的全部 workflow 本地 PyYAML 解析（现为四份：`ci`/`docker`/`release-desktop`/`efficacy`——口径已由「三个」升级，防漏解析新增文件）**；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）；**Ubuntu 26.04 预检腿（10-19 前）全绿或豁免登记；run 注解的 Node 20 弃用 warning 清零**。**F′1 已落地（2026-11-09，G11 + P22 + 26.04 第四腿；CI 已取证：ci `42576250788` / docker `42576250849`，见 §10.20）；F′2 已完成（2026-11-09，P23 + G7a/G7b；ci `42588064656` / docker `42588064654` / release dispatch `42741197178`，见 §10.21）。** |
 
 五条硬定序，实施时不得调换：
@@ -669,9 +669,9 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 | test_gui_qt.py（P2 夹具） | T8/T9/T10 | desktop | T8 调用方 kwargs 未变、`perturb.get` 计数==1；T9 关窗有界；T10 `cancel_task()` 空 worker 不抛 |
 
 **验收标准**
-- [ ] `uv run pytest -m 'not slow and not gui' -q` 全绿；既有零变红（基线=落地前实测 58 条），不写预测数。
-- [ ] `protect -o out.png` 退 0、stderr 含 `warning: writing PNG, not JPEG`、容器==PNG；`verify` 退 0 回显 payload。
-- [ ] `-o out.bmp` 退 2 且不建文件、`-o out.jpg` 与修复前逐字节一致；desktop 档 T8/T9/T10 过。
+- [x] `uv run pytest -m 'not slow and not gui' -q` 全绿；既有零变红（2026-11-09：386 passed / 32 deselected；collect 418）。
+- [x] `protect -o out.png` 退 0、stderr 含 `warning: writing PNG, not JPEG`、容器==PNG；`verify` 退 0 回显 payload。
+- [x] `-o out.bmp`/`out.`/`"out.jpg "` 退 2 且不建文件、`-o out.jpg` 与修复前逐字节一致；[ ] desktop 档 T8/T9/T10（O2）。
 
 **风险与未知**
 - PNG 的 Pillow 行为本环境无法实跑：由修复前必红的「容器==PNG」用例把守；转不绿退回 JPEG-only。
@@ -1743,7 +1743,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 2. `chmod` 改 best-effort（失败只警告、不影响退 0），或把它移出失败判定路径；语义定义为「内容落盘即成功」。
 
 **测试与验收**
-- [ ] 用例：monkeypatch `os.chmod` 抛 `OSError` → 仍退 0，且文件内容完整可读。
+- [x] 用例：monkeypatch `os.chmod` 抛 `OSError` → 仍退 0，且文件内容完整可读。—— 2026-11-09：单测 + CLI 均退 0 并触发 `RuntimeWarning`。
 - [ ] 真实挂载点（exFAT/SMB/NTFS-3G）手工验证一条（本机不可跑，记为待办）。
 - 命令：`uv run --no-sync pytest tests/test_output_integrity.py -q`
 
@@ -2425,3 +2425,12 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **本地验证（2026-11-09）**：fast **390 passed / 12 deselected**、`--collect-only` **402**（现场值，不写死）；compliance 18 passed；`uv.lock` 零 diff；四份 workflow PyYAML 通过。未改 `src/`、`.iss`、依赖或退码。
 - **CI 取证（2026-11-09，sha `de09f9d`）**：ci run `42588064656` **success**——四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **370 passed, 2 skipped, 12 deselected**；gui **20 passed / 382 deselected**。docker run `42588064654` **success**——20 步全绿：P22 `image uid=1001 runner uid=1001`、notices 62 行、noise/SD 两处线索整行、慢档 **12 passed in 12.94s**、拒载 `rc=2`。
 - **release 真机取证（dispatch `42741197178`，2026-11-10）**：`verify` / `windows` / `macos-arm64` 三 job **success**，`publish` **skipped**；Windows 安装包 artifact `PhotoGuard-Windows-x64` 下载后 `shasum -a 256 -c SHA256SUMS-Windows-x64.txt` → **OK**；仓库 Release 仍只有 `v0.1.0`（2026-10-09），未创建新 Release。resolver 走 PATH 找到 Chocolatey 版 ISCC，说明旧硬编码 `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` 并非所有 runner 的可靠位置——P23 的实际价值由本轮真机兑现。
+
+### 10.22 批 O1 落地记录（P7 非 GUI + P20，2026-11-09）
+
+- **范围与裁定**：O1 = P7 输出格式 + P7 device 重复探测 + P20；O2 的 GUI 取消/共享可变 options 未开工。非 JPEG 取 **allow PNG + warn**（`.png` 退 0 + stderr `warning: writing PNG, not JPEG` + verify 回环；`.bmp`/`out.`/`"out.jpg "` 退 2；无后缀 `out` 仍 JPEG）。P20 警告走 `warnings.warn(RuntimeWarning)`，不扩 pipeline/cli/gui 的警告通道。
+- **实现**：`pipeline.save_format(output_path)` 用 `os.path.splitext`（`out.`/尾空格拒绝、`.png` 隐藏名按无后缀 JPEG、`out`/`out_v2` 保持 JPEG）；`protect` 在 `_load_oriented_rgb` 前校验并传 `image_format`，PNG 的 `quality=None`；CLI 在成功后、成功消息前打整行警告；`device._other_adapters(devices=None)` 复用 `discover_devices` 已探测列表；`outputs.save_image_atomic` 只把后置 `os.chmod` 降级为 `RuntimeWarning`，前置只读 lift/finally 不动（P34 面不变）。
+- **先红（旧码）**：`tests/test_output_format.py` 7 failed（AttributeError / 容器仍 JPEG / 无 `image_format`）；`test_cli_exits.py` 新增 5 failed（无警告、`.bmp`/尾点/尾空格退 0、P20 无警告）；`test_device.py` 2 failed（探测 2 次、`_other_adapters()` 不收参数）；`test_output_integrity.py` 1 failed（`failed to write` 而非 warning）。
+- **本地验证（2026-11-09）**：目标四文件 **111 passed**；`-m 'not slow and not gui'` **386 passed / 32 deselected**；`--collect-only` **418**（现场值，不写死）；compliance 18 passed；`uv.lock` 零 diff。未改 GUI、AGENTS §五、`plan_batch`、依赖或退码。
+- **推送与 CI 取证（2026-11-09，sha `c56e057`）**：`git push origin main` 一次（3 提交、非强推、不带 tag；`v0.1.0` 未动）。ci `42777410112` **success**：四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **386 passed, 2 skipped, 12 deselected**；gui **20 passed / 398 deselected**。docker `42777409791` **success**：20 步全绿；P22 `image uid=1001 runner uid=1001`、notices 62 行、noise/SD 线索整行、慢档 **12 passed in 12.70s**、拒载 `rc=2`。`release-desktop`/`efficacy` 未触发。
+- **残留**：`.png` 隐藏名按 JPEG；P20 只读目标 lift 后若回贴失败可能保持可写（只警告，不断言 mode）；真实 exFAT/SMB/NTFS-3G 手工验证待办；O2 的 GUI 取消/共享 options + desktop T8/T9/T10 未做。
