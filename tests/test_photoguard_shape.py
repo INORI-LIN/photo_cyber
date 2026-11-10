@@ -57,3 +57,31 @@ def test_attack_rejects_bad_input(monkeypatch) -> None:
         attack.attack(np.zeros((16, 16), dtype=np.uint8))
     with pytest.raises(ValueError, match="empty"):
         attack.attack(np.zeros((0, 0, 3), dtype=np.uint8))
+
+
+def test_attack_cancels_before_model_load(monkeypatch) -> None:
+    """P7: a cancelled batch must not load the VAE just to bail on the first PGD step."""
+    attack = photoguard.build_attack(photoguard.PGDConfig(cancel_check=lambda: True))
+
+    def _explode():
+        raise AssertionError("the model must not be loaded after cancellation")
+
+    monkeypatch.setattr(attack, "_ensure_loaded", _explode)
+
+    with pytest.raises(InterruptedError, match="cancelled"):
+        attack.attack(np.zeros((16, 16, 3), dtype=np.uint8))
+
+
+def test_attack_validates_before_cancel_check() -> None:
+    """P1 priority: a bad image still fails validation, even when cancellation is pending."""
+    calls: list[int] = []
+
+    def cancel_check() -> bool:
+        calls.append(1)
+        return True
+
+    attack = photoguard.build_attack(photoguard.PGDConfig(cancel_check=cancel_check))
+
+    with pytest.raises(ValueError, match="three-channel"):
+        attack.attack(np.zeros((16, 16), dtype=np.uint8))
+    assert calls == []

@@ -102,6 +102,10 @@ class _SDEncoderAttack:
         if self._vae is None:
             self._load()
 
+    def _check_cancelled(self) -> None:
+        if self.cfg.cancel_check is not None and self.cfg.cancel_check():
+            raise InterruptedError("PhotoGuard operation cancelled")
+
     def _initial_noise_generator(self, x_orig):
         """A fresh, seeded ``torch.Generator`` on ``x_orig``'s device (P1).
 
@@ -146,6 +150,7 @@ class _SDEncoderAttack:
         # P1: input validation runs *before* the model load — a bad call must fail fast and
         # cheaply (and the fast-tier bad-input test must not depend on torch being installed).
         self._validate_bgr(image_bgr)
+        self._check_cancelled()
 
         self._ensure_loaded()
         torch = self._torch
@@ -167,8 +172,7 @@ class _SDEncoderAttack:
             1.0,
         )
         for iteration in range(self.cfg.steps):
-            if self.cfg.cancel_check and self.cfg.cancel_check():
-                raise InterruptedError("PhotoGuard operation cancelled")
+            self._check_cancelled()
             x_adv = x_adv.detach().requires_grad_(True)
             latent = self._encode_mean(x_adv)
             loss = torch.nn.functional.mse_loss(latent, target_latent)
