@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import secrets
 import unicodedata
+import warnings
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -117,7 +118,18 @@ def save_image_atomic(
         # destination. Cost: the mode lags the content by the chmod in between; the content
         # swap itself stays atomic.
         if previous_mode is not None:
-            os.chmod(destination, previous_mode)
+            # P20: the bytes are already at the final path. On filesystems where chmod is
+            # unsupported (exFAT/SMB/NTFS-3G), a failed permission restore must not turn a
+            # successful write into "failed to write"; warn and keep the content.
+            try:
+                os.chmod(destination, previous_mode)
+            except OSError as exc:
+                warnings.warn(
+                    f"wrote {destination} but could not restore its permissions "
+                    f"to {previous_mode:04o}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
     except OSError as exc:
         raise OSError(f"failed to write {destination}: {exc}") from exc
     finally:

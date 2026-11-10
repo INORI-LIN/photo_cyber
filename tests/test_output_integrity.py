@@ -448,3 +448,41 @@ def test_pipeline_saves_through_the_atomic_helper() -> None:
     source = (REPO_ROOT / "src" / "photo_guard" / "pipeline.py").read_text(encoding="utf-8")
     assert "outputs.save_image_atomic" in source
     assert 'format="JPEG"' not in source
+
+
+def test_atomic_write_warns_when_post_swap_chmod_fails(tmp_path, monkeypatch) -> None:
+    """P20: the bytes already landed; a failed permission restore is a warning, not a write error."""
+    destination = tmp_path / "out.jpg"
+    destination.write_bytes(b"previous-good-bytes")
+
+    def fail_chmod(*args, **kwargs):
+        raise OSError("chmod is not supported on this filesystem")
+
+    monkeypatch.setattr(os, "chmod", fail_chmod)
+
+    with pytest.warns(RuntimeWarning, match="could not restore"):
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
+
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "JPEG"
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
+def test_cli_protect_succeeds_with_a_chmod_warning(tmp_path, monkeypatch) -> None:
+    """P20 — the CLI must report success when only the permission restore fails."""
+    source = _textured(tmp_path / "in.jpg")
+    destination = tmp_path / "out.jpg"
+    destination.write_bytes(b"previous-good-bytes")
+
+    def fail_chmod(*args, **kwargs):
+        raise OSError("chmod is not supported on this filesystem")
+
+    monkeypatch.setattr(os, "chmod", fail_chmod)
+
+    with pytest.warns(RuntimeWarning, match="could not restore"):
+        assert main(["protect", str(source), "-o", str(destination)]) == 0
+
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "JPEG"
