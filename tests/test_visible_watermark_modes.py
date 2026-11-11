@@ -19,6 +19,29 @@ def textured_rgb() -> Image.Image:
     return Image.fromarray(arr, "RGB")
 
 
+def test_font_fallback_is_sized_when_no_ttf_is_available(monkeypatch) -> None:
+    """Q2/N3: a system (or the Docker image) without a TTF must not render at ~10 px.
+
+    Pillow >= 10.1 can size its built-in Aileron fallback; the dependency floor is 12.2.
+    Only the OS font locations are made to fail: ``load_default(size=...)`` itself loads a
+    bundled font through ``truetype``, so a blanket patch would break the fallback too.
+    """
+    from PIL import ImageFont
+
+    real_truetype = ImageFont.truetype
+    os_roots = ("/usr/share/fonts", "/System/Library/Fonts", "/Library/Fonts", "C:\\Windows\\Fonts")
+
+    def _no_os_ttf(path, *args, **kwargs):
+        if str(path).startswith(os_roots):
+            raise OSError("no OS font")
+        return real_truetype(path, *args, **kwargs)
+
+    monkeypatch.setattr(ImageFont, "truetype", _no_os_ttf)
+    box = watermark_visible._load_font(36).getbbox("Ag")
+    height = box[3] - box[1]
+    assert height >= 20, f"fallback rendered at {height}px"
+
+
 @pytest.mark.parametrize("mode", ["subject", "tile", "center"])
 def test_visible_modes_smoke(textured_rgb: Image.Image, mode: str) -> None:
     out = watermark_visible.apply(textured_rgb, "© test", mode=mode, alpha=0.30)

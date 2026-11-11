@@ -22,12 +22,13 @@ from . import config, subject as subject_mod
 
 
 def _load_font(size: int) -> ImageFont.ImageFont:
-    """Find a sized TTF on this system; fall back to Pillow's default bitmap.
+    """Find a sized TTF on this system; fall back to Pillow's sized built-in font.
 
-    Pillow's default font ignores the ``size`` argument, so on a system with
-    no usable TTF the watermark renders at ~10 px regardless of
-    ``--visible-alpha`` / ``--visible-text``. Try the conventional sans-serif
-    locations on each major OS before that fallback.
+    Q2/N3: Pillow's unsized ``load_default()`` ignores ``size`` and renders at ~10 px —
+    the Docker image installs no font package, so every visible mode silently produced a
+    near-invisible watermark there. Pillow >= 10.1 accepts ``size`` and scales its built-in
+    Aileron font; the project floor is 12.2. The TTF list stays first because a real OS font
+    has better glyph coverage (notably CJK on some platforms).
     """
     candidates = (
         # Linux (Debian/Ubuntu — what Docker image and most distros ship)
@@ -49,7 +50,12 @@ def _load_font(size: int) -> ImageFont.ImageFont:
             return ImageFont.truetype(path, size=size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    try:
+        return ImageFont.load_default(size=size)
+    except OSError:
+        # A Pillow built without FreeType cannot load a scalable default; the unsized
+        # bitmap is the only option left (same ~10 px result, but no crash).
+        return ImageFont.load_default()
 
 
 def _text_layer(size: tuple[int, int]) -> Image.Image:

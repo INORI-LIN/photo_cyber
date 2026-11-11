@@ -18,6 +18,7 @@ Scope and known deviations, deliberate and recorded for P5:
 """
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,15 @@ class PGDConfig:
     device_index: int | None = None
     progress_callback: Callable[[int, int], None] | None = None
     cancel_check: Callable[[], bool] | None = None
+
+    def __post_init__(self) -> None:
+        # Q2/N4: the last gate before torch loads. NaN/inf would propagate through PGD and
+        # quantise to 0/255; zero stays legal for programmatic control groups (the CLI
+        # rejects <=0 whenever the perturb layer actually runs).
+        if not math.isfinite(self.epsilon) or self.epsilon < 0:
+            raise ValueError("epsilon must be finite and non-negative")
+        if not math.isfinite(self.step_size) or self.step_size < 0:
+            raise ValueError("step_size must be finite and non-negative")
 
 
 def pad_to_multiple_of_8(rgb: np.ndarray) -> np.ndarray:
@@ -72,9 +82,10 @@ class _SDEncoderAttack:
             ) from exc
 
         model_path = Path(self.cfg.model_id)
-        if not model_path.is_dir():
+        if not config.model_dir_is_complete(model_path):
             raise RuntimeError(
-                f"local SD VAE directory not found at {model_path}. "
+                f"local SD VAE directory is missing or incomplete at {model_path} "
+                "(needs config.json and *.safetensors). "
                 "Run `uv run photo-guard download-models` once."
             )
         os.environ.setdefault("HF_HUB_OFFLINE", "1")

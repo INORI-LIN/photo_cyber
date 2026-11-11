@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 
 def _smoke_test() -> int:
@@ -9,9 +8,15 @@ def _smoke_test() -> int:
 
     if not config.PHOTOGUARD_MODEL_ID:
         return 2
-    # G6: a configured path is not a model — without this check a machine that never ran
-    # `download-models` (or whose models/ was not shipped) still reported success.
-    if not Path(config.PHOTOGUARD_MODEL_ID).is_dir():
+    # G6/Q2-N5: a configured path is not a model, and neither is a directory with only
+    # config.json. Without the completeness check a machine that never ran
+    # `download-models` (or whose models/ was not shipped fully) still reported success.
+    if not config.model_dir_is_complete(config.PHOTOGUARD_MODEL_ID):
+        print(
+            f"model directory missing or incomplete: {config.PHOTOGUARD_MODEL_ID} "
+            "(needs config.json and *.safetensors)",
+            file=sys.stderr,
+        )
         return 2
     # G2/P33: the licence material must ship beside the bundle; a build that forgot to include
     # it (or an install that dropped it) must not report success. The macOS bundle keeps the

@@ -6,6 +6,8 @@ Values picked to match AGENTS.md sections 三 / 五:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 # Layer ① invisible watermark
 # AGENTS.md 三①: 频域方案 (DWT-DCT 系) — dwtDctSvd is the SVD-augmented variant
 # from the same family; in practice it survives JPEG q≥75 reliably while plain
@@ -77,6 +79,23 @@ PHOTOGUARD_STEPS = 10
 # reproducibility is promised for CPU/float32 only (a CUDA/MPS generator is created on the
 # tensor's device when supported; otherwise the global RNG is used and bytes are not fixed).
 PHOTOGUARD_SEED = 0
+
+
+def model_dir_is_complete(path: str | Path) -> bool:
+    """A usable local SD VAE directory: ``config.json`` + at least one ``*.safetensors``.
+
+    Q2/N5: ``is_dir()`` alone accepted an empty or half-downloaded snapshot in the
+    downloader, the desktop build and the bundle smoke — all three reported success and the
+    failure only surfaced on the first ``--perturber sd`` run. The exact weight filename is
+    left open because diffusers has used more than one (`diffusion_pytorch_model` variants).
+    """
+    directory = Path(path)
+    return (
+        directory.is_dir()
+        and (directory / "config.json").is_file()
+        and any(directory.glob("*.safetensors"))
+    )
+
 
 # Layer ③ visible watermark
 # AGENTS.md 三③ wants "压在主体关键纹理上" — `subject` mode binds the

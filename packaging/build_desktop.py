@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tomllib
 
+from photo_guard import config as pg_config
+
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 MODEL = ROOT / "models" / "sd-vae-ft-mse"
@@ -34,8 +36,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Desktop release builds are supported on Windows and macOS runners")
     if platform.system() == "Darwin" and platform.machine().lower() not in {"arm64", "aarch64"}:
         raise SystemExit("Only Apple Silicon macOS release builds are supported")
-    if not MODEL.is_dir():
-        raise SystemExit(f"bundled model is missing: {MODEL}")
+    if not pg_config.model_dir_is_complete(MODEL):
+        raise SystemExit(f"bundled model is missing or incomplete: {MODEL}")
 
     version = project_version()
     DIST.mkdir(exist_ok=True)

@@ -187,10 +187,10 @@ uv run photo-guard protect input.jpg
 | `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（可判真伪）、无校验和原始路径（只是**线索**） | 是（整文件） |
 | `_dwt_dct_svd.py` | 层① 的算式底座：invisible-watermark 0.2.0 `dwtDctSvd.py` 的仓内逐字转录（含 MIT 许可正文与 H/V 互换等上游怪癖），仅依赖 cv2/numpy/pywt，导出 `embed_bits`/`decode_bits`；类区与类名必须与上游逐字一致（不得改/私有化），P11 修正只在 `watermark_invisible._CarrierEmbed` 子类里做 | 否（逐字转录） |
 | `perturb.py` | 层②。`Perturber` ABC + `_REGISTRY`；`get(name, **kwargs)` 是工厂 | 加类注册即可 |
-| `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重 | 是 |
-| `download.py` | `download-models`；**唯一**允许联网的模块，不得扩面 | 否（刻意最小） |
+| `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重；加载前要求 `config.json` + 至少一个 `*.safetensors`（Q2/P43） | 是 |
+| `download.py` | `download-models`；**唯一**允许联网的模块，不得扩面；下载后跑同一完整性判据，缺文件即失败 | 否（刻意最小） |
 | `subject.py` | 纯 cv2 三级降级：Haar 人脸 → Sobel 显著性窗 → 几何中心 | 是 |
-| `watermark_visible.py` | 层③。`apply()` 分派 subject/tile/center；`_load_font` 的 TTF 路径列表**不得缩**（Pillow 位图默认字体无视 `size`） | 是 |
+| `watermark_visible.py` | 层③。`apply()` 分派 subject/tile/center；`_load_font` 的 TTF 路径列表**不得缩**；无 OS 字体时兜底 `load_default(size=size)`（Pillow ≥12.2，Q2/P41），不得退回无视 `size` 的无参位图 | 是 |
 | `compress.py` | `fit_long_edge`；0 保留原尺寸，负数非法 | 是 |
 | `device.py` | CPU/CUDA/MPS 懒发现与显式选择 | 是 |
 | `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程；worker 持有 `ProtectOptions` 副本、不写调用方；关窗有界（5s 宽限后保持窗口）；取消仅 SD 当前图可中断；`VerifyWorker` 自动发现与期望同时设置时先发现后比对（P35） | 是 |
@@ -232,7 +232,7 @@ uv run photo-guard protect input.jpg
 
 **运行身份与健康探针（P22）**：发布镜像默认以 `app` 非 root 用户运行，UID/GID 由构建参数创建；本地构建用 `--build-arg UID=$(id -u) --build-arg GID=$(id -g)` 对齐宿主持有者，否则 bind mount 的 `/work` 可能不可写。`HEALTHCHECK` 只执行 `photo-guard --help`，证明 venv 与入口可启动，**不**代表处理服务健康。基础镜像按 digest 钉、uv 按版本 tag 钉；apt 包不逐项钉版本（仓库会淘汰旧版本，逐项钉会让构建随机失败）。
 
-冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → **SD 产物线索回环（`verify out_sd.jpg --payload-bytes 7` 退 3、整行 `线索（未验证）: ci-test`；P4 的 SD-cell 闸门）** → `--target test` 构建 + preflight（torch/diffusers/`photo_guard`/模型目录）→ **慢档真跑（`uv run --project /app --no-sync pytest -m slow`，单文件限定）** → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算（`test` target 不改变发布镜像的依赖集）。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
+冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ **可见水印字号探针（Q2/P41：镜像内 `_load_font(36)` 的 bbox 高 ≥20px，防止回到 ~10px 位图兜底）** → 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → **SD 产物线索回环（`verify out_sd.jpg --payload-bytes 7` 退 3、整行 `线索（未验证）: ci-test`；P4 的 SD-cell 闸门）** → `--target test` 构建 + preflight（torch/diffusers/`photo_guard`/**模型完整性：`config.json` + 至少一个 `*.safetensors`**，Q2/P43）→ **慢档真跑（`uv run --project /app --no-sync pytest -m slow`，单文件限定）** → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算（`test` target 不改变发布镜像的依赖集）。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
 
 ---
 

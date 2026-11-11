@@ -15,6 +15,7 @@ kwargs (``epsilon``, ``steps`` …) are forwarded through the same call.
 """
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -46,6 +47,10 @@ class GaussianNoisePerturber(Perturber):
     def __init__(
         self, *, epsilon: float = config.NOISE_EPSILON, seed: int = 0, **_: Any
     ) -> None:
+        # Q2/N4: NaN and ±inf pass a naive `<= 0` check; numpy then turns the whole image
+        # into 0/255 and the product still exits 0. Zero stays legal for P5's control group.
+        if not math.isfinite(epsilon) or epsilon < 0:
+            raise ValueError("epsilon must be finite and non-negative")
         self.epsilon = epsilon
         self._rng = np.random.default_rng(seed)
 

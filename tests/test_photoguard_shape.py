@@ -28,6 +28,32 @@ def test_padding_rounds_up_to_a_multiple_of_eight(height: int, width: int) -> No
     assert np.array_equal(padded[:height, :width], rgb)
 
 
+@pytest.mark.parametrize(
+    ("epsilon", "step_size"),
+    [
+        (float("nan"), 2 / 255),
+        (float("inf"), 2 / 255),
+        (float("-inf"), 2 / 255),
+        (-1 / 255, 2 / 255),
+        (8 / 255, float("nan")),
+        (8 / 255, float("inf")),
+        (8 / 255, -1 / 255),
+    ],
+    ids=["eps-nan", "eps-inf", "eps--inf", "eps-negative", "step-nan", "step-inf", "step-negative"],
+)
+def test_pgd_config_rejects_non_finite_or_negative_budgets(
+    epsilon: float, step_size: float
+) -> None:
+    """Q2/N4: PGDConfig is the last gate before the model loads; NaN must die here."""
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        photoguard.PGDConfig(epsilon=epsilon, step_size=step_size)
+
+
+def test_pgd_config_allows_zero_budgets_for_control_groups() -> None:
+    config = photoguard.PGDConfig(epsilon=0.0, step_size=0.0)
+    assert config.epsilon == 0.0 and config.step_size == 0.0
+
+
 def test_padding_repeats_the_edge_pixel() -> None:
     rgb = np.zeros((9, 9, 3), dtype=np.float32)
     rgb[8, :, :] = 1.0

@@ -26,6 +26,20 @@ def test_noop_is_identity() -> None:
     assert out is img or np.array_equal(out, img)
 
 
+@pytest.mark.parametrize(
+    "epsilon", [float("nan"), float("inf"), float("-inf"), -1.0], ids=["nan", "inf", "-inf", "negative"]
+)
+def test_noise_rejects_non_finite_or_negative_epsilon(epsilon: float) -> None:
+    """Q2/N4: a non-finite budget used to reach numpy and turn the image into zeros."""
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        perturb.get("noise", epsilon=epsilon)
+
+
+def test_noise_allows_the_zero_epsilon_control_group() -> None:
+    """P5's pipeline-level control group constructs epsilon=0.0 directly."""
+    assert perturb.get("noise", epsilon=0.0).epsilon == 0.0
+
+
 def test_noise_within_epsilon() -> None:
     img = np.full((48, 48, 3), 128, dtype=np.uint8)
     eps = 4.0 / 255.0

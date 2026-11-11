@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -112,8 +113,14 @@ def main(argv: list[str] | None = None) -> int:
             if pipeline.LAYER_PERTURB in layers:
                 if args.perturber_steps <= 0:
                     raise ValueError("perturber steps must be positive")
-                if args.perturber_eps <= 0 or args.perturber_step_size <= 0:
-                    raise ValueError("perturber epsilon/step size are invalid")
+                # Q2/N4: `<= 0` is False for NaN and +inf, so both used to pass this gate.
+                if (
+                    not math.isfinite(args.perturber_eps)
+                    or not math.isfinite(args.perturber_step_size)
+                    or args.perturber_eps <= 0
+                    or args.perturber_step_size <= 0
+                ):
+                    raise ValueError("perturber epsilon/step size must be finite and positive")
             output_format = pipeline.save_format(args.output)
             kwargs: dict[str, object] = {}
             if args.perturber == "sd":

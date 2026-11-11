@@ -582,6 +582,29 @@ def test_zero_epsilon_is_rejected(tmp_path: Path, capsys) -> None:
     assert not out.exists()
 
 
+@pytest.mark.parametrize("flag", ["--perturber-eps", "--perturber-step-size"])
+@pytest.mark.parametrize("value", ["nan", "inf"])
+def test_non_finite_perturber_budgets_exit_two(
+    tmp_path: Path, capsys, flag: str, value: str
+) -> None:
+    """Q2/N4: `<= 0` is False for NaN and +inf, so both slipped through the only gate.
+
+    A NaN epsilon reaches numpy's clip and quantises the whole image to 0 while still
+    exiting 0; the CLI must refuse before touching the pixels.
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(["protect", str(src), "-o", str(out), "--perturber", "noise", flag, value])
+
+    assert code == 2
+    # Not just "finite": pytest's tmp_path embeds this test's name, which contains
+    # "non_finite", and the CLI error quotes the output path.
+    assert "must be finite" in capsys.readouterr().err
+    assert not out.exists()
+
+
 def test_sd_only_flags_are_ignored_without_perturb_layer(tmp_path: Path) -> None:
     """P1/§10.2 addendum: the SD-only flags are validated only when that layer runs.
 

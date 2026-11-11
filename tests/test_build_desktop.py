@@ -68,10 +68,32 @@ def test_missing_model_is_rejected(monkeypatch, tmp_path) -> None:
         module.main([])
 
 
+def test_incomplete_model_is_rejected(monkeypatch, tmp_path) -> None:
+    """Q2/N5: a directory with config.json but no safetensors must not be bundled."""
+    module = _load()
+    model = tmp_path / "model"
+    model.mkdir()
+    (model / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(module.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(module.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(module, "MODEL", model)
+    # A red run on the old code must fail here, not start a real Nuitka build.
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("an incomplete model must not reach Nuitka"),
+    )
+
+    with pytest.raises(SystemExit, match="incomplete"):
+        module.main([])
+
+
 def _prepare_success(monkeypatch, tmp_path):
     module = _load()
     model = tmp_path / "model"
     model.mkdir()
+    (model / "config.json").write_text("{}", encoding="utf-8")
+    (model / "diffusion_pytorch_model.safetensors").write_bytes(b"")
     calls: list[dict] = []
 
     def fake_run(command, cwd, check):

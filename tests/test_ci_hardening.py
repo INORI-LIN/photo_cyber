@@ -68,6 +68,17 @@ def test_workflow_actions_are_not_pinned_to_floating_branches() -> None:
             assert not ref.endswith(("@main", "@master")), f"{name}: floating branch {ref}"
 
 
+def test_docker_workflow_checks_the_visible_watermark_font() -> None:
+    """Q2/N3: the image ships no font package; the sized Pillow fallback is the contract.
+
+    A regression to unsized ``load_default()`` renders the visible layer at ~10 px while
+    still exiting 0. The probe must stay executable (comments do not satisfy this lock).
+    """
+    code = _executable_lines(_workflow_texts()["docker.yml"])
+    assert "_load_font(36)" in code
+    assert "font probe OK" in code
+
+
 def test_docker_workflow_pins_free_disk_space_and_uses_new_input_name() -> None:
     text = _workflow_texts()["docker.yml"]
     code = _executable_lines(text)

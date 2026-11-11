@@ -88,6 +88,11 @@ jobs:
               photo-guard:ci \
               -B /app/packaging/generate_notices.py --check
 
+      - name: Visible watermark font must be sized (N3)
+        run: |
+          docker run --rm --network none --entrypoint uv photo-guard:ci \
+              run --project /app --no-sync python -c "from photo_guard.watermark_visible import _load_font; box=_load_font(36).getbbox('Ag'); height=box[3]-box[1]; assert height >= 20, f'font fallback is {height}px'; print(f'font probe OK: {height}px')"
+
       - name: Generate a synthetic test image
         # Use Pillow inside the just-built image rather than the runner's
         # host Python (free-disk-space wiped the runner's tool cache, so
@@ -199,10 +204,10 @@ jobs:
               --build-arg UID="$(id -u)" --build-arg GID="$(id -g)" \
               -t photo-guard:test .
 
-      - name: Slow-tier preflight (torch, diffusers, photo_guard, model dir)
+      - name: Slow-tier preflight (torch, diffusers, photo_guard, complete model)
         run: |
           docker run --rm --network none --entrypoint uv photo-guard:test \
-              run --project /app --no-sync python -c "from pathlib import Path; import photo_guard, torch, diffusers; assert Path('/app/models/sd-vae-ft-mse').is_dir(), 'model dir missing in image'; print('slow-tier preflight OK')"
+              run --project /app --no-sync python -c "import photo_guard, torch, diffusers; from photo_guard import config; assert config.model_dir_is_complete('/app/models/sd-vae-ft-mse'), 'model incomplete in image'; print('slow-tier preflight OK')"
 
       - name: Slow tier — real SD assertions (P1)
         run: |

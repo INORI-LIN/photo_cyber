@@ -60,7 +60,7 @@ uv run photo-guard download-models
 uv run photo-guard-gui
 ```
 
-`download-models` 是唯一需要连接 Hugging Face 的模型准备步骤。模型默认保存到项目的 `models/sd-vae-ft-mse/`，之后运行阶段强制使用本地文件。
+`download-models` 是唯一需要连接 Hugging Face 的模型准备步骤。模型默认保存到项目的 `models/sd-vae-ft-mse/`，之后运行阶段强制使用本地文件。下载完成后会校验 `config.json` 与至少一个 `*.safetensors`；缺失即失败退 2，不会把空目录或半下载目录当作成功。
 
 ## GUI 使用说明
 
@@ -167,7 +167,7 @@ uv run photo-guard devices
 | `--visible-alpha` | `0.10` | 明水印透明度，范围 0–1 |
 | `--long-edge` | `1080` | 输出长边；0 保持原尺寸 |
 | `--quality` | `85` | JPEG 质量，范围 1–100；PNG 输出忽略 |
-| `--perturber-eps` | `8/255` | PhotoGuard L∞ 扰动预算 |
+| `--perturber-eps` | `8/255` | PhotoGuard L∞ 扰动预算（必须有限且 >0；NaN/Inf 退 2） |
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
 | `--perturber-model` | 本地模型目录 | 不接受运行时远程加载 |

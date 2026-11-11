@@ -54,4 +54,11 @@ def download_sd_vae(
         # We DO want network access here — this is the one explicit
         # online step. Don't set HF_HUB_OFFLINE before reaching this.
     )
+    # Q2/N5: snapshot_download returning is not proof that weights arrived (wrong repo,
+    # interrupted copy, upstream layout change). Fail here, not on the first SD run.
+    if not config.model_dir_is_complete(dest):
+        raise RuntimeError(
+            f"downloaded snapshot is incomplete: {dest} lacks config.json or *.safetensors "
+            f"(repo {repo}@{revision})"
+        )
     return dest
