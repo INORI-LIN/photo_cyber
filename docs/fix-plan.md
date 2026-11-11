@@ -63,9 +63,9 @@
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [x] 批次 H 已落地（`8ecbb65`，2026-10-09；权限位句按消歧改写并保留 P34 hedge） |
 | P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`；旧 dispatch #4 的 macOS smoke/DMG/校验/上传真机全绿，见 §9.10 第 11 小节） |
 | P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | 未排批次（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 读码推断；待 POSIX/Windows 复现 |
-| P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | 待复现 | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [ ] 读码推断；待离屏复现 |
-| P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | 待复现 | 未排批次（GUI 面） | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [ ] 读码推断；待离屏复现 |
-| P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | 待复现 | 未排批次（GUI 面） | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [ ] 读码推断；待导出与消费者验证 |
+| P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | S | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [ ] 已复现（2026-11-11，批 P）：同时勾选+错误期望仍显示「通过（自动发现）」；待裁定修法 |
+| P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | 待裁定修法 | 未排批次（GUI 面） | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [ ] 已复现（2026-11-11，批 P）：按钮损坏、取消命中活动 worker、旧结果被清空；待裁定修法 |
+| P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | 待裁定修法 | 未排批次（GUI 面） | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [ ] 已复现（2026-11-11，批 P）：`= + - @` 与前导 tab 前缀未被中和；待裁定修法 |
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | 未排批次（文档面） | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [ ] 读码确认算法；措辞待产品裁定 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | 未排批次（文档面） | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾「未开工」与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [ ] 未开始 |
 
@@ -2243,6 +2243,8 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 **后续排批**：P34 可在输出面、P35–P37 可在 GUI 面、DOC3 可在文档面讨论，但本次不扩充既定 K/H 的 2–3 项批次，也不改变 §2 的五条硬定序；复现与产品裁定后再决定是否并批或新开批次。
 
+> **批 P 复现（2026-11-11）**：P35/P36/P37 均已按 §10.24 的 offscreen 脚本复现，结论均为 `confirmed`；P34 不在本批。复现只更新文档，未改 `src/`/`tests/`，修法与先红用例仍待用户裁定。
+
 ### 10.7 批 J 局部落地：G9②③ + G10（2026-09-30，本地验证）
 
 - **G9②③**：`release-desktop.yml` 的 verify 在既有 fast/tag 版本门后增加 Qt 运行库、desktop extra、PySide6 导入探针、离屏 GUI 测试“有通过且无跳过”检查与 GUI `--help`；构建 job 只生成并上传平台工件，唯一 `publish` 仅在 **tag push** 且 verify/Windows/macOS 全绿时下载双工件、核对指定文件与平台独立的 SHA256SUMS 内容，再执行一次 Release 创建/上传。`workflow_dispatch` 即使 ref 指向 tag 也不发布；顶层只读权限，只有 publish job 有写权限。原有四条校验和 pin 继续有效，定位范围由全文改为指定 job（**加强**）；新增四条发布/分发静态 pin 在旧实现上 **4 红**，现态通过。额外用模拟的 `if: always()` 注释与 GUI `|| true` 两条反例验证测试会红，未放宽任何旧断言。**边界**：此修复消除同一 run 的双平台创建竞态；同 tag 多次 run 的并发仍归 G11③，且未做真实 tag 发布。
@@ -2444,3 +2446,17 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **本地验证（2026-11-09）**：`-m gui` **26 passed / 400 deselected，0 skip**；`-m 'not slow and not gui'` **388 passed / 38 deselected**；`--collect-only` **426**（现场值，不写死）；`tests/test_photoguard_shape.py` 9 passed；compliance 18 passed。未改 `src/` 其他模块。
 - **推送与 CI 取证（2026-11-09，sha `b69e9b8`）**：`git push origin main` 一次（2 提交、非强推、不带 tag；`v0.1.0` 未动）。ci `42782699642` **success**：四腿（macos-15 / windows-latest / ubuntu-26.04 / ubuntu-latest）各 **388 passed, 2 skipped, 12 deselected**；gui **26 passed / 400 deselected，0 skip**。docker `42782699736` **success**：20 步全绿；P22 `image uid=1001 runner uid=1001`、notices 62 行、noise/SD 线索整行、慢档 **12 passed in 9.51s**、拒载 `rc=2`。`release-desktop`/`efficacy` 未触发。
 - **残留**：取消只中断 SD 当前图；`VerifyWorker` 当前项不可断；BaseException 逃逸时 `finished` 不发，超时只能保住窗口；不 `terminate()`；`ubuntu-26.04` 第四腿移除仍是独立小提交。
+
+### 10.24 批 P 复现记录（P35 → P36 → P37，2026-11-11）
+
+- **范围与口径**：只复现，不修代码；P34 不在本批；脚本在 `/tmp/pg-batchP/{p35,p36,p37}`，不入仓；基线 `dc16a70`；本机 macOS 27.2 arm64、Python 3.11.14、PySide6/Qt 6.11.1、uv 0.6.10；全程 `QT_QPA_PLATFORM=offscreen` + `uv run --no-sync`。uv 启动时提示 shell 的 `VIRTUAL_ENV` 指向 `example/.venv` 并已忽略，实际使用项目 `.venv`，不影响结论。
+- **P35（confirmed）**：320×320 信封产物，图内载荷 `owner:alice#001`，错误期望 `owner:alice#002`（与前者 UTF-8 字节长度相同）。worker 级：`auto=True` + 错误期望 → `通过（自动发现）` / detail 为图内实际载荷；`auto=False` + 错误期望 → `未通过`；`auto=True` + 正确期望 → `通过（自动发现）`。UI 路径（`verify_auto` 勾选、`expected_payload` 填错误值、`start_verify()`）→ `verify_results` 与表格均为 `通过（自动发现）` / 图内载荷，`errors` 为空。机制与 `gui.py:165-175` 的先判 `auto_discover` 一致。证据：`/tmp/pg-batchP/p35/output.txt`。
+- **P36（confirmed）**：确定性状态注入（`FakeWorker` QObject + `_thread_running=True`，未启动真实线程）：
+  - A. 验证忙时点“开始保护”：报 `已有任务正在运行`；`protect_start=False`、`protect_cancel=True`、`worker` 仍是 fake、`_threads=0`、旧 `protect_results`/日志被清空；随后 `cancel_task()` 把 `fake.cancelled` 置 `True`，即取消命中活动 worker。
+  - B. 任意忙时点“开始验证”：报 `已有任务正在运行`；既有 `verify_results` 与表格行被清空；`worker` 仍为 fake、`_threads=0`。
+  - C. 保护忙时重复点“开始保护”：旧 `protect_results`/日志被清空。
+  - D. 对照 `_thread_running=False`：`_start_worker` 被调用，证明差异来自忙碌门而非测试替身。
+  机制与 `gui.py:363-395`（状态后置缺失）及 `:422-426`（`cancel_task` 命中 `self.worker`）一致。证据：`/tmp/pg-batchP/p36/output.txt`。
+- **P37（confirmed）**：`export_csv()` 导出后以 `utf-8-sig` 回读：正常值 `owner:alice` 保持不变；`=cmd|' /C calc'!A0`、`+SUM(1,1)`、`-2+3`、`@SUM(1,1)`、`"\t=1+1"` 的对应单元格仍以公式前缀或前导 tab 开头，`formula_like` 全为 `true`；表头与行数正常，`errors` 为空，BOM 为 `efbbbf`。**未执行任何公式**；表格软件是否真的求值仍属人工确认，不把 `csv.reader` 读回写成“已执行命令”。机制与 `gui.py:458-468` 一致。证据：`/tmp/pg-batchP/p37/output.txt`。
+- **结论与下一步**：三条全部 `confirmed`；§1 状态改为「已复现，待裁定修法」，仍保持 `[ ]`。本批未改 `src/`、`tests/`、CI 或依赖，未提交。下一步由用户裁定修法：P35 入口互斥或显式比对；P36 `_start_worker` 返回 bool + 状态后置 + 共用忙碌门；P37 公式前缀中和；先红用例分别落 `tests/test_gui_qt.py` / `tests/test_gui_lifecycle.py`。P34、DOC3/DOC4 未动。
+
