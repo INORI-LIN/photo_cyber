@@ -32,7 +32,7 @@ from PIL import Image
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
-from photo_guard import config, gui, outputs
+from photo_guard import config, gui, outputs, pipeline
 from photo_guard.gui import MainWindow
 
 pytestmark = pytest.mark.gui
@@ -363,3 +363,37 @@ def test_close_within_grace_closes_when_worker_finishes(tmp_path) -> None:
 
 def test_close_after_grace_keeps_window_and_stops_retrying(tmp_path) -> None:
     _run_close_child(tmp_path, mode="timeout", work=1.2, grace=0.15, retry_ms=20)
+
+
+def _p35_product(tmp_path, payload: str, *, size: int = 320) -> Path:
+    rng = np.random.default_rng(size)
+    pixels = rng.integers(40, 210, (size, size, 3), dtype=np.uint8)
+    source = tmp_path / "p35-in.jpg"
+    product = tmp_path / "p35-out.jpg"
+    Image.fromarray(pixels, "RGB").save(source, quality=92)
+    pipeline.protect(
+        source,
+        product,
+        pipeline.ProtectOptions(
+            payload=payload,
+            payload_envelope=True,
+            layers=frozenset({pipeline.LAYER_INVISIBLE}),
+            long_edge=size,
+            quality=92,
+        ),
+    )
+    return product
+
+
+def test_start_verify_with_auto_and_wrong_expected_reports_failure(window, tmp_path) -> None:
+    """P35: the UI path must show the mismatch instead of a false pass."""
+    product = _p35_product(tmp_path, "owner:alice#001")
+    window.verify_files.add_paths([product])
+    window.verify_auto.setChecked(True)
+    window.expected_payload.setText("owner:alice#002")
+
+    window.start_verify()
+    _pump_until(lambda: window.worker is None and not window._threads)
+
+    assert window.verify_results
+    assert window.verify_results[0][1] == "未通过"

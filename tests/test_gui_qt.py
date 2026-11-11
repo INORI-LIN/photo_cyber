@@ -11,6 +11,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
@@ -237,3 +238,78 @@ def test_verify_worker_stops_after_current_item_when_cancelled(monkeypatch) -> N
     assert calls == [Path("a.jpg")]
     assert seen == ["a.jpg"]
     assert finished == [True]
+
+
+def _envelope_product(tmp_path: Path, payload: str, *, size: int = 320) -> Path:
+    """A real envelope product; ``size`` also sets the output long edge."""
+    rng = np.random.default_rng(size)
+    pixels = rng.integers(40, 210, (size, size, 3), dtype=np.uint8)
+    source = tmp_path / f"p35-source-{size}.jpg"
+    product = tmp_path / f"p35-product-{size}.jpg"
+    Image.fromarray(pixels, "RGB").save(source, quality=92)
+    pipeline.protect(
+        source,
+        product,
+        pipeline.ProtectOptions(
+            payload=payload,
+            payload_envelope=True,
+            layers=frozenset({pipeline.LAYER_INVISIBLE}),
+            long_edge=size,
+            quality=92,
+        ),
+    )
+    return product
+
+
+def _verify_rows(product: Path, expected: str, auto: bool) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    worker = gui.VerifyWorker([product], expected, None, auto_discover=auto)
+    worker.item_done.connect(lambda *args: rows.append(args))
+    worker.run()
+    return rows
+
+
+def test_auto_discover_combines_with_expected_and_reports_mismatch(tmp_path) -> None:
+    """P35: auto discovery must not hide a mismatch with the expected payload."""
+    product = _envelope_product(tmp_path, "owner:alice#001")
+    rows = _verify_rows(product, "owner:alice#002", True)
+
+    assert len(rows) == 1
+    _, status, detail = rows[0]
+    assert status == "未通过"
+    assert "owner:alice#001" in detail
+    assert "owner:alice#002" in detail
+
+
+def test_auto_discover_with_matching_expected_passes(tmp_path) -> None:
+    product = _envelope_product(tmp_path, "owner:alice#001")
+    rows = _verify_rows(product, "owner:alice#001", True)
+
+    assert len(rows) == 1
+    assert rows[0][1] == "通过（自动发现）"
+
+
+def test_auto_discover_without_expected_is_unchanged(tmp_path) -> None:
+    product = _envelope_product(tmp_path, "owner:alice#001")
+    rows = _verify_rows(product, "", True)
+
+    assert len(rows) == 1
+    assert rows[0][1] == "通过（自动发现）"
+
+
+def test_auto_discover_search_ceiling_covers_expected_envelope(tmp_path) -> None:
+    """A 100-byte payload packs to 149 stored bytes, beyond the default 128 search."""
+    payload = "L" * 100
+    product = _envelope_product(tmp_path, payload, size=800)
+    rows = _verify_rows(product, payload, True)
+
+    assert len(rows) == 1
+    assert rows[0][1] == "通过（自动发现）"
+
+
+def test_expected_only_mismatch_still_fails(tmp_path) -> None:
+    product = _envelope_product(tmp_path, "owner:alice#001")
+    rows = _verify_rows(product, "owner:alice#002", False)
+
+    assert len(rows) == 1
+    assert rows[0][1] == "未通过"

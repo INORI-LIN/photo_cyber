@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from . import config, device, gui_logic, outputs, perturb, pipeline
+from . import config, device, gui_logic, outputs, perturb, pipeline, watermark_invisible
 
 _FORMAT_EXTENSIONS = {
     "JPEG": ("jpg", "jpeg"),
@@ -163,8 +163,33 @@ class VerifyWorker(QObject):
                 self.progress.emit(position - 1, len(self.paths), path.name)
                 try:
                     if self.auto_discover:
-                        value = pipeline.discover_payload(path)
-                        status = "通过（自动发现）"
+                        if self.expected:
+                            # P35: auto discovery is the "what is in the image" step and
+                            # the expected value is an assertion on top of it. Raise the
+                            # blind-search ceiling to the expected envelope's stored
+                            # length, or a payload over the default 128 bytes would be
+                            # reported as "no envelope" even when it is present.
+                            max_bytes = max(
+                                config.DEFAULT_MAX_PAYLOAD_BYTES,
+                                watermark_invisible.packed_size(self.expected),
+                            )
+                            try:
+                                value = pipeline.discover_payload(path, max_bytes)
+                            except watermark_invisible.NoPayloadError:
+                                # Let the exact-length path produce its more precise
+                                # capacity/CRC error instead of a generic "no envelope".
+                                value = pipeline.verify_expected(path, self.expected)["payload"]
+                                status = "通过"
+                            else:
+                                if value != self.expected:
+                                    raise ValueError(
+                                        "自动发现 payload 与期望不符: "
+                                        f"自动发现 {value!r}, 期望 {self.expected!r}"
+                                    )
+                                status = "通过（自动发现）"
+                        else:
+                            value = pipeline.discover_payload(path)
+                            status = "通过（自动发现）"
                     elif self.expected:
                         value = pipeline.verify_expected(path, self.expected)["payload"]
                         status = "通过"
