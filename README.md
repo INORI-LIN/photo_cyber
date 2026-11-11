@@ -114,7 +114,7 @@ uv run photo-guard verify output.jpg \
   --expected-payload "owner:alice#2026"
 ```
 
-不传任何 flag 时，`verify` 会在候选长度上搜索 `PG1:` 信封，并**只用 CRC32 判定**，因此不需要记住 payload 长度，也不会把随机噪声当成 payload；`--max-payload-bytes` 可调整搜索上界。找到则打印 payload 并退出 0，未找到退出 1。
+不传任何 flag 时，`verify` 会在候选长度上搜索 `PG1:` 信封，并**只用 CRC32 判定**，因此不需要记住 payload 长度，也不会把随机噪声当成 payload；`--max-payload-bytes` 可调整搜索上界。该上界按**存储字节**计（信封长度 = `13 + 4·ceil(n/3)`）：默认 256 覆盖原始载荷约 180 B。超过默认上界的载荷仍可保护，但 `protect` 会在 stderr（GUI 为批次日志）给出所需 `--max-payload-bytes` 数值。`--expected-payload` 的「长度不符」也按不符处理（退出 2）：工具会在 `--max-payload-bytes` 上界内回退盲检；若图内信封比上界更长，请按 protect 警告把该上界调大后一并传入。找到则打印 payload 并退出 0，未找到退出 1。
 
 ### 验证旧版图片（仅线索）
 
@@ -171,13 +171,13 @@ uv run photo-guard devices
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
 | `--perturber-model` | 本地模型目录 | 不接受运行时远程加载 |
-| `--max-payload-bytes` | `128` | 盲检信封搜索上界 |
+| `--max-payload-bytes` | `256` | 盲检信封搜索上界（**存储字节**；原始载荷约 ≤ 180 B） |
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
 **输入契约**（唯一 loader，`protect` 与 `verify` 共用）：支持 `JPEG / PNG / WEBP / BMP / TIFF`，其他格式（含 HEIC/HEIF 与 GIF）退 2 并提示先转 JPEG/PNG；像素上限 `64 000 000`（8000×8000），超限在解码前拒绝；只接受单帧图像，多帧输入退 2；按 EXIF Orientation 转置到显示方向后剥除全部 EXIF（含 GPS）；源 ICC 配置文件**原样写入成品、不做色彩空间转换**（源在何种色域，成品仍在何种色域）；透明像素先叠白（`#FFFFFF`）再处理，`alpha=0` 下的隐藏 RGB 不会进入成品。损坏到无法解析的 EXIF 退 2（缺失 EXIF 不受影响）。
 
-退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、不支持的输出扩展名、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、不支持的输出扩展名、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符（含长度不同）、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
 `protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask；若内容已落盘但权限回贴失败（exFAT/SMB/NTFS-3G 等不支持 `chmod` 的目标），只发 `RuntimeWarning`，仍以成功退出。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个链接目标已是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换；替换成功后原权限位只回贴到替换后的新产物（路径不是符号链接时，效果是只读的输出文件写后仍只读）；符号链接的旧目标不在回贴范围内，其被解除的写保护不一定恢复（P34，待复现）。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 

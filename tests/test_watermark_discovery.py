@@ -156,6 +156,22 @@ def test_crc_failure_at_the_right_length_is_uncertain_not_a_mismatch(
         wi.extract_envelope(probe_bgr, len(stored))
 
 
+def test_a_malformed_envelope_header_is_not_reported_as_a_crc_failure(
+    probe_bgr: np.ndarray, monkeypatch
+) -> None:
+    """Q1/N10: a bad CRC field or bad base64 never reaches a CRC computation.
+
+    Reporting it as ``CRC32 failed`` sends the reader after the wrong cause (bit loss) when
+    the actual problem is a structurally invalid header.
+    """
+    stored = "PG1:ZZZZZZZZ:AAAA"
+    monkeypatch.setattr(
+        wi, "_reconstruct_bytes", lambda scores, nbytes: stored.encode("ascii")
+    )
+    with pytest.raises(wi.IntegrityUncertainError, match="malformed"):
+        wi.extract_envelope(probe_bgr, len(stored))
+
+
 def test_find_envelope_honours_a_zero_ceiling(probe_bgr: np.ndarray) -> None:
     with pytest.raises(ValueError, match="max_bytes"):
         wi.find_envelope(probe_bgr, 0)

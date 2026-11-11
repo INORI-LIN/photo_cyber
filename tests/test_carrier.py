@@ -217,3 +217,5 @@ def test_layer_one_readers_refuse_a_non_bgr_array(bad_shape: tuple[int, ...]) ->
         wi.extract_envelope(image, len(wi.pack_payload(PAYLOAD).encode()))
     with pytest.raises(ValueError, match="3-channel BGR"):
         wi.find_envelope(image)
+    with pytest.raises(ValueError, match="3-channel BGR"):
+        wi.extract_legacy(image, 8)

@@ -136,6 +136,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             if output_format == "PNG":
                 print("warning: writing PNG, not JPEG", file=sys.stderr)
+            # Q1/N2: actionable, non-fatal product notes from the pipeline.
+            for message in info.get("warnings", ()):
+                print(f"warning: {message}", file=sys.stderr)
             print(
                 f"protected: {info['output']} size={info['size'][0]}x{info['size'][1]} "
                 f"layers={'+'.join(info['layers'])} perturber={info['perturber']} "
@@ -146,7 +149,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "verify":
             if args.expected_payload is not None:
                 try:
-                    result = pipeline.verify_expected(args.suspect, args.expected_payload)
+                    result = pipeline.verify_expected(
+                        args.suspect,
+                        args.expected_payload,
+                        max_payload_bytes=args.max_payload_bytes,
+                    )
                 except watermark_invisible.NoPayloadError as exc:
                     # P27: "no envelope anywhere in the image" is the same event as on the
                     # other two verify branches, so it exits 1. An envelope that *is* found

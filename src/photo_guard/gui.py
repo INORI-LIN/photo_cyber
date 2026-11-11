@@ -120,11 +120,17 @@ class ProtectWorker(QObject):
                     break
                 self.progress.emit(position - 1, len(self.items), item.source.name)
                 try:
-                    pipeline.protect(item.source, item.output, self.options)
+                    info = pipeline.protect(item.source, item.output, self.options)
                 except Exception as exc:
                     self.item_done.emit(str(item.source), "失败", str(exc))
                 else:
-                    self.item_done.emit(str(item.source), "成功", str(item.output))
+                    detail = str(item.output)
+                    # Q1/N2: keep non-fatal pipeline notes visible in the batch log; the
+                    # worker's stderr may be invisible in a packaged desktop app.
+                    messages = info.get("warnings") or ()
+                    if messages:
+                        detail = f"{detail}；" + "；".join(messages)
+                    self.item_done.emit(str(item.source), "成功", detail)
                 self.progress.emit(position, len(self.items), item.source.name)
         except Exception as exc:
             # P25: an exception escaping the slot would strand the thread — nothing else
@@ -167,7 +173,7 @@ class VerifyWorker(QObject):
                             # P35: auto discovery is the "what is in the image" step and
                             # the expected value is an assertion on top of it. Raise the
                             # blind-search ceiling to the expected envelope's stored
-                            # length, or a payload over the default 128 bytes would be
+                            # length, or a payload over the default ceiling would be
                             # reported as "no envelope" even when it is present.
                             max_bytes = max(
                                 config.DEFAULT_MAX_PAYLOAD_BYTES,
@@ -178,7 +184,9 @@ class VerifyWorker(QObject):
                             except watermark_invisible.NoPayloadError:
                                 # Let the exact-length path produce its more precise
                                 # capacity/CRC error instead of a generic "no envelope".
-                                value = pipeline.verify_expected(path, self.expected)["payload"]
+                                value = pipeline.verify_expected(
+                                    path, self.expected, max_payload_bytes=max_bytes
+                                )["payload"]
                                 status = "通过"
                             else:
                                 if value != self.expected:

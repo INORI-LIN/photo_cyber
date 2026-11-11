@@ -86,6 +86,33 @@ def test_protect_then_raw_verify_reports_a_clue(tmp_path: Path, capsys) -> None:
     assert payload in captured.out
 
 
+def test_protect_warns_when_the_envelope_exceeds_the_blind_ceiling(tmp_path: Path, capsys) -> None:
+    """Q1/N2: the default blind search stops at 256 stored bytes; say so at write time."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--payload",
+            "A" * 181,
+            "--payload-envelope",
+            "--layers",
+            "invisible",
+        ]
+    )
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "protected" in captured.out
+    assert "warning:" in captured.err
+    assert "--max-payload-bytes 257" in captured.err
+
+
 def test_verify_no_payload_exits_one(tmp_path: Path, capsys) -> None:
     """A clean image (no embed) → all-NUL payload → exit 1."""
     src = tmp_path / "clean.jpg"
@@ -244,6 +271,86 @@ def test_verify_without_flags_discovers_the_envelope(tmp_path: Path, capsys) -> 
     assert code == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == payload
+
+
+def test_verify_expected_with_a_different_length_reports_a_mismatch(
+    tmp_path: Path, capsys
+) -> None:
+    """Q1/N1: an envelope whose length differs is still an envelope, not an absence.
+
+    The old code decoded only at the expected payload's length, so a length mismatch
+    produced garbage and was reported as ``no payload recovered`` (exit 1) — contradicting
+    the README's "与图内信封不符 → 2".
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--payload",
+            "owner:alice#2026",
+            "--payload-envelope",
+            "--layers",
+            "invisible",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    code = main(["verify", str(out), "--expected-payload", "owner:bob"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "does not match" in err
+    assert "no payload recovered" not in err
+
+
+def test_verify_expected_with_a_longer_envelope_honours_the_ceiling_flag(
+    tmp_path: Path, capsys
+) -> None:
+    """Q1/N1+N2: a 257-byte envelope is beyond the default 256 ceiling.
+
+    The fallback search must use the caller's ``--max-payload-bytes`` (the same number the
+    protect warning prints), otherwise a shorter expected payload would still look absent.
+    """
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--payload",
+            "A" * 181,
+            "--payload-envelope",
+            "--layers",
+            "invisible",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    code = main(
+        [
+            "verify",
+            str(out),
+            "--expected-payload",
+            "owner:bob",
+            "--max-payload-bytes",
+            "257",
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "does not match" in err
+    assert "no payload recovered" not in err
 
 
 def test_verify_without_flags_on_an_unmarked_image_exits_one(tmp_path: Path, capsys) -> None:

@@ -280,10 +280,23 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     bgr = _pil_rgb_to_bgr(src)
 
     stored_payload = opts.payload
+    payload_warnings: list[str] = []
     if LAYER_INVISIBLE in opts.layers:
         if opts.payload_envelope:
             stored_payload = watermark_invisible.pack_payload(opts.payload)
-        validate_capacity(len(stored_payload.encode("utf-8")), bgr.shape[0], bgr.shape[1])
+        stored_size = len(stored_payload.encode("utf-8"))
+        validate_capacity(stored_size, bgr.shape[0], bgr.shape[1])
+        # Q1/N2: a product the default blind search cannot reach is still legal (the image
+        # capacity is usually much larger), but writing it silently would make "protect
+        # succeeded" and "verify finds nothing" both true. Warn with the exact command.
+        if opts.payload_envelope and stored_size > config.DEFAULT_MAX_PAYLOAD_BYTES:
+            raw_ceiling = ((config.DEFAULT_MAX_PAYLOAD_BYTES - 13) // 4) * 3
+            payload_warnings.append(
+                f"envelope payload is {stored_size} stored bytes; the default blind search "
+                f"stops at {config.DEFAULT_MAX_PAYLOAD_BYTES}. Verify with "
+                f"--max-payload-bytes {stored_size} "
+                f"(or shorten the payload to <= {raw_ceiling} bytes)."
+            )
         bgr = watermark_invisible.embed(bgr, stored_payload)
 
     perturber_name = None
@@ -328,6 +341,9 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         "payload_bytes": len(stored_payload.encode("utf-8")) if LAYER_INVISIBLE in opts.layers else 0,
         "payload_envelope": bool(opts.payload_envelope and LAYER_INVISIBLE in opts.layers),
         "layers": sorted(opts.layers),
+        # Q1/N2: non-fatal product notes (today: envelope over the default blind ceiling).
+        # The CLI prints them to stderr and the GUI appends them to the item detail.
+        "warnings": payload_warnings,
     }
 
 
@@ -360,16 +376,38 @@ def discover_payload(suspect_path: Path, max_bytes: int | None = None) -> str:
     return found[0]
 
 
-def verify_expected(suspect_path: Path, expected_payload: str) -> dict:
+def verify_expected(
+    suspect_path: Path, expected_payload: str, *, max_payload_bytes: int | None = None
+) -> dict:
     """Verify a CRC-protected payload.
 
     ``extract_envelope`` raises ``IntegrityUncertainError`` when an envelope-shaped decode
     fails its CRC32 — reported as uncertain rather than mismatched, because chroma clipping
     can flip bits at the correct length (spike P3-B).
+
+    Q1/N1: decoding at the expected length alone cannot tell "no envelope" from "an envelope
+    with a different length" — the bit grouping changes with the length, so the latter decodes
+    to garbage. When the exact-length read finds nothing, a blind search distinguishes the two:
+    any valid envelope means a mismatch (exit 2), none means absence (exit 1). The search
+    ceiling is the larger of the default, the expected size, and the caller's
+    ``max_payload_bytes`` — a longer envelope needs the caller to raise it (the ``protect``
+    warning names the exact value).
     """
     size = watermark_invisible.packed_size(expected_payload)
     bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
-    payload = watermark_invisible.extract_envelope(bgr, size)
+    try:
+        payload = watermark_invisible.extract_envelope(bgr, size)
+    except watermark_invisible.NoPayloadError:
+        ceiling = max(config.DEFAULT_MAX_PAYLOAD_BYTES, size, max_payload_bytes or 0)
+        found = watermark_invisible.find_envelope(bgr, ceiling)
+        if found is not None:
+            # Do not echo the recovered value: it comes from the suspect image and may carry
+            # control characters; the mismatch itself is the actionable fact.
+            raise ValueError(
+                "watermark payload does not match the expected payload "
+                "(an envelope with a different payload was found)"
+            ) from None
+        raise
     if payload != expected_payload:
         raise ValueError("watermark payload does not match the expected payload")
     return {"payload": payload, "verified": True, "payload_bytes": size}

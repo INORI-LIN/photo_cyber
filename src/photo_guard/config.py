@@ -34,7 +34,12 @@ LEGACY_CARRIERS = ((1, 36),)
 # printable garbage at 0.2005-0.5000: the bands overlap completely, and a corrupted
 # real product sits inside the true band at 0.2567. No threshold can separate them,
 # which is why the raw path reports a clue and only the CRC envelope is evidence.
-DEFAULT_MAX_PAYLOAD_BYTES = 128  # stored bytes; ceiling for the blind envelope search
+DEFAULT_MAX_PAYLOAD_BYTES = 256  # stored bytes; ceiling for the blind envelope search
+# 256 stored bytes covers raw payloads up to 180 bytes (envelope = 13 + 4*ceil(n/3)).
+# Q1/N2 measured 2026-11-11 on a 1080x810 JPEG (macOS arm64, Python 3.11): a clean-image
+# miss took 0.23 s at 128, 0.36 s at 256, 0.85 s at 512 and 2.82 s at 1024. 512 was left on
+# the table for CI-runner headroom; 12 MP images cost ~3 s even at 128 (block scoring, not
+# the ceiling). Raise this only with a fresh measurement and a note here.
 LEGACY_MIN_MEAN_MARGIN = 0.20    # kills q50/q70/clean-texture/non-multiple-length garbage
 LEGACY_MIN_BLOCKS_PER_BIT = 16   # advisory; unsatisfiable at the 320x320 floor for K >= 14
 

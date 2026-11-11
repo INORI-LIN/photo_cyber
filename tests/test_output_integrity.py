@@ -84,6 +84,25 @@ def test_atomic_write_temp_creation_failure_names_the_target(tmp_path, monkeypat
     assert str(destination) in str(excinfo.value)
 
 
+def test_a_verify_callback_oserror_is_not_wrapped_as_a_write_failure(tmp_path) -> None:
+    """Q1/N10: ``verify`` runs inside the write ``try``, but its errors are not I/O errors.
+
+    The docstring promises a failed check is not reported as ``failed to write``; an
+    ``OSError`` from the callback used to be caught by the write wrapper anyway.
+    """
+    destination = tmp_path / "out.jpg"
+
+    def boom(_path):
+        raise OSError("boom")
+
+    with pytest.raises(OSError, match="^boom$") as excinfo:
+        outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination, verify=boom)
+
+    assert "failed to write" not in str(excinfo.value)
+    assert not destination.exists()
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
 def test_atomic_write_wraps_mkdir_failure_when_parent_is_a_file(tmp_path) -> None:
     """P28: a parent path that is a file must fail with the ``failed to write`` wrap.
 

@@ -207,6 +207,25 @@ def test_protect_worker_skips_perturber_without_layer(monkeypatch) -> None:
     assert len(calls) == 1
 
 
+def test_protect_worker_surfaces_pipeline_warnings(monkeypatch) -> None:
+    """Q1/N2: the blind-ceiling warning must reach the GUI log, not just the process stderr."""
+    options = pipeline.ProtectOptions(layers=frozenset({pipeline.LAYER_VISIBLE}))
+    items = [gui.BatchItem(Path("a.jpg"), Path("a_out.jpg"))]
+    rows: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        gui.pipeline,
+        "protect",
+        lambda source, output, opts: {"warnings": ["use --max-payload-bytes 257"]},
+    )
+
+    worker = gui.ProtectWorker(items, options)
+    worker.item_done.connect(lambda source, status, detail: rows.append((source, status, detail)))
+    worker.run()
+
+    assert rows[0][1] == "成功"
+    assert "use --max-payload-bytes 257" in rows[0][2]
+
+
 def test_cancel_task_is_idempotent_before_any_task(window) -> None:
     """P7/T10: a fresh window has no worker; cancel must be a quiet no-op."""
     window.cancel_task()
@@ -298,9 +317,9 @@ def test_auto_discover_without_expected_is_unchanged(tmp_path) -> None:
 
 
 def test_auto_discover_search_ceiling_covers_expected_envelope(tmp_path) -> None:
-    """A 100-byte payload packs to 149 stored bytes, beyond the default 128 search."""
-    payload = "L" * 100
-    product = _envelope_product(tmp_path, payload, size=800)
+    """A 200-byte payload packs to 281 stored bytes, beyond the current 256 default."""
+    payload = "L" * 200
+    product = _envelope_product(tmp_path, payload, size=1200)
     rows = _verify_rows(product, payload, True)
 
     assert len(rows) == 1

@@ -73,6 +73,7 @@ def save_image_atomic(
     destination = Path(path)
     previous_mode: int | None = None
     unprotected = False  # True while the swap has lifted the destination's write protection
+    in_verify = False  # True only while the caller's check runs; its OSError is not I/O
     temp: Path | None = None
     try:
         # P28: creating the parent directory and probing the previous mode are part of the
@@ -99,7 +100,11 @@ def save_image_atomic(
             # P4/M-A: check the temp bytes before the swap. A raise here (typically a
             # ValueError from the product self-check) skips the replace, and the finally
             # block below unlinks the temp file.
+            # Q1/N10: keep its OSError outside the write wrapper too. `in_verify` is only
+            # cleared on success, so an exception leaves it set for the handler below.
+            in_verify = True
             verify(temp)
+            in_verify = False
         # Windows refuses to replace a read-only destination (measured on windows-latest:
         # WinError 5 "Access is denied" out of `os.replace`), and a read-only output is
         # precisely the mode this function promises to carry over — so lift the protection for
@@ -131,6 +136,10 @@ def save_image_atomic(
                     stacklevel=2,
                 )
     except OSError as exc:
+        if in_verify:
+            # The failure came from the caller's check, not from the write itself; the
+            # docstring promises "a failed check is not an I/O failure".
+            raise
         raise OSError(f"failed to write {destination}: {exc}") from exc
     finally:
         if unprotected and previous_mode is not None and temp is not None:

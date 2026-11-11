@@ -23,6 +23,16 @@ def _solid(path, size=(320, 260), color=(10, 20, 30)):
     return path
 
 
+def _textured(path, size=(1200, 1200)):
+    """Large enough to carry a ~257-byte envelope with margin (Q1/N2)."""
+    import numpy as np
+
+    rng = np.random.default_rng(23)
+    arr = rng.integers(60, 200, (size[1], size[0], 3), dtype=np.uint8)
+    Image.fromarray(arr, "RGB").save(path, quality=92)
+    return path
+
+
 def test_protect_refuses_over_capacity_before_writing(tmp_path) -> None:
     source = _solid(tmp_path / "in.jpg", (320, 320))  # capacity = 200 stored bytes
     out = tmp_path / "out.jpg"
@@ -94,6 +104,51 @@ def test_a_failed_self_check_does_not_damage_a_previous_product(tmp_path, monkey
         pipeline.protect(source, out, options)
 
     assert out.read_bytes() == before
+
+
+def test_an_envelope_over_the_blind_ceiling_warns_with_the_needed_bound(tmp_path) -> None:
+    """Q1/N2: a product the default blind search cannot reach must not be silent.
+
+    181 raw bytes pack to 257 stored bytes, just over the 256-byte ceiling. The product is
+    still legal (the image cap is much larger), so protect succeeds and returns an actionable
+    warning instead of rejecting or silently writing something ``verify`` cannot find.
+    """
+    source = _textured(tmp_path / "in.jpg")
+    out = tmp_path / "out.jpg"
+
+    info = pipeline.protect(
+        source,
+        out,
+        pipeline.ProtectOptions(
+            payload="A" * 181,
+            payload_envelope=True,
+            layers=frozenset({pipeline.LAYER_INVISIBLE}),
+        ),
+    )
+
+    assert out.exists()
+    assert len(info["warnings"]) == 1
+    message = info["warnings"][0]
+    assert "--max-payload-bytes 257" in message
+    assert "<= 180" in message
+
+
+def test_an_envelope_at_the_blind_ceiling_does_not_warn(tmp_path) -> None:
+    """Boundary: 180 raw bytes pack to 253 stored bytes, which the default search covers."""
+    source = _textured(tmp_path / "in.jpg")
+    out = tmp_path / "out.jpg"
+
+    info = pipeline.protect(
+        source,
+        out,
+        pipeline.ProtectOptions(
+            payload="A" * 180,
+            payload_envelope=True,
+            layers=frozenset({pipeline.LAYER_INVISIBLE}),
+        ),
+    )
+
+    assert info["warnings"] == []
 
 
 def test_the_self_check_uses_the_byte_exact_extract(monkeypatch, tmp_path) -> None:

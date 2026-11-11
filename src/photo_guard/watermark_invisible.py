@@ -378,6 +378,26 @@ def find_envelope(
     return None
 
 
+def _envelope_header_is_well_formed(text: str) -> bool:
+    """True for the exact ``PG1:<8 hex>:<canonical base64>`` shape (Q1/N10).
+
+    The CRC can only be blamed when it was actually computed. A non-hex checksum field or a
+    non-canonical base64 body is a malformed header, not bit loss — the two need different
+    messages or the reader chases the wrong cause.
+    """
+    parts = text.split(":", 2)
+    if len(parts) != 3:
+        return False
+    _, crc_text, encoded = parts
+    if len(crc_text) != 8 or any(char not in "0123456789abcdefABCDEF" for char in crc_text):
+        return False
+    try:
+        raw = base64.urlsafe_b64decode(encoded.encode("ascii"))
+    except ValueError:  # binascii.Error / UnicodeEncodeError are ValueError subclasses
+        return False
+    return base64.urlsafe_b64encode(raw).decode("ascii") == encoded
+
+
 def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
     """Decode an envelope at a known stored length. CRC is the only authority.
 
@@ -387,7 +407,8 @@ def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
     """
     _require_capacity(image_bgr, payload_bytes)
     _require_bgr(image_bgr)
-    saw_envelope = False
+    crc_failed = False
+    malformed = False
     for channel, scale in carrier_candidates():
         raw = _reconstruct_bytes(
             _block_scores(image_bgr, channel=channel, scale=scale), payload_bytes
@@ -398,17 +419,26 @@ def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
             continue
         if not text.startswith(f"{_MAGIC}:"):
             continue
-        saw_envelope = True
+        if not _envelope_header_is_well_formed(text):
+            malformed = True
+            continue
         try:
             payload, verified = unpack_payload(text)
         except ValueError:
+            crc_failed = True
             continue
         if verified:
             return payload
-    if saw_envelope:
+    if crc_failed:
         raise IntegrityUncertainError(
             "envelope decoded but its CRC32 failed — the payload may differ, or the "
             "carrier may have lost bits (see P10/P11)"
+        )
+    if malformed:
+        raise IntegrityUncertainError(
+            "envelope decoded but its header is malformed (CRC must be 8 hex digits and "
+            "the payload canonical base64) — the payload may differ, or the carrier may "
+            "have lost bits (see P10/P11)"
         )
     raise NoPayloadError("no photo-guard envelope at that length")
 
@@ -469,6 +499,10 @@ class LegacyExtraction:
 def extract_legacy(image_bgr: np.ndarray, payload_bytes: int) -> LegacyExtraction:
     """Decode a raw (checksum-less) payload as a *clue*, with its advisory metrics."""
     _require_capacity(image_bgr, payload_bytes)
+    # Q1/N9: this entry point was the one reader P31 missed. A 2-D array died inside cv2
+    # (cv2.error, outside the CLI's exit-2 mapping) and a 4-channel array was silently
+    # accepted with its extra channel ignored.
+    _require_bgr(image_bgr)
     # Without a checksum the carrier cannot be confirmed, so each candidate is tried and the
     # first that yields recoverable text wins; the result records which one it was.
     found: tuple[int, int] | None = None
