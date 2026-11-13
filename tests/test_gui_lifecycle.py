@@ -22,6 +22,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -29,7 +30,7 @@ pytest.importorskip("PySide6")
 
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QObject, QSettings, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
 from photo_guard import config, gui, outputs, pipeline
@@ -64,6 +65,21 @@ def _pump_until(predicate, timeout_ms: int = 30_000) -> None:
     assert predicate(), f"worker did not settle within {timeout_ms} ms"
 
 
+class _FakeWorker(QObject):
+    """A deterministic stand-in for a running task (Q3/P36)."""
+
+    item_done = Signal(str, str, str)
+    progress = Signal(int, int, str)
+    finished = Signal(bool)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
 @pytest.fixture
 def window(tmp_path, monkeypatch):
     source = tmp_path / "in.jpg"
@@ -71,7 +87,27 @@ def window(tmp_path, monkeypatch):
     pixels = rng.integers(40, 210, (240, 320, 3), dtype=np.uint8)
     Image.fromarray(pixels, "RGB").save(source, quality=90)
 
+    # Q3/N6: keep the real torch import and system_profiler out of the GUI tests.
+    monkeypatch.setattr(
+        gui.device,
+        "discover_devices",
+        lambda **_kwargs: [gui.device.DeviceInfo("cpu", "test-cpu")],
+    )
+    # Q3/N7: QSettings(org, app) ignores setDefaultFormat here (PySide6 6.11), so inject an
+    # explicitly-INI factory; otherwise the tests read the developer's real plist.
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
+    monkeypatch.setattr(
+        gui,
+        "QSettings",
+        lambda *_args, **_kwargs: QSettings(
+            QSettings.Format.IniFormat,
+            QSettings.Scope.UserScope,
+            "PhotoGuard",
+            "PhotoGuardDesktop",
+        ),
+    )
     win = MainWindow()
+    _pump_until(lambda: not win._device_discovery_running())
     monkeypatch.setattr(win, "_save_settings", lambda: None)  # never write the real QSettings
     # Whatever this machine's QSettings hold must not decide the test's validity.
     win.payload.setText(config.DEFAULT_PAYLOAD)
@@ -87,6 +123,7 @@ def window(tmp_path, monkeypatch):
         yield win
     finally:
         win.close()
+        _pump_until(lambda: not win._device_discovery_running())
 
 
 def test_export_csv_failure_goes_through_the_error_channel(window, monkeypatch, tmp_path) -> None:
@@ -162,7 +199,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QSettings, QTimer
 from PySide6.QtWidgets import QApplication
 
 from photo_guard import config, gui, outputs
@@ -174,6 +211,11 @@ Image.fromarray(
 ).save(source, quality=90)
 
 app = QApplication.instance() or QApplication([])
+gui.device.discover_devices = lambda **_kwargs: []
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(work))
+gui.QSettings = lambda *_args, **_kwargs: QSettings(
+    QSettings.Format.IniFormat, QSettings.Scope.UserScope, "PhotoGuard", "PhotoGuardDesktop"
+)
 window = gui.MainWindow()
 window._save_settings = lambda: None
 window.payload.setText(config.DEFAULT_PAYLOAD)
@@ -272,6 +314,10 @@ app.setQuitOnLastWindowClosed(False)
 QSettings.setDefaultFormat(QSettings.Format.IniFormat)
 QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(work))
 
+gui.device.discover_devices = lambda **_kwargs: []
+gui.QSettings = lambda *_args, **_kwargs: QSettings(
+    QSettings.Format.IniFormat, QSettings.Scope.UserScope, "PhotoGuard", "PhotoGuardDesktop"
+)
 window = CountingWindow()
 window._save_settings = lambda: None
 window.payload.setText(config.DEFAULT_PAYLOAD)
@@ -307,10 +353,10 @@ def pump_until(predicate, timeout_ms=10000):
     assert predicate(), "condition not met"
 
 
+pump_until(lambda: not window._device_discovery_running(), 5000)
 window.start_protect()
 pump(80)  # let the thread start; the fake protect still sleeps
 window.close()
-
 if mode == "within":
     pump_until(lambda: not window._threads, 10000)
     pump_until(lambda: not window.isVisible(), 5000)
@@ -397,3 +443,89 @@ def test_start_verify_with_auto_and_wrong_expected_reports_failure(window, tmp_p
 
     assert window.verify_results
     assert window.verify_results[0][1] == "未通过"
+
+
+# --- Q3/P36: the busy gate must precede every side effect -----------------------------
+
+
+def test_busy_protect_click_preserves_results_and_buttons(window, monkeypatch) -> None:
+    window.protect_results = [("old.jpg", "成功", "out.jpg")]
+    window.protect_log.setPlainText("old log")
+    monkeypatch.setattr(window, "_thread_running", lambda: True)
+    errors: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: errors.append(message))
+
+    window.start_protect()
+
+    assert errors == ["已有任务正在运行"]
+    assert window.protect_results == [("old.jpg", "成功", "out.jpg")]
+    assert window.protect_log.toPlainText() == "old log"
+    assert window.protect_start.isEnabled() is True
+    assert window.protect_cancel.isEnabled() is False
+
+
+def test_busy_verify_click_preserves_results_and_table(window, monkeypatch) -> None:
+    source = Path(window.output_dir.text()) / "verify.jpg"
+    Image.new("RGB", (320, 320), (40, 80, 120)).save(source, quality=92)
+    window.verify_files.add_paths([source])
+    window.expected_payload.setText("owner:x")
+    window.verify_results = [("old.jpg", "成功", "out.jpg")]
+    window.verify_table.setRowCount(0)
+    window.verify_table.insertRow(0)
+    monkeypatch.setattr(window, "_thread_running", lambda: True)
+    errors: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: errors.append(message))
+
+    window.start_verify()
+
+    assert errors == ["已有任务正在运行"]
+    assert window.verify_results == [("old.jpg", "成功", "out.jpg")]
+    assert window.verify_table.rowCount() == 1
+    assert window.verify_start.isEnabled() is True
+
+
+def test_rejected_start_does_not_save_settings(window, monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr(window, "_save_settings", lambda: calls.append(1))
+    monkeypatch.setattr(window, "_thread_running", lambda: True)
+    errors: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: errors.append(message))
+
+    window.start_protect()
+
+    assert errors == ["已有任务正在运行"]
+    assert calls == []
+
+
+def test_task_state_matrix(window) -> None:
+    window._set_task_state("protect")
+    assert window.protect_start.isEnabled() is False
+    assert window.protect_cancel.isEnabled() is True
+    assert window.verify_start.isEnabled() is False
+    assert window.verify_cancel.isEnabled() is False
+
+    window._set_task_state("verify")
+    assert window.protect_start.isEnabled() is False
+    assert window.protect_cancel.isEnabled() is False
+    assert window.verify_start.isEnabled() is False
+    assert window.verify_cancel.isEnabled() is True
+
+    window._set_task_state(None)
+    assert window.protect_start.isEnabled() is True
+    assert window.verify_start.isEnabled() is True
+    assert window.protect_cancel.isEnabled() is False
+    assert window.verify_cancel.isEnabled() is False
+
+
+def test_late_finished_from_an_old_worker_is_ignored(window) -> None:
+    old = _FakeWorker()
+    new = _FakeWorker()
+    old.finished.connect(window._protect_finished)
+    window.worker = new
+    window._set_task_state("verify")
+
+    old.finished.emit(False)
+
+    assert window._task_kind == "verify"
+    assert window.verify_cancel.isEnabled() is True
+    assert window.protect_cancel.isEnabled() is False

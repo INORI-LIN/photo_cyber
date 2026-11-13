@@ -6,7 +6,9 @@ be modified by them.
 """
 from __future__ import annotations
 
+import csv
 import os
+import threading
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -17,7 +19,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PIL import Image
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QEventLoop, QSettings, QTimer
 from PySide6.QtWidgets import QApplication
 
 from photo_guard import config, gui, outputs, pipeline
@@ -27,11 +29,50 @@ pytestmark = pytest.mark.gui
 _APP = QApplication.instance() or QApplication([])
 
 
+def _pump_until(predicate, timeout_ms: int = 10_000) -> None:
+    """Run the main loop until ``predicate`` holds (no sleeps in the test body)."""
+    loop = QEventLoop()
+    poll = QTimer()
+    poll.setInterval(10)
+    deadline = QTimer()
+    deadline.setSingleShot(True)
+    poll.timeout.connect(lambda: loop.quit() if predicate() else None)
+    deadline.timeout.connect(loop.quit)
+    poll.start()
+    deadline.start(timeout_ms)
+    loop.exec()
+    poll.stop()
+    assert predicate(), f"condition not met within {timeout_ms} ms"
+
+
+def _ini_settings_factory():
+    """Force QSettings to an INI under the path set by the test.
+
+    QSettings.setDefaultFormat does not affect ``QSettings(org, app)`` on PySide6 6.11
+    (measured while adding Q3/N7): the constructor kept using the native plist, so the
+    fixture was silently reading the developer's real preferences. Passing the format and
+    scope explicitly is the only reliable redirect.
+    """
+    return lambda *_args, **_kwargs: QSettings(
+        QSettings.Format.IniFormat,
+        QSettings.Scope.UserScope,
+        "PhotoGuard",
+        "PhotoGuardDesktop",
+    )
+
+
 @pytest.fixture
-def window(tmp_path):
-    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+def window(tmp_path, monkeypatch):
     QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
+    monkeypatch.setattr(gui, "QSettings", _ini_settings_factory())
+    # Q3/N6: discovery is asynchronous now; never import the real torch in a GUI test.
+    monkeypatch.setattr(
+        gui.device,
+        "discover_devices",
+        lambda **_kwargs: [gui.device.DeviceInfo("cpu", "test-cpu")],
+    )
     win = gui.MainWindow()
+    _pump_until(lambda: not win._device_discovery_running())
     win.payload.setText(config.DEFAULT_PAYLOAD)
     win.visible_text.setText(config.DEFAULT_VISIBLE_TEXT)
     win.suffix.setText(outputs.DEFAULT_SUFFIX)
@@ -41,6 +82,7 @@ def window(tmp_path):
         yield win
     finally:
         win.close()
+        _pump_until(lambda: not win._device_discovery_running())
 
 
 def test_default_checkboxes_are_invisible_and_visible(window) -> None:
@@ -332,3 +374,209 @@ def test_expected_only_mismatch_still_fails(tmp_path) -> None:
 
     assert len(rows) == 1
     assert rows[0][1] == "未通过"
+
+
+# --- Q3: device discovery, settings, mutual exclusion, CSV export -------------------
+
+
+def _redirect_settings(tmp_path: Path, monkeypatch) -> None:
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
+    monkeypatch.setattr(gui, "QSettings", _ini_settings_factory())
+
+
+def _device(backend: str, name: str, index: int | None = None):
+    return gui.device.DeviceInfo(backend, name, index=index)
+
+
+def _construct_window(tmp_path: Path, monkeypatch, fake):
+    _redirect_settings(tmp_path, monkeypatch)
+    monkeypatch.setattr(gui.device, "discover_devices", fake)
+    return gui.MainWindow()
+
+
+def test_device_discovery_runs_off_the_main_thread(tmp_path, monkeypatch) -> None:
+    """Q3/N6: constructing the window must not import torch/probe devices synchronously."""
+    gate = threading.Event()
+    seen: dict[str, int] = {}
+
+    def fake(**_kwargs):
+        seen["ident"] = threading.get_ident()
+        gate.wait(5)
+        return [_device("cpu", "test-cpu")]
+
+    timer = threading.Timer(0.5, gate.set)
+    timer.start()
+    win = _construct_window(tmp_path, monkeypatch, fake)
+    try:
+        assert win.device_table.rowCount() == 0
+        _pump_until(lambda: not win._device_discovery_running())
+        assert seen["ident"] != threading.get_ident()
+        assert win.device_table.rowCount() == 1
+    finally:
+        gate.set()
+        _pump_until(lambda: not win._device_discovery_running())
+        win.close()
+        _pump_until(lambda: not win._device_discovery_running())
+
+
+def test_device_discovery_failure_keeps_the_window_usable(tmp_path, monkeypatch) -> None:
+    def fake(**_kwargs):
+        raise RuntimeError("probe exploded")
+
+    win = _construct_window(tmp_path, monkeypatch, fake)
+    try:
+        _pump_until(lambda: not win._device_discovery_running())
+        assert "设备检测失败" in win.statusBar().currentMessage()
+        assert win.device_combo.count() >= 1
+        assert tuple(win.device_combo.currentData()) == ("auto", None)
+    finally:
+        win.close()
+        _pump_until(lambda: not win._device_discovery_running())
+
+
+def test_refresh_preserves_the_selected_device_and_falls_back(tmp_path, monkeypatch) -> None:
+    """Q3/N6: the old code cleared the combo before the probe returned."""
+    devices = [_device("cpu", "test-cpu"), _device("cuda", "test-gpu", index=0)]
+
+    def fake(**_kwargs):
+        return list(devices)
+
+    win = _construct_window(tmp_path, monkeypatch, fake)
+    try:
+        _pump_until(lambda: not win._device_discovery_running())
+        index = next(
+            i for i in range(win.device_combo.count())
+            if tuple(win.device_combo.itemData(i)) == ("cuda", 0)
+        )
+        win.device_combo.setCurrentIndex(index)
+
+        win.refresh_devices()
+        assert tuple(win.device_combo.currentData()) == ("cuda", 0)
+        _pump_until(lambda: not win._device_discovery_running())
+        assert tuple(win.device_combo.currentData()) == ("cuda", 0)
+
+        devices.pop()  # the next probe no longer offers cuda
+        win.refresh_devices()
+        _pump_until(lambda: not win._device_discovery_running())
+        assert tuple(win.device_combo.currentData()) == ("auto", None)
+    finally:
+        win.close()
+        _pump_until(lambda: not win._device_discovery_running())
+
+
+class _Event:
+    def __init__(self) -> None:
+        self.accepted = False
+
+    def ignore(self) -> None:
+        pass
+
+    def accept(self) -> None:
+        self.accepted = True
+
+
+def test_close_saves_settings_for_the_next_window(tmp_path, monkeypatch) -> None:
+    """Q3/N7: changing settings and closing must persist them (old code saved only on protect)."""
+    first = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
+    _pump_until(lambda: not first._device_discovery_running())
+    first.quality.setValue(77)
+    event = _Event()
+    first.closeEvent(event)
+    assert event.accepted
+
+    second = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
+    try:
+        _pump_until(lambda: not second._device_discovery_running())
+        assert second.quality.value() == 77
+    finally:
+        second.close()
+        _pump_until(lambda: not second._device_discovery_running())
+
+
+def test_verify_start_saves_settings(tmp_path, monkeypatch) -> None:
+    win = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
+    try:
+        _pump_until(lambda: not win._device_discovery_running())
+        source = tmp_path / "verify.jpg"
+        Image.new("RGB", (320, 320), (40, 80, 120)).save(source, quality=92)
+        win.verify_files.add_paths([source])
+        win.expected_payload.setText("owner:x")
+        win.quality.setValue(66)
+        monkeypatch.setattr(win, "_start_worker", lambda *_args: True)  # no thread needed
+        win.start_verify()
+        assert int(win.settings.value("quality")) == 66
+    finally:
+        win.close()
+        _pump_until(lambda: not win._device_discovery_running())
+
+
+def test_verify_worker_rejects_both_modes() -> None:
+    """Q3/N8: the worker is the second gate for programmatic callers."""
+    with pytest.raises(ValueError, match="二选一"):
+        gui.VerifyWorker([Path("a.jpg")], "owner", 4, False)
+
+
+def test_start_verify_rejects_both_modes_without_touching_results(window, monkeypatch) -> None:
+    source = Path(window.output_dir.text()) / "verify.jpg"
+    Image.new("RGB", (320, 320), (40, 80, 120)).save(source, quality=92)
+    window.verify_files.add_paths([source])
+    window.expected_payload.blockSignals(True)
+    window.expected_payload.setText("owner")
+    window.legacy_bytes.blockSignals(True)
+    window.legacy_bytes.setValue(4)
+    window.verify_results = [("old.jpg", "成功", "out.jpg")]
+    errors: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: errors.append(message))
+    monkeypatch.setattr(window, "_start_worker", lambda *_args: False)
+
+    window.start_verify()
+
+    assert "二选一" in errors[-1]
+    assert window.verify_results == [("old.jpg", "成功", "out.jpg")]
+
+
+def test_expected_and_legacy_inputs_disable_each_other(window) -> None:
+    window.legacy_bytes.setValue(5)
+    assert window.expected_payload.isEnabled() is False
+    window.legacy_bytes.setValue(0)
+    assert window.expected_payload.isEnabled() is True
+
+    window.expected_payload.setText("owner")
+    assert window.legacy_bytes.isEnabled() is False
+    assert window.legacy_bytes.value() == 0
+    window.expected_payload.clear()
+    assert window.legacy_bytes.isEnabled() is True
+
+
+def test_export_csv_neutralises_formula_cells(window, monkeypatch, tmp_path) -> None:
+    """Q3/P37: every untrusted cell that looks like a formula gets the apostrophe."""
+    window.verify_results = [
+        ("-2+3.jpg", "成功", "=1+1"),
+        ("normal.jpg", "结果", "normal"),
+    ]
+    target = tmp_path / "verify.csv"
+    monkeypatch.setattr(
+        gui.QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(target), "CSV (*.csv)")
+    )
+
+    window.export_csv()
+
+    with target.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    assert rows[1] == ["'-2+3.jpg", "成功", "'=1+1"]
+    assert rows[2] == ["normal.jpg", "结果", "normal"]
+
+
+def test_export_csv_unicode_error_goes_through_the_error_channel(window, monkeypatch, tmp_path) -> None:
+    """Q3/P37: a surrogate in a recovered path must not escape the slot."""
+    window.verify_results = [("in.jpg", "成功", "\ud800")]
+    target = tmp_path / "verify.csv"
+    monkeypatch.setattr(
+        gui.QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(target), "CSV (*.csv)")
+    )
+    errors: list[str] = []
+    monkeypatch.setattr(window, "_error", lambda message: errors.append(message))
+
+    window.export_csv()
+
+    assert errors and "导出失败" in errors[0]

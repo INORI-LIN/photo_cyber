@@ -58,6 +58,33 @@ def layers_from_checks(invisible: bool, sd: bool, visible: bool) -> frozenset[st
     return frozenset(layers)
 
 
+_CSV_DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def csv_safe_cell(value: object) -> str:
+    """Prefix a spreadsheet-formula lead-in with an apostrophe (Q3/P37).
+
+    CSV quoting is transport syntax: a consumer still parses ``=1+1`` as a formula after
+    splitting the columns, so ``QUOTE_ALL`` is not a defence. Excel/LibreOffice treat a
+    leading apostrophe as "text"; some importers display it, so the guarantee is "not
+    evaluated", not "invisible".
+    """
+    text = str(value)
+    if text.startswith(_CSV_DANGEROUS_PREFIXES):
+        return "'" + text
+    return text
+
+
+def verify_argument_conflict(expected: str, legacy_bytes: int | None) -> bool:
+    """True when both verify modes are requested (Q3/N8).
+
+    The CLI makes ``--expected-payload`` and ``--payload-bytes`` mutually exclusive; the GUI
+    used to let both through and ``VerifyWorker`` silently ignored ``legacy_bytes``. Empty or
+    whitespace-only expected and 0/None legacy count as "not set".
+    """
+    return bool((expected or "").strip()) and legacy_bytes not in (None, 0)
+
+
 def load_settings(
     raw: Mapping[str, object] | None, defaults: Mapping[str, object]
 ) -> dict[str, object]:

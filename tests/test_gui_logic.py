@@ -179,3 +179,42 @@ def test_pipeline_protect_is_only_called_by_the_worker_class() -> None:
         if isinstance(node, ast.ClassDef) and node.name == "ProtectWorker"
     )
     assert _protect_call_lines(tree) == _protect_call_lines(worker) != set()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "=cmd|' /C calc'!A0",
+        "+SUM(1,1)",
+        "-2+3",
+        "@SUM(1,1)",
+        "\t=1+1",
+        "\r=1",
+        "\n=1",
+    ],
+)
+def test_csv_safe_cell_prefixes_formula_leads(value: str) -> None:
+    """Q3/P37: the exported cell must start with an apostrophe, not the formula lead."""
+    assert gui_logic.csv_safe_cell(value) == "'" + value
+
+
+@pytest.mark.parametrize("value", ["owner:alice", "© 张三", "", "a=b", "  indented"])
+def test_csv_safe_cell_keeps_normal_values(value: str) -> None:
+    assert gui_logic.csv_safe_cell(value) == value
+
+
+@pytest.mark.parametrize(
+    ("expected", "legacy", "conflict"),
+    [
+        ("owner", None, False),
+        ("owner", 0, False),
+        ("", 4, False),
+        ("   ", 4, False),
+        ("owner", 4, True),
+    ],
+)
+def test_verify_argument_conflict_matches_the_cli_mutual_exclusion(
+    expected: str, legacy: int | None, conflict: bool
+) -> None:
+    """Q3/N8: only "both really set" conflicts; empty/zero are the off states."""
+    assert gui_logic.verify_argument_conflict(expected, legacy) is conflict

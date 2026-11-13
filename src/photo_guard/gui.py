@@ -155,6 +155,9 @@ class VerifyWorker(QObject):
     def __init__(self, paths: list[Path], expected: str, legacy_bytes: int | None,
                  auto_discover: bool = False) -> None:
         super().__init__()
+        # Q3/N8: defense in depth for programmatic callers; the GUI entry rejects first.
+        if gui_logic.verify_argument_conflict(expected, legacy_bytes):
+            raise ValueError("期望 payload 与旧版字节数只能二选一")
         self.paths, self.expected, self.legacy_bytes = paths, expected, legacy_bytes
         self.auto_discover = auto_discover
         self.cancelled = False
@@ -223,6 +226,27 @@ class VerifyWorker(QObject):
         self.cancelled = True
 
 
+class DeviceDiscoveryWorker(QObject):
+    """Q3/N6: device enumeration off the Qt main thread.
+
+    ``torch`` import and ``system_profiler``/``lspci`` are synchronous and can take seconds;
+    running them in ``MainWindow.__init__`` delayed the first paint. This worker only emits;
+    every widget update happens in the bound slots on the main thread.
+    """
+
+    found = Signal(list)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            items = device.discover_devices()
+        except Exception as exc:  # noqa: BLE001 - a failure must not crash the GUI
+            self.failed.emit(str(exc))
+        else:
+            self.found.emit(items)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -232,6 +256,9 @@ class MainWindow(QMainWindow):
         self.thread: QThread | None = None
         self.worker: QObject | None = None
         self._threads: list[QThread] = []
+        self._task_kind: str | None = None
+        self._device_thread: QThread | None = None
+        self._device_worker: QObject | None = None
         self.protect_results: list[tuple[str, str, str]] = []
         self.verify_results: list[tuple[str, str, str]] = []
         self._close_deadline: float | None = None
@@ -241,6 +268,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_devices_tab(), "设备信息")
         self.setCentralWidget(tabs)
         self.statusBar().showMessage("就绪")
+        self._set_task_state(None)
         self._load_settings()
         self.refresh_devices()
 
@@ -300,6 +328,8 @@ class MainWindow(QMainWindow):
 
         ai = QGroupBox("AI 扰动设备与参数"); ai_form = QFormLayout(ai)
         self.device_combo = QComboBox()
+        # Q3/N6: the combo must be usable before the background discovery returns.
+        self.device_combo.addItem("自动选择（CUDA → MPS → CPU）", ("auto", None))
         self.epsilon = QDoubleSpinBox(); self.epsilon.setDecimals(5); self.epsilon.setRange(0.00001, .2); self.epsilon.setValue(config.PHOTOGUARD_EPSILON)
         self.step_size = QDoubleSpinBox(); self.step_size.setDecimals(5); self.step_size.setRange(0.00001, .2); self.step_size.setValue(config.PHOTOGUARD_STEP_SIZE)
         self.steps = QSpinBox(); self.steps.setRange(1, 100); self.steps.setValue(config.PHOTOGUARD_STEPS)
@@ -327,21 +357,29 @@ class MainWindow(QMainWindow):
         self.verify_auto = QCheckBox("自动发现 payload（推荐：无需填写，按 CRC 信封盲检）")
         form.addRow("期望 payload", self.expected_payload); form.addRow("旧版 payload 字节数", self.legacy_bytes)
         form.addRow("自动发现", self.verify_auto)
+        # Q3/N8: the CLI is mutually exclusive; keep the GUI from silently ignoring one.
+        self.expected_payload.textChanged.connect(self._on_expected_changed)
+        self.legacy_bytes.valueChanged.connect(self._on_legacy_changed)
         layout.addWidget(mode)
         self.verify_table = QTableWidget(0, 3); self.verify_table.setHorizontalHeaderLabels(["文件", "结果", "详情"]); self.verify_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.verify_table, 1)
         self.verify_progress = QProgressBar(); self.verify_progress.setRange(0, 1); layout.addWidget(self.verify_progress)
-        buttons = QHBoxLayout(); start = QPushButton("开始验证"); cancel = QPushButton("取消"); export = QPushButton("导出 CSV")
-        start.clicked.connect(self.start_verify); cancel.clicked.connect(self.cancel_task); export.clicked.connect(self.export_csv)
-        buttons.addWidget(start); buttons.addWidget(cancel); buttons.addWidget(export); layout.addLayout(buttons)
+        buttons = QHBoxLayout()
+        self.verify_start = QPushButton("开始验证"); self.verify_cancel = QPushButton("取消")
+        self.verify_cancel.setEnabled(False)
+        self.verify_export = QPushButton("导出 CSV")
+        self.verify_start.clicked.connect(self.start_verify); self.verify_cancel.clicked.connect(self.cancel_task)
+        self.verify_export.clicked.connect(self.export_csv)
+        buttons.addWidget(self.verify_start); buttons.addWidget(self.verify_cancel); buttons.addWidget(self.verify_export)
+        layout.addLayout(buttons)
         return root
 
     def _build_devices_tab(self) -> QWidget:
         root = QWidget(); layout = QVBoxLayout(root)
         self.device_table = QTableWidget(0, 5); self.device_table.setHorizontalHeaderLabels(["后端", "设备", "索引", "显存", "支持状态"]); self.device_table.horizontalHeader().setStretchLastSection(True)
-        refresh = QPushButton("重新检测"); refresh.clicked.connect(self.refresh_devices)
+        self.device_refresh = QPushButton("重新检测"); self.device_refresh.clicked.connect(self.refresh_devices)
         layout.addWidget(QLabel("PhotoGuard 正式支持 CPU、NVIDIA CUDA 与 Apple Metal/MPS。其他显卡显示后回退 CPU。"))
-        layout.addWidget(self.device_table, 1); layout.addWidget(refresh)
+        layout.addWidget(self.device_table, 1); layout.addWidget(self.device_refresh)
         return root
 
     def _choose_images(self, target: FileListWidget) -> None:
@@ -352,6 +390,18 @@ class MainWindow(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "选择输出目录", self.output_dir.text())
         if path: self.output_dir.setText(path)
 
+    @Slot(str)
+    def _on_expected_changed(self, text: str) -> None:
+        # Q3/N8: the two verify modes are mutually exclusive (same rule as the CLI).
+        has_expected = bool(text.strip())
+        if has_expected and self.legacy_bytes.value():
+            self.legacy_bytes.setValue(0)
+        self.legacy_bytes.setEnabled(not has_expected)
+
+    @Slot(int)
+    def _on_legacy_changed(self, value: int) -> None:
+        self.expected_payload.setEnabled(value == 0)
+
     def _update_preview(self, current, _previous) -> None:
         if not current: return
         pixmap = QPixmap(current.data(Qt.UserRole))
@@ -359,16 +409,84 @@ class MainWindow(QMainWindow):
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def refresh_devices(self) -> None:
-        self.device_combo.clear(); self.device_combo.addItem("自动选择（CUDA → MPS → CPU）", ("auto", None))
-        devices = device.discover_devices()
-        self.device_table.setRowCount(len(devices))
-        for row, item in enumerate(devices):
+        """Start a background device enumeration (Q3/N6).
+
+        The table and the combo keep their previous contents until the worker returns, so a
+        slow or failing probe cannot blank the UI or reset the user's selection.
+        """
+        if self._device_discovery_running():
+            return
+        self.device_refresh.setEnabled(False)
+        self.statusBar().showMessage("正在检测设备…")
+        thread = QThread(self)
+        worker = DeviceDiscoveryWorker()
+        self._device_thread = thread
+        self._device_worker = worker
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.found.connect(self._on_devices_found)
+        worker.failed.connect(self._on_devices_failed)
+        worker.found.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.found.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(partial(self._release_device_worker, thread, worker))
+        thread.finished.connect(thread.deleteLater)
+        try:
+            thread.start()
+        except RuntimeError as exc:  # deleted wrapper / already running
+            self._release_device_worker(thread, worker)
+            self.statusBar().showMessage(f"设备检测失败: {exc}")
+
+    def _device_discovery_running(self) -> bool:
+        if self._device_thread is None:
+            return False
+        try:
+            self._device_thread.isRunning()
+        except RuntimeError:  # the C++ thread is gone; drop the stale wrapper
+            self._release_device_worker(self._device_thread, self._device_worker)
+            return False
+        # Registered means "not released yet", matching _thread_running: a finished worker
+        # whose finished signal is still queued must not be overwritten by a new probe.
+        return True
+
+    def _release_device_worker(self, thread: QThread, worker: QObject | None) -> None:
+        if self._device_thread is thread:
+            self._device_thread = None
+        if self._device_worker is worker:
+            self._device_worker = None
+        self.device_refresh.setEnabled(True)
+        if self.statusBar().currentMessage() == "正在检测设备…":
+            self.statusBar().showMessage("就绪")
+
+    @Slot(list)
+    def _on_devices_found(self, items: list) -> None:
+        current = self.device_combo.currentData()
+        current_key = tuple(current) if isinstance(current, (tuple, list)) else ("auto", None)
+        self.device_combo.blockSignals(True)
+        self.device_combo.clear()
+        self.device_combo.addItem("自动选择（CUDA → MPS → CPU）", ("auto", None))
+        self.device_table.setRowCount(len(items))
+        matched = False
+        for row, item in enumerate(items):
             memory = f"{item.memory_bytes / 2**30:.1f} GiB" if item.memory_bytes else "—"
             values = [item.backend, item.name, str(item.index) if item.index is not None else "—", memory, "支持" if item.supported else "仅识别，回退 CPU"]
-            for col, value in enumerate(values): self.device_table.setItem(row, col, QTableWidgetItem(value))
+            for col, value in enumerate(values):
+                self.device_table.setItem(row, col, QTableWidgetItem(value))
             if item.supported:
                 label = f"{item.backend.upper()} — {item.name}"
                 self.device_combo.addItem(label, (item.backend, item.index))
+                if (item.backend, item.index) == current_key:
+                    self.device_combo.setCurrentIndex(self.device_combo.count() - 1)
+                    matched = True
+        if not matched:
+            self.device_combo.setCurrentIndex(0)
+        self.device_combo.blockSignals(False)
+        self.statusBar().showMessage("设备检测完成")
+
+    @Slot(str)
+    def _on_devices_failed(self, message: str) -> None:
+        self.statusBar().showMessage(f"设备检测失败: {message}")
 
     def _build_options(self) -> pipeline.ProtectOptions:
         layers = gui_logic.layers_from_checks(
@@ -394,62 +512,111 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def start_protect(self) -> None:
+        # Q3/P36: the busy gate precedes every side effect. The old order cleared results
+        # and saved settings first, then asked — a rejected click destroyed the previous
+        # batch and left the buttons disabled.
+        if self._thread_running():
+            return self._error("已有任务正在运行")
         paths = self.protect_files.paths()
-        if not paths: return self._error("请先添加图片")
+        if not paths:
+            return self._error("请先添加图片")
         try:
             options = self._build_options(); pipeline.validate_options(options)
             items = self._plan_items(paths)
-        except ValueError as exc: return self._error(str(exc))
-        self.protect_results.clear(); self.protect_log.clear(); self._save_settings()
+        except ValueError as exc:
+            return self._error(str(exc))
         worker = ProtectWorker(items, options)
         worker.item_done.connect(self._protect_item_done)
         # P26: a plain lambda is invoked *in the emitting thread* (the worker), so touching
         # a widget there repaints Qt from a non-GUI thread — SIGSEGV under offscreen once the
         # window is shown. A bound slot of this main-thread object gets a queued connection.
         worker.progress.connect(self._on_protect_progress)
-        self._start_worker(worker, self._protect_finished)
-        self.protect_start.setEnabled(False); self.protect_cancel.setEnabled(True)
+        if not self._start_worker(worker, self._protect_finished, "protect"):
+            return
+        self.protect_results.clear(); self.protect_log.clear()
+        self._save_settings()
 
     @Slot()
     def start_verify(self) -> None:
+        if self._thread_running():
+            return self._error("已有任务正在运行")
         paths = self.verify_files.paths(); expected = self.expected_payload.text()
         auto = self.verify_auto.isChecked()
         legacy = self.legacy_bytes.value() or None
-        if not paths: return self._error("请先添加图片")
+        if not paths:
+            return self._error("请先添加图片")
+        if gui_logic.verify_argument_conflict(expected, legacy):
+            return self._error("期望 payload 与旧版字节数只能二选一")
         if not auto and not expected and legacy is None:
             return self._error("请勾选自动发现，或输入期望 payload / 旧版字节数")
-        self.verify_results.clear(); self.verify_table.setRowCount(0)
         worker = VerifyWorker(paths, expected, legacy, auto)
         worker.item_done.connect(self._verify_item_done)
         worker.progress.connect(self._on_verify_progress)  # P26: see start_protect
-        self._start_worker(worker, self._on_verify_finished)
+        if not self._start_worker(worker, self._on_verify_finished, "verify"):
+            return
+        self.verify_results.clear(); self.verify_table.setRowCount(0)
+        self._save_settings()
 
-    def _start_worker(self, worker: QObject, finish_callback) -> None:
-        if self._thread_running(): return self._error("已有任务正在运行")
-        self.thread = QThread(self); self._threads.append(self.thread)
-        self.worker = worker; worker.moveToThread(self.thread)
-        self.thread.started.connect(worker.run)
-        worker.finished.connect(finish_callback); worker.finished.connect(self.thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        current_thread = self.thread
-        # Release our refs *before* Qt deletes the C++ thread (P12): the old order left
-        # self.thread dangling, so a second run and closeEvent touched a dead wrapper.
-        current_thread.finished.connect(partial(self._release_worker, current_thread, worker))
-        current_thread.finished.connect(current_thread.deleteLater)
-        current_thread.start()
+    def _start_worker(self, worker: QObject, finish_callback, kind: str) -> bool:
+        if self._thread_running():
+            self._error("已有任务正在运行")
+            return False
+        thread = QThread(self)
+        self._threads.append(thread)
+        self.thread = thread
+        self.worker = worker
+        try:
+            worker.moveToThread(thread)
+            thread.started.connect(worker.run)
+            worker.finished.connect(finish_callback)
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            # Release our refs *before* Qt deletes the C++ thread (P12): the old order left
+            # self.thread dangling, so a second run and closeEvent touched a dead wrapper.
+            thread.finished.connect(partial(self._release_worker, thread, worker))
+            thread.finished.connect(thread.deleteLater)
+            thread.start()
+        except RuntimeError as exc:
+            self._release_worker(thread, worker)
+            self._error(f"任务启动失败: {exc}")
+            return False
+        self._set_task_state(kind)
+        return True
 
-    def _release_worker(self, thread: QThread, worker: QObject) -> None:
-        if thread in self._threads: self._threads.remove(thread)
-        if self.thread is thread: self.thread = None
-        if self.worker is worker: self.worker = None
+    def _set_task_state(self, kind: str | None) -> None:
+        """Single source of truth for the four task buttons (Q3/P36)."""
+        self._task_kind = kind
+        idle = kind is None
+        self.protect_start.setEnabled(idle)
+        self.verify_start.setEnabled(idle)
+        self.protect_cancel.setEnabled(kind == "protect")
+        self.verify_cancel.setEnabled(kind == "verify")
+
+    def _release_worker(self, thread: QThread, worker: QObject | None) -> None:
+        if thread in self._threads:
+            self._threads.remove(thread)
+        if self.worker is worker:
+            self.worker = None
+            self._set_task_state(None)
+        if self.thread is thread:
+            self.thread = None
 
     def _thread_running(self) -> bool:
-        if self.thread is None: return False
+        """True while a task thread is registered (Q3/P36).
+
+        ``isRunning()`` alone left two windows: right after ``start()`` it can still be
+        false, and after ``run()`` returns but before ``finished`` is delivered it is
+        already false. Treating a registered thread as busy stops a new task from
+        overwriting the refs; ``isRunning()`` is only the deleted-wrapper probe.
+        """
+        if self.thread is None:
+            return False
         try:
-            return self.thread.isRunning()
+            self.thread.isRunning()
         except RuntimeError:  # the C++ QThread is gone; drop the stale wrapper
             self._release_worker(self.thread, self.worker)
             return False
+        return True
 
     @Slot()
     def cancel_task(self) -> None:
@@ -459,26 +626,45 @@ class MainWindow(QMainWindow):
             self.worker.cancel()
 
     def _protect_item_done(self, source: str, status: str, detail: str) -> None:
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
         self.protect_results.append((source, status, detail)); self.protect_log.append(f"[{status}] {Path(source).name}: {detail}")
 
     def _verify_item_done(self, source: str, status: str, detail: str) -> None:
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
         self.verify_results.append((source, status, detail)); row = self.verify_table.rowCount(); self.verify_table.insertRow(row)
         for col, value in enumerate((source, status, detail)): self.verify_table.setItem(row, col, QTableWidgetItem(value))
 
     def _protect_finished(self, cancelled: bool) -> None:
-        self.protect_start.setEnabled(True); self.protect_cancel.setEnabled(False)
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
+        self._set_task_state(None)
         self.statusBar().showMessage("任务已取消" if cancelled else "保护完成")
 
     @Slot(int, int, str)
     def _on_protect_progress(self, done: int, total: int, name: str) -> None:
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
         self._set_progress(self.protect_progress, done, total, name)
 
     @Slot(int, int, str)
     def _on_verify_progress(self, done: int, total: int, name: str) -> None:
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
         self._set_progress(self.verify_progress, done, total, name)
 
     @Slot(bool)
     def _on_verify_finished(self, cancelled: bool) -> None:
+        src = self.sender()
+        if src is not None and src is not self.worker:
+            return
+        self._set_task_state(None)
         self.statusBar().showMessage("验证完成")
 
     def _set_progress(self, bar: QProgressBar, done: int, total: int, name: str) -> None:
@@ -494,10 +680,18 @@ class MainWindow(QMainWindow):
         if not path: return
         try:
             with open(path, "w", newline="", encoding="utf-8-sig") as handle:
-                writer = csv.writer(handle); writer.writerow(["文件", "结果", "详情"]); writer.writerows(self.verify_results)
-        except OSError as exc:
+                writer = csv.writer(handle)
+                writer.writerow(["文件", "结果", "详情"])
+                # Q3/P37: neutralise spreadsheet formula leads in every untrusted cell.
+                writer.writerows(
+                    [gui_logic.csv_safe_cell(value) for value in row]
+                    for row in self.verify_results
+                )
+        except (OSError, UnicodeError) as exc:
             # P29: an unwrapped OSError here escapes the slot, and PySide6 aborts the
             # process on unhandled slot exceptions (the failure mode P25 measured).
+            # Q3/P37: a surrogate in a recovered path raises UnicodeEncodeError (also not
+            # an OSError) for the same reason; both go through the dialog.
             return self._error(f"导出失败: {exc}")
 
     def _plan_items(self, paths: list[Path]) -> list[BatchItem]:
@@ -521,6 +715,9 @@ class MainWindow(QMainWindow):
             "visible_text": self.visible_text.text(), "mode": self.visible_mode.currentText(),
             "alpha": self.alpha.value(), "long_edge": self.long_edge.value(), "quality": self.quality.value(),
         }.items(): self.settings.setValue(key, value)
+        # Q3/N7: make the values visible to a second QSettings instance (and durable) even
+        # when the first one is still alive, which is exactly the test/restart case.
+        self.settings.sync()
 
     def _load_settings(self) -> None:
         defaults = {
@@ -540,13 +737,21 @@ class MainWindow(QMainWindow):
         self.quality.setValue(int(values["quality"]))
 
     def closeEvent(self, event) -> None:
-        if self._thread_running():
-            self.cancel_task()
+        # Q3/N7: save even when the close is deferred, so a settings-only session is not lost.
+        self._save_settings()
+        task_running = self._thread_running()
+        discovery_running = self._device_discovery_running()
+        if task_running or discovery_running:
+            if task_running:
+                self.cancel_task()
             event.ignore()
             now = time.monotonic()
             if self._close_deadline is None:
                 self._close_deadline = now + _CLOSE_GRACE_SECONDS
-                self.statusBar().showMessage("正在取消，当前图片完成后关闭…")
+                self.statusBar().showMessage(
+                    "正在取消，当前图片完成后关闭…" if task_running
+                    else "正在检测设备，完成后关闭…"
+                )
             if now < self._close_deadline:
                 QTimer.singleShot(_CLOSE_RETRY_MS, self.close)
             else:
