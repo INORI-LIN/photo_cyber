@@ -11,6 +11,7 @@
 > **`v0.1.0` 正式发布已验证（2026-10-09）**：唯一获授权的 annotated tag 指向 G8 后的远端 `9b1ba41`，没有带上本地仅文档 `51187a8`；tag-push `release-desktop` run `37878702620` 的 verify、Windows、macOS 与独立 publish **全部 success**。GitHub Release `407614662` 已公开，四项资产均已下载；两份二进制的 SHA256 分别与各自发布清单一致（§10.10）。G8 技术检查与本次发布成功**不等于**第三方二进制再分发法律审查完成；批 H、G11③ 与 P34–P37/DOC3 仍待各自批次（后续：H 见 §10.11，G11 见 §10.20，P35–P37 见 §10.25/§10.28；P34/DOC3 仍待）。
 > **2026-11-09 批次进展**：F′1+P22（`e534199`）、F′2（`de09f9d`）、O1（`c56e057`）、O2（`b69e9b8`）已推送；ci/docker 全绿，release dispatch `42741197178` 真机绿（publish skipped）；远端 `main=dc16a70`；见 §10.20–§10.23。
 > **2026-11-11/13 批次进展**：P35（`8c0dcda`）、Q1（`a5ab94d`，P38–P40）、Q2（`c21f69b`，P41–P43）、Q3（`e569741`，P36/P37/P44–P46）已推送；ci 四腿 436/2/12、gui 48、docker 20 步全绿；远端 `main=36e9584`；见 §10.25–§10.28。
+> **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31。
 
 ---
 
@@ -86,6 +87,13 @@
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
 | DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [ ] 未开工（Q5） |
+| P53 | 读侧重复评分：GUI auto+expected 6 次、CLI expected-miss 4 次载体扫描 | med（性能/维护） | S（已落地） | R1 | 同一图同一载体的 `_block_scores` 被每条读路径重算；12MP 每载体约 1.5–3s，GUI 未命中最坏约 9–18s。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_ImageReader` 按载体缓存 + `_verify_auto_expected`；2 次扫描，12MP 实测 3.39s |
+| P54 | `embed()` 无容量闸，超容量静默截断 | med-high（静默毁图） | S（已落地） | R1 | 库入口只有 256² 地板；超容量时转录循环复用比特，返回正常图像但永不可读；pipeline 的闸只保护其调用方。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_require_capacity` 接入 `embed` |
+| P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [ ] 已登记 R4 |
+| P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [ ] 已登记 R5；24MP 取值待裁定 |
+| P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [ ] 已登记 R5 |
+| P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [ ] 已登记 R6 |
+| DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；需 Windows 真机 `torch.version.cuda` 取证 |
 
 ---
 
@@ -120,6 +128,13 @@
 | **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 待开工：§3 前两条裁定先答。** |
 | **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已登记，未排期。** |
 | **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
+| **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
+| **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 未开工（只动测试）。** |
+| **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | collect ≤465、测试行数净减 ≥350、每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤25s。**R3 未开工（只动测试）。** |
+| **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 未开工。** |
+| **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 未开工；上限取值待裁定。** |
+| **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 未开工。** |
+| **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；先做一条命令取证。** |
 
 五条硬定序，实施时不得调换：
 
@@ -2582,3 +2597,20 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **批次**：Q5 = P47+P48+DOC5（下一批）；Q6 = P49+P50+P51；Q7 = P34+P52。Q5 开工前先答 §3 的四条裁定（至少前两条）。
 - **文档一致性（DOC5）**：`AGENTS:168` §8.1 仍写 `save JPEG`（代码/README 已支持 PNG）；`fix-plan:11-13` 头部停在 Q3/`36e9584`，实际 Q4/`6ff72c6`；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README 的 ICC 句对 CMYK→RGB 不成立。DOC5 落地时统一修，登记步不动头部。
 - **验证与范围**：本轮仅 `docs/fix-plan.md`；`pytest tests/test_compliance.py` 18 passed；`git diff --check` 干净；未跑 fast/gui/docker（无代码改动）。
+
+---
+
+### 10.31 全项目分析批次 R1–R7 与 R1 落地（2026-11-13）
+
+**来源**：本轮只读审查（源码 3617 行、测试 7171 行 / 496 例、fast 484 passed / 35.9s）按「技术方案/架构 + 测试套件」两轴产出；计划副本在 `~/.codebuddy/plans/electric-nebula-darwin-g8_5uFVM.md`。新登记 P53–P58/DOC6，排入 R1–R7；Q5–Q7 原排期不变。
+
+**R1 落地（`0df3d4f`）**：
+- P53：`watermark_invisible._ImageReader` 按载体缓存 `_block_scores`；`find_envelope`/`extract_envelope`/`extract_legacy` 接可选私有 `_reader`；`pipeline.verify_expected` 内共用（4→2 次）；新增 `pipeline._verify_auto_expected` 给 GUI（6→2 次），保留 P35 的“发现值+期望值”消息与两种通过状态。
+- P54：`embed` 在 `_require_bgr` 后接 `_require_capacity`，超容量从静默截断改为 `ValueError`。
+- 信封头：`_HEADER_OVERHEAD`/`_HEADER_STEP` 单源；`raw_payload_ceiling` 替换 `pipeline.py` 的 `(256-13)//4*3`；`_parse_envelope` 统一 `unpack_payload` 与头校验。
+- 验证：fast 489 passed / 12 deselected；gui 49 passed；12MP（4000×3000）未命中 2 次扫描 3.39s（改前 4 次）。
+- 未改：`find_envelope` 对 malformed/CRC 仍返回 `None`（不改变 exit 1/2 语义）；两套解码实现保留（`_dwt_dct_svd` 是逐字转录 oracle）。
+
+**R2–R7**：见 §2 行；R2/R3 只动测试；R4/R5 的“先红→实现”按每项独立提交；R6/R7 低风险。R1 先于 Q6（同改 GUI 验证路径），信封单源先于/并入 Q5（同改 `pipeline.py` 的 envelope 上限）。
+
+**测试精简口径**：本轮只做零语义变化的提速与去重，目标约 −390~450 行、collect ≤472、fast ≤25s；不做 F1–F10 去脆化（源码文本锁、私有成员、AST、精确中文串、静态逐行 pin），留待后续独立批次。
