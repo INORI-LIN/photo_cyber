@@ -2548,4 +2548,4 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **历史指针（5）**：§10.2 无条件校验 → §10.16；§10.20 P23/G7 → §10.21；§10.22 O2 未做 → §10.23；§10.24 仍 `[ ]` → §10.25/§10.28；§10.25 默认 128 B → §10.26。均只加括注，不改正文。
 - **验证（2026-11-13）**：`pytest tests/test_compliance.py` **18 passed**；`git diff --name-only` 仅 `README.md`/`AGENTS.md`/`docs/fix-plan.md`；`git diff --check` 干净；grep 抽查 README 的 `--exclude=test_compliance`/`见上方退出码表`/`与 docker.yml 一致` 均为 0，AGENTS 的 `库里的 dwtDct`/`可判真伪` 均为 0，§1–§3 的 `未开工`/`待裁定修法` 为 0；历史 §10.x 对旧文本的引用按惯例保留。AGENTS §8.3 表列数 5。未跑 fast/gui/docker（无代码改动）。
 - **残留**：DOC3 只做措辞与边界声明，未实现签名/时间戳认证方案（产品级，另立）；R1 的完整步骤清单仍以 workflow 为准（避免 README 再漂）；§10.x 历史证据保留，只加指针。
-- **推送状态**：本批提交仅本地；远端 `main` 仍 `36e9584`，推送待用户显式授权。
+- **推送与 CI 取证（2026-11-13，sha `5feca24`）**：`git push origin main` 一次（`36e9584..5feca24`，1 提交、非强推、不带 tag；`v0.1.0` 未动）。`ci` run `43377224065` **success**——四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **436 passed, 2 skipped, 12 deselected**，`gui` **48 passed / 448 deselected，0 skip**；`docker` run `43377224057` **success**——无失败步骤，拒载 `refusal rc=2`。`release-desktop` / `efficacy` 未触发（符合预期）。
