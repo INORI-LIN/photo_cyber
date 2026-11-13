@@ -64,7 +64,7 @@
 | DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [x] 批次 H 已落地（`8ecbb65`，2026-10-09；§十一 正则句已随 G8 落地） |
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [x] 批次 H 已落地（`8ecbb65`，2026-10-09；权限位句按消歧改写并保留 P34 hedge） |
 | P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`；旧 dispatch #4 的 macOS smoke/DMG/校验/上传真机全绿，见 §9.10 第 11 小节） |
-| P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | 未排批次（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 读码推断；待 POSIX/Windows 复现 |
+| P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | Q7（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 已登记 Q7；读码推断，待 POSIX/Windows 复现 |
 | P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | S | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [x] 已修（2026-11-11，`0a236e8`；CI `42980703360` / docker `42980703329`）：自动发现+期望显式比对；长信封抬盲检上限；盲检失败回退精确错误；先红 3 例后绿；见 §10.25 |
 | P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | S（已落地） | Q3 | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [x] Q3 已落地（2026-11-11）：前置忙碌门 + 成功才清结果/改按钮 + 按页取消 + sender 守卫；见 §10.28 |
 | P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | S（已落地） | Q3 | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [x] Q3 已落地（2026-11-11）：所有数据格对 `= + - @`/tab/CR/LF 前缀加 `'`，并捕 `UnicodeEncodeError`；见 §10.28 |
@@ -77,8 +77,15 @@
 | P44 | GUI 启动在主线程 import torch + system_profiler | medium（启动体验） | M | Q3 | 构造窗口时同步探测设备，窗口延迟数秒；探测失败还会阻止 GUI 启动；重新检测会重置选择。 | [x] Q3 已落地（2026-11-11）：专用 QThread + `DeviceDiscoveryWorker`；combo 初始自动项；失败保留旧表/选择；见 §10.28 |
 | P45 | 设置只在开始保护成功后保存 | low | S | Q3 | 改完设置直接关窗或只用验证会丢；拒绝启动反而保存。 | [x] Q3 已落地（2026-11-11）：`closeEvent` 首行 + 验证成功 + 保护成功保存；`sync()`；拒绝不保存；见 §10.28 |
 | P46 | GUI 允许 expected 与 legacy 同时填写 | low | S | Q3 | 后者被 `VerifyWorker` 静默忽略；CLI 侧是互斥组。 | [x] Q3 已落地（2026-11-11）：入口拒绝 + Worker 防御 + UI 联动禁用；`auto+legacy` 仍登记残留；见 §10.28 |
+| P47 | 16-bit/float 灰度输入被裁剪成白色 | med-high（静默毁图） | S | Q5 | 支持 PNG/TIFF，但 `_rgb_on_matte` 只处理 alpha，`I;16`/`I`/`F` 走 `convert("RGB")` 时 >255 直接截到 255（实测 1000/30000/65535 全变白）；无测试。见 §10.30。 | [ ] 未开工（Q5）；待裁定「拒绝 vs 缩放」 |
+| P48 | CMYK JPEG 的朴素转换与 CMYK ICC 错配 | med-low（色彩/元数据） | S | Q5 | CMYK 走 Pillow 朴素 `convert("RGB")`，不读 ICC；随后把源 CMYK ICC 原样写进 RGB 成品，profile 色彩空间与像素不一致。见 §10.30。 | [ ] 未开工（Q5）；待裁定「ImageCms / 丢 ICC / 拒 CMYK」 |
+| P49 | macOS Cmd+Q 绕过 `closeEvent`，运行中线程无人等待 | med-low | S | Q6 | `closeEvent` 只覆盖窗口关闭；`app.quit()`/Cmd+Q 直接退出事件循环，不触发有界关窗；可能 abort 或残留 `.photoguard-*.tmp`。见 §10.30。 | [ ] 未开工（Q6）；读码推断，待实机复现 |
+| P50 | GUI auto-only 无法发现长信封且无盲检上界输入 | low-med | S | Q6 | `VerifyWorker` auto-only 用默认 256 存储字节上界，GUI 没有 `--max-payload-bytes` 等价输入；protect 只显示警告，用户仍无法在 GUI 内自验。见 §10.30。 | [ ] 未开工（Q6） |
+| P51 | 预览在主线程全分辨率解码 | low | S | Q6 | `_update_preview` 用 `QPixmap(path)` 同步解码原图；64 MP 输入可卡顿/OOM，loader 的 64 MP 门不覆盖预览。见 §10.30。 | [ ] 未开工（Q6） |
+| P52 | 原子写 temp 的 TOCTOU | low（共享目录） | S | Q7 | `_create_temp_file` 先 `O_EXCL` 建文件并关闭，`image.save(temp)` 再按路径重开；世界可写目录中 temp 可被换成符号链接。见 §10.30。 | [ ] 未开工（Q7） |
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
+| DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [ ] 未开工（Q5） |
 
 ---
 
@@ -110,6 +117,9 @@
 | **Q2** | P41（N3）→ P42（N4）→ P43（N5） | 镜像字号探针 ≥20px；NaN/Inf 预算退 2 且不落成品；空/半模型目录在 download/build/smoke 均被拒；fast/gui/compliance 全绿。**Q2 已完成（2026-11-11）：N6 移入 Q3；先红 20 例；fast 452 passed、collect 464、gui 33 passed / 0 skip、compliance 18；docker 取证已推送（`c21f69b`，全绿，见 §10.27）。** |
 | **Q3** | P36 + P37 + P44（N6）+ P45（N7）+ P46（N8） | 忙时不清结果/不动按钮/不保存；CSV 危险前缀加 `'`；设备发现离主线程且失败可用；关窗/验证启动保存设置；expected+legacy 互斥；fast/gui/compliance 全绿。**Q3 已完成（2026-11-11）：先红 32 项（17 纯函数 + 10 GUI + 5 lifecycle）；fast 436 passed、collect 496、gui 48 passed / 0 skip、compliance 18；见 §10.28。** |
 | **Q4** | DOC3 + DOC4 + R1–R4 | 头部两 bullet；§1 G1/G2/G5/P36/P37/Q2/批次列；§3 六个已裁定勾选 + 待定表；AGENTS §8.3 四行 + Q1–Q3 新欠；README 信任边界；compliance 18、无代码改动。**Q4 已完成（2026-11-13）：见 §10.29。** |
+| **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 待开工：§3 前两条裁定先答。** |
+| **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已登记，未排期。** |
+| **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
 
 五条硬定序，实施时不得调换：
 
@@ -179,6 +189,15 @@
 ③ **P31 口径**：空载荷在 `embed`/`pack_payload` 一律抛 `ValueError`（不再 `ZeroDivisionError`，不再产出 `envelope_lengths` 永不可发现的 13 字符信封）；`embed`/`extract`/`extract_envelope` 增加「3 维且 3 通道」校验，把 `cv2.error` 纳入 `ValueError`→exit 2 映射；`extract_envelope` 接入 P14 的 `_require_capacity`（**P14 残留收口**）。`_dwt_dct_svd.decode_bits` 的 `ZeroDivisionError` 属上游逐字契约（其 docstring 已声明），**不动**。
 ④ **仍待定**（2026-09-29 时点，随各自批次开工前集中确认）：批 L 的 ICC 归属 / 损坏 EXIF 语义 / HEIC 与像素上限（**已裁定，见 §3 上方三条与 §10.13**）；批 O 的非 JPEG 输出策略；批 M 的 P5/P6 契约与阈值（**已裁定，见 §3 上方与 §10.14**）；批 J 的发布者归属与 wheel 安装策略（当时只登记待定）；**批 N 的 ε 语义与慢档判据（已裁定，2026-10-09，批 N 开工前：ε＝noise 收紧为 ±ε·255 真 L∞ 且 `-eps 0` 由退 0 改退 2；慢档判据＝`-m slow` 收集 ≥10、有 extra+模型全 passed 0 skipped、docker 慢档步 passed>0、spike 结论齐；见 §10.16）**。
 ⑤ **批 J 的两项裁定（2026-09-30）**：G9②③ 在同一次 workflow run 内采用唯一发布 job，两平台只负责构建并上传各自工件，双平台与 GUI 门全绿后才允许 tag push 创建/上传 Release；同 tag 多次 run/重跑的并发隔离仍归 G11③ 的 workflow concurrency 待办；G10 分别在独立临时 uv 环境安装仓库 wheel 和由 sdist 重建的 wheel，实际检查导入、入口点、版本、许可元数据；保留既有版本错配与项目 `.venv` 冲突两个负控。本轮只实施 G9②③/G10，G8 留在批 J 待办；另发现的 P34–P37/DOC3 只做 §10.6 的待复现登记。
+
+**2026-11-13 新登记项的开工裁定（Q5–Q7）**：以下四条只登记，不在登记步裁定；Q5 开工前集中确认前两条，Q6/Q7 各自开工前确认后两条。
+
+| # | 主题 | 影响 | 建议 |
+|---|---|---|---|
+| 1 | P47：非 8-bit 输入（`I;16`/`I`/`F`）是响亮拒绝，还是按位深缩放到 8-bit？ | P47、`_validate_input`/`_rgb_on_matte`、README 输入契约 | 先拒绝（fail-loud、改动最小）；缩放作为后续增强 |
+| 2 | P48：CMYK 有 ICC 时走 `ImageCms` 转 sRGB、无 ICC 时朴素转换但丢弃源 ICC，还是直接拒 CMYK？ | P48、`pipeline._load_oriented_rgb`、README ICC 段 | 有 ICC 用 `ImageCms`；无 ICC 丢弃 profile 并警告；不拒 CMYK（Pillow 自带转换） |
+| 3 | P49：复现后加 `aboutToQuit` 有界退出，还是接受 Cmd+Q 现状？ | P49、`gui.py`/`gui_main.py`、关窗测试 | 加 `aboutToQuit`（与 `closeEvent` 共用 5s 宽限） |
+| 4 | P50：GUI 增加“盲检上界”输入，还是 auto-only 自动抬到图像容量？ | P50、`gui.py` 验证页、`config.DEFAULT_MAX_PAYLOAD_BYTES` | 加输入并与 CLI 对齐；自动抬容量会把 miss 成本推到秒级 |
 
 ---
 
@@ -2549,3 +2568,17 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验证（2026-11-13）**：`pytest tests/test_compliance.py` **18 passed**；`git diff --name-only` 仅 `README.md`/`AGENTS.md`/`docs/fix-plan.md`；`git diff --check` 干净；grep 抽查 README 的 `--exclude=test_compliance`/`见上方退出码表`/`与 docker.yml 一致` 均为 0，AGENTS 的 `库里的 dwtDct`/`可判真伪` 均为 0，§1–§3 的 `未开工`/`待裁定修法` 为 0；历史 §10.x 对旧文本的引用按惯例保留。AGENTS §8.3 表列数 5。未跑 fast/gui/docker（无代码改动）。
 - **残留**：DOC3 只做措辞与边界声明，未实现签名/时间戳认证方案（产品级，另立）；R1 的完整步骤清单仍以 workflow 为准（避免 README 再漂）；§10.x 历史证据保留，只加指针。
 - **推送与 CI 取证（2026-11-13，sha `5feca24`）**：`git push origin main` 一次（`36e9584..5feca24`，1 提交、非强推、不带 tag；`v0.1.0` 未动）。`ci` run `43377224065` **success**——四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **436 passed, 2 skipped, 12 deselected**，`gui` **48 passed / 448 deselected，0 skip**；`docker` run `43377224057` **success**——无失败步骤，拒载 `refusal rc=2`。`release-desktop` / `efficacy` 未触发（符合预期）。
+
+### 10.30 全项目分析登记（P47–P52/DOC5，2026-11-13）
+
+- **性质与基线**：只读分析（三路 Explore + 亲核 `pipeline.py`/`outputs.py`/`gui.py`/`gui_logic.py`/`config.py`/`cli.py` + Pillow 内存探针），基线 `6ff72c6`（工作区干净、HEAD=origin/main）。本轮**只登记，不改代码/测试/CI/依赖**；新 ID 的修法与先红用例待各自批次开工。
+- **P47（16-bit/float 输入）**：`_rgb_on_matte` 只处理 alpha；`I;16`/`I`/`F` 直接走 `convert("RGB")`，>255 截到 255。内存探针：16-bit 灰度 PNG/TIFF 载入为 `I;16`，1000/30000/65535 转 RGB 全为 255（白）。PNG/TIFF 在 `SUPPORTED_INPUT_FORMATS` 内，且无 fixture/用例。建议：先响亮拒绝非 8-bit（提示转 8-bit），或按位深缩放；见 §3 待裁定第 1 条。
+- **P48（CMYK/ICC）**：CMYK JPEG 走 Pillow 朴素 `convert("RGB")`，不读 ICC；`opened.info["icc_profile"]` 被原样传给 `save_image_atomic`，于是 RGB 成品带 CMYK profile。内存探针确认 `rgb.info` 仍保留源 profile。建议：有 ICC 用 `ImageCms` 转 sRGB；无 ICC 丢弃 profile 并警告；或拒 CMYK；见 §3 待裁定第 2 条。README 的「源在何种色域，成品仍在何种色域」需同步改写。
+- **P49（Cmd+Q）**：`closeEvent` 只在窗口关闭时运行；`app.quit()`/macOS Cmd+Q 直接退出事件循环，不触发有界关窗。读码推断，需实机复现（Q6 首步）；若证实，加 `aboutToQuit` 并复用 5s 宽限。
+- **P50（GUI auto-only 上界）**：`VerifyWorker` auto-only 调 `discover_payload(path)`，用默认 256 存储字节；GUI 无 `--max-payload-bytes` 等价输入。protect 的 P39 warning 只提示 CLI 命令；纯 GUI 用户对长信封无法自验。建议加输入或明确提示。
+- **P51（预览）**：`_update_preview` 在主线程 `QPixmap(path)` 全分辨率解码；64 MP 可卡顿/OOM。建议按预览控件尺寸先缩略（或后台解码）。
+- **P52（temp TOCTOU）**：`_create_temp_file` 用 `O_EXCL` 建好后关闭；`image.save(temp)` 按路径重开。世界可写目录中可被换符号链接。建议保留 fd 用 `os.fdopen` 写入，再对同一 fd `fsync`。
+- **既有项**：P34 改排 Q7（先复现）；`auto+legacy`、N12 四项、CJK、48MP/exFAT/SMB/cocoa 手工门保持原登记，不在本轮扩面。
+- **批次**：Q5 = P47+P48+DOC5（下一批）；Q6 = P49+P50+P51；Q7 = P34+P52。Q5 开工前先答 §3 的四条裁定（至少前两条）。
+- **文档一致性（DOC5）**：`AGENTS:168` §8.1 仍写 `save JPEG`（代码/README 已支持 PNG）；`fix-plan:11-13` 头部停在 Q3/`36e9584`，实际 Q4/`6ff72c6`；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README 的 ICC 句对 CMYK→RGB 不成立。DOC5 落地时统一修，登记步不动头部。
+- **验证与范围**：本轮仅 `docs/fix-plan.md`；`pytest tests/test_compliance.py` 18 passed；`git diff --check` 干净；未跑 fast/gui/docker（无代码改动）。
