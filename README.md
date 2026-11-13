@@ -2,11 +2,11 @@
 
 一个离线优先的照片防盗工具，通过三层组合保护降低直接搬运和 AI 二次编辑风险：
 
-1. **隐形水印**：DWT-DCT-SVD 频域嵌入，用于事后确权；
+1. **隐形水印**：DWT-DCT-SVD 频域嵌入，用于事后取回完整性线索（不构成作者/归属认证）；
 2. **PhotoGuard 对抗扰动**：攻击 Stable Diffusion VAE encoder，增加 AI 去水印、换脸和重绘成本（只实现 encoder-attack 变体，强度未测量；见「已知边界」）；
 3. **明水印**：绑定人脸或主体区域，或以低透明度网格覆盖全图。
 
-> 本工具用于抬高盗用成本并提供确权线索，不承诺阻止保存、截图、全图重绘或未来模型攻击（PhotoGuard 扰动亦然：抬高成本，非必然崩坏）。
+> 本工具用于抬高盗用成本并提供完整性线索，不承诺阻止保存、截图、全图重绘或未来模型攻击（PhotoGuard 扰动亦然：抬高成本，非必然崩坏）。
 
 ## 功能概览
 
@@ -72,7 +72,7 @@ uv run photo-guard-gui
 4. 启用 PhotoGuard 时选择 `Auto`、CPU、CUDA 或 MPS；
 5. 选择输出目录，点击“开始保护”。
 
-GUI 默认启用 **隐形水印 + 明水印**。PhotoGuard 默认关闭，避免用户无意启动高耗时任务。批处理按顺序执行并复用已加载的模型，可显示进度、记录单图失败并支持取消。取消只中断当前 SD 图的 PGD 迭代；其他层仍是当前图完成后停止。运行中关闭窗口最多等待 5 秒，超时窗口保持打开并提示，不会强杀线程。设备信息在后台线程检测，窗口先显示；设置会在关窗与开始验证时保存。验证页的「期望 payload」与「旧版字节数」只能二选一。导出 CSV 时，以 `= + - @`、tab、CR/LF 开头的单元格会加前缀 `'`，避免被表格软件当作公式求值（部分导入器会显示该字符，保证的是不求值而非不可见）。
+GUI 默认启用 **隐形水印 + 明水印**。PhotoGuard 默认关闭，避免用户无意启动高耗时任务。批处理按顺序执行并复用已加载的模型，可显示进度、记录单图失败并支持取消。取消只中断当前 SD 图的 PGD 迭代；其他层仍是当前图完成后停止。运行中关闭窗口最多等待 5 秒，超时窗口保持打开并提示，不会强杀线程。设备信息在后台线程检测，窗口先显示；设置会在关窗、保护启动成功与开始验证时保存。验证页的「期望 payload」与「旧版字节数」只能二选一。导出 CSV 时，以 `= + - @`、tab、CR/LF 开头的单元格会加前缀 `'`，避免被表格软件当作公式求值（部分导入器会显示该字符，保证的是不求值而非不可见）。
 
 GUI 生成的隐水印默认带 CRC envelope。payload 本身不会保存到用户设置中，请自行妥善记录。
 
@@ -114,7 +114,7 @@ uv run photo-guard verify output.jpg \
   --expected-payload "owner:alice#2026"
 ```
 
-不传任何 flag 时，`verify` 会在候选长度上搜索 `PG1:` 信封，并**只用 CRC32 判定**，因此不需要记住 payload 长度，也不会把随机噪声当成 payload；`--max-payload-bytes` 可调整搜索上界。该上界按**存储字节**计（信封长度 = `13 + 4·ceil(n/3)`）：默认 256 覆盖原始载荷约 180 B。超过默认上界的载荷仍可保护，但 `protect` 会在 stderr（GUI 为批次日志）给出所需 `--max-payload-bytes` 数值。`--expected-payload` 的「长度不符」也按不符处理（退出 2）：工具会在 `--max-payload-bytes` 上界内回退盲检；若图内信封比上界更长，请按 protect 警告把该上界调大后一并传入。找到则打印 payload 并退出 0，未找到退出 1。
+不传任何 flag 时，`verify` 会在候选长度上搜索 `PG1:` 信封，并**只用 CRC32 判定**（CRC 可被重算；命中只证载荷完整性自洽，碰撞概率非零），因此不需要记住 payload 长度，也不会把随机噪声当成 payload；`--max-payload-bytes` 可调整搜索上界。该上界按**存储字节**计（信封长度 = `13 + 4·ceil(n/3)`）：默认 256 覆盖原始载荷约 180 B。超过默认上界的载荷仍可保护，但 `protect` 会在 stderr（GUI 为批次日志）给出所需 `--max-payload-bytes` 数值。`--expected-payload` 的「长度不符」也按不符处理（退出 2）：工具会在 `--max-payload-bytes` 上界内回退盲检；若图内信封比上界更长，请按 protect 警告把该上界调大后一并传入。找到则打印 payload 并退出 0，未找到退出 1。
 
 ### 验证旧版图片（仅线索）
 
@@ -124,7 +124,7 @@ uv run photo-guard verify suspect.jpg --payload-bytes 16
 
 `--payload-bytes` 必须等于嵌入内容的 UTF-8 字节数，不一定等于字符数。
 
-旧版 payload 没有校验和，因此这条路径**只给线索、不给结论**：stdout 形如 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin` 两个辅助指标，**退出码为 3**（`0` 只保留给取回证据的路径，见上方退出码表）。实测（见 `docs/fix-plan.md` §6 P3）：真实产物的 `mean_margin` 落在 0.2567–0.3247，而可打印垃圾可达 0.2005–0.5000，两者完全重叠——**没有任何阈值能区分真伪**，故该路径的结论不可作为确权证据。需要能举证的结论时，请用 `--payload-envelope` 重新保护。
+旧版 payload 没有校验和，因此这条路径**只给线索、不给结论**：stdout 形如 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin` 两个辅助指标，**退出码为 3**（`0` 只保留给取回完整性证据的路径，见下文「退出码」）。实测（见 `docs/fix-plan.md` §6 P3）：真实产物的 `mean_margin` 落在 0.2567–0.3247，而可打印垃圾可达 0.2005–0.5000，两者完全重叠——**没有任何阈值能区分真伪**，故该路径的结论不能作为来源证据。`--payload-envelope` 同样只证明「该载荷被嵌入且当前可读」，不证明作者/归属；需要来源举证时，请保留原图/拍摄记录，或另行使用外部签名/可信时间戳留底。
 
 ### 启用 PhotoGuard
 
@@ -175,9 +175,9 @@ uv run photo-guard devices
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
 
-**输入契约**（唯一 loader，`protect` 与 `verify` 共用）：支持 `JPEG / PNG / WEBP / BMP / TIFF`，其他格式（含 HEIC/HEIF 与 GIF）退 2 并提示先转 JPEG/PNG；像素上限 `64 000 000`（8000×8000），超限在解码前拒绝；只接受单帧图像，多帧输入退 2；按 EXIF Orientation 转置到显示方向后剥除全部 EXIF（含 GPS）；源 ICC 配置文件**原样写入成品、不做色彩空间转换**（源在何种色域，成品仍在何种色域）；透明像素先叠白（`#FFFFFF`）再处理，`alpha=0` 下的隐藏 RGB 不会进入成品。损坏到无法解析的 EXIF 退 2（缺失 EXIF 不受影响）。
+**输入契约**（唯一 loader，`protect` 与 `verify` 共用）：支持 `JPEG / PNG / WEBP / BMP / TIFF`，其他格式（含 HEIC/HEIF/AVIF 与 GIF）退 2 并提示先转 JPEG/PNG；像素上限 `64 000 000`（8000×8000），超限在解码前拒绝；只接受单帧图像，多帧输入退 2；按 EXIF Orientation 转置到显示方向后剥除全部 EXIF（含 GPS）；源 ICC 配置文件**原样写入成品、不做色彩空间转换**（源在何种色域，成品仍在何种色域）；透明像素先叠白（`#FFFFFF`）再处理，`alpha=0` 下的隐藏 RGB 不会进入成品。损坏到无法解析的 EXIF 退 2（缺失 EXIF 不受影响）。
 
-退出码：`0` 成功（含 `verify` 取回证据：信封命中或盲检发现），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、不支持的输出扩展名、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符（含长度不同）、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
+退出码：`0` 成功（含 `verify` 取回完整性证据：信封命中或盲检发现；≠作者/归属认证），`1` 未恢复出 payload（三条 verify 路径同此口径：盲检未找到信封、`--expected-payload` 整图找不到信封、`--payload-bytes` 未取回），`2` 参数或运行错误（含请求长度超出图像容量、`-o` 指向已存在的目录、不支持的输出扩展名、损坏或无法解析的 EXIF、不支持的输入格式、超过 64 MP 的输入、多帧输入、`--expected-payload` 与图内信封不符（含长度不同）、信封 CRC 校验不确定），`3` 只取回旧版线索（`--payload-bytes` 路径，无校验和，**不等于验真通过**）。`verify` 不带 flag 时由「缺参退 2」变为「盲检 0/1」。
 
 `protect` 会拒绝把输出写到输入文件自身（含硬链接别名），报 `refusing to overwrite the input` 并退出 2 —— 原图留底是 AGENTS.md 第五节的硬要求。写盘采用同目录临时文件 + `os.replace`，因此中断、磁盘写满或 Ctrl-C 都不会在成品路径上留下半截文件；已有文件的权限位会沿用，新文件遵循进程 umask；若内容已落盘但权限回贴失败（exFAT/SMB/NTFS-3G 等不支持 `chmod` 的目标），只发 `RuntimeWarning`，仍以成功退出。若输出路径是符号链接，`os.replace` 替换的是链接本身、链接指向的文件内容不受影响；但当那个链接目标已是只读的时，写盘会临时解除其写保护（`chmod` 加写位）以完成替换；替换成功后原权限位只回贴到替换后的新产物（路径不是符号链接时，效果是只读的输出文件写后仍只读）；符号链接的旧目标不在回贴范围内，其被解除的写保护不一定恢复（P34，待复现）。批量处理时，同名 stem 的输入会自动得到 `_2`、`_3` 后缀，不会互相覆盖（去重对大小写不敏感；Linux 上同样保守生效）。
 
@@ -220,9 +220,9 @@ docker run --rm --gpus all -v "$PWD:/work" photo-guard:dev \
 
 容器默认以非 root 的 `app` 用户运行（UID/GID 由构建参数决定）。若宿主机 UID 与构建时不一致，可在 `docker run` 上加 `--user "$(id -u):$(id -g)"`，并把 `HOME`、`UV_CACHE_DIR` 指到可写目录；否则 `-v` 挂载目录可能不可写。
 
-### 冒烟（与 `.github/workflows/docker.yml` 一致）
+### 冒烟示例（完整口径以 `.github/workflows/docker.yml` 为准）
 
-先在 `fixtures/` 下准备一张 `in.jpg`；镜像名为 `photo-guard:ci`：
+先在 `fixtures/` 下准备一张 `in.jpg`；镜像名为 `photo-guard:ci`。以下只演示 noise、离线 SD 与慢档三组；完整清单还包括 P22 非 root/UID、notices 硬门、可见水印字号探针、slow-tier preflight、无 safetensors 模型目录拒载，均以 workflow 为准。
 
 ```bash
 docker build \
@@ -344,7 +344,6 @@ uv run photo-guard-gui               # 启动 PySide6 桌面界面
 ```bash
 grep -RInE --exclude-dir=.venv --exclude-dir=.git \
      --exclude=uv.lock --exclude=AGENTS.md --exclude=README.md \
-     --exclude=test_compliance.py \
      "pip[[:space:]]+install" .   # 应无输出
 ```
 
@@ -394,12 +393,14 @@ uv run python packaging/build_desktop.py
 
 ## 已知边界
 
+**信任边界（CRC32 能证明什么）**：信封里的 CRC32 只校验「这串载荷没有被改坏」，它不绑定图片像素、也不绑定作者；任何拿到工具的人都能重新计算 CRC 并写入一个新的合法信封。因此 `verify` 命中只说明「该载荷被嵌入过且当前可读」，不能单独证明作者或归属；旧版无校验和路径只是线索。需要可举证的归属时，请保留原图/拍摄记录，或另行使用外部签名/可信时间戳留底。
+
 - `-o out.png` 是 CLI 的显式例外：PNG 无损但体积更大，`--quality` 被忽略；默认与桌面发布件仍为 JPEG；
 - 隐水印可能在大幅裁剪、多轮强压缩或全图重绘后丢失；
 - **信封回环不是长度无关的**：历史实测（2026-09-23，两张测试图 × payload 1–66 字节；该轮未记录 commit sha）修复前本机成品的验真通过率仅 31/66 与 17/66，且失败长度取决于图像与 payload 内容；载体改到亮度通道 + step 72 并修掉库的细节带互换后，本机成品与再叠一轮平台压缩均已 66/66（见 `docs/fix-plan.md` P10/P11）；
 - **平台二次压缩是验真的主要敌人**：上传后平台会按 4:2:0 重新采样色度（本机保存同样如此）。实测把成品缩小一半再放大后，**四个参数组合全部无法验真** —— 请把 `verify` 的通过理解为「这个本地文件可读」，不要理解为「上传后仍可验真」；
 - Haar 人脸检测对侧脸、遮挡和多人场景能力有限；
-- 输入契约（见上文）之外的边界：HEIC/HEIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）、ICC 原样保留但**不做色彩管理**（源在何种色域，成品仍在何种色域）；
+- 输入契约（见上文）之外的边界：HEIC/HEIF/AVIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）、ICC 原样保留但**不做色彩管理**（源在何种色域，成品仍在何种色域）；
 - **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零）；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
 - 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
 - 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。首轮实测（2026-10-09，`138022c`，本机 noise 档）：36 格中 **30 格通过**，其中指定格 textured_detail 的 identity 与 jpeg_q85 均 100%（37 B 信封 / 296 bit）；`downscale_720` 与 `combo_repost` 全数失败——与「缩小后无法验真」的已知边界一致。

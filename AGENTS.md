@@ -1,7 +1,7 @@
 # 照片防盗用方案：明水印 + 隐水印 + PhotoGuard
 
 > 三层叠加，覆盖「直接盗图搬运」与「AI 二次生成（改图/换脸/去水印）」两类威胁。
-> 定位：抬高盗用成本 + 万一被盗能确权，并非 100% 物理阻止。
+> 定位：抬高盗用成本 + 万一被盗能取回完整性线索（非作者认证），并非 100% 物理阻止。
 
 ---
 
@@ -11,9 +11,9 @@
 |--------|------|----------|
 | **明水印** | 给人看，让随手搬运者知难而退；绑定主体后擦它即毁图 | 直接盗图搬运 |
 | **PhotoGuard 对抗扰动** | 误导扩散模型，让 AI 去水印/改图一重绘就崩坏 | AI 二次生成 |
-| **隐形水印** | 肉眼不可见、可提取，兜底确权维权 | 两类威胁均覆盖 |
+| **隐形水印** | 肉眼不可见、可提取，兜底提供完整性线索（非作者认证） | 两类威胁均覆盖 |
 
-三者互补：搬运由明水印挡，AI 处理由扰动挡，万一被绕过由隐水印确权。
+三者互补：搬运由明水印挡，AI 处理由扰动挡，万一被绕过由隐水印提供可校验线索（非作者认证）。
 
 ---
 
@@ -38,7 +38,7 @@
 
 - **算法**：选**频域**方案（DWT-DCT），抗压缩、缩放、轻度裁剪；**不要用 LSB 最低位**嵌入（一压就没）。
 - **工具**：开源 `invisible-watermark`（Python）；进阶可用深度学习方案（HiDDeN、StegaStamp 思路）鲁棒性更强；商业 Digimarc、Imatag。
-- **嵌入内容**：唯一 ID / 署名信息。
+- **嵌入内容**：唯一 ID / 署名信息（仅作线索，不构成身份认证）。
 - **强度**：因后续有平台压缩，嵌入强度适当调高。
 - **弱点**：若对方做整图全重绘，像素被大幅改写可能丢失 → 由第②层扰动配合兜住。
 
@@ -173,18 +173,18 @@ uv run photo-guard protect input.jpg
 
 ### 8.2 两个反直觉决策（改之前先读理由）
 
-- **`config.WATERMARK_METHOD = "dwtDctSvd"`**，不是普通 `dwtDct`：库里的 `dwtDct` 在 JPEG q≤95 就崩，SVD 变体 q≥75 仍存活。
+- **`config.WATERMARK_METHOD = "dwtDctSvd"`**，不是普通 `dwtDct`：上游 imwatermark 0.2.0 的 `dwtDct` 在 JPEG q≤95 就崩，SVD 变体 q≥75 仍存活（现由仓内 `_dwt_dct_svd.py` 逐字转录）。
 - **载体 `CARRIER_CHANNEL=0` / `CARRIER_SCALE=72`，外加 `LEGACY_CARRIERS=((1, 36),)`**：P10 前载荷走在色度（通道 1）；4:2:0 重编码淡化色度、抹掉块投票，故移到亮度并抬高 step。载体不匹配会**打乱**读回（双向比特错误），读侧必须依次尝试候选，不得写死单一载体。`_CarrierEmbed` 以子类覆盖修掉仓内转录稿（`_dwt_dct_svd.py`）的 H/V 细节带互换（P11）。
 
 ### 8.3 模块职责与可替换性
 
 | 模块 | 职责 / 边界 | 可整体替换 |
 |---|---|---|
-| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧] + EXIF 方向转置 + 剔 EXIF 留 ICC；guard 全在 `.load()` 前、JPEG `draft` 居中）；输出路径守卫：拒绝等于输入（`_same_file`）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC） | 否 |
-| `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名。支持可选 `verify` 回调：在 temp 上先验后 `os.replace`（P4/M-A） | 是 |
+| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧，HEIC/HEIF/AVIF 给可操作提示] + EXIF 方向转置 + 剔 EXIF 留 ICC + 透明叠白 `ALPHA_MATTE`；guard 全在 `.load()` 前、JPEG `draft` 居中）；三条读侧包装 `verify_legacy`/`discover_payload`/`verify_expected`（P38 长度不符回退盲检）；输出路径守卫：拒绝等于输入（`_same_file`，含硬链接/符号链接同文件）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC）+ P39 超默认盲检上限的 `warnings` | 否 |
+| `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名。支持可选 `verify` 回调：在 temp 上先验后 `os.replace`（P4/M-A）；P40 回调的 `OSError` 原样抛出（`in_verify`），不包成写失败。批量命名细则：`sanitize_suffix`/`_name_key`/`plan_batch`（大小写不敏感去重） | 是 |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |
-| `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（可判真伪）、无校验和原始路径（只是**线索**） | 是（整文件） |
+| `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（判完整性与载荷内容，不判作者/归属；P40 坏头 `malformed` 由 `_envelope_header_is_well_formed` 区分）、无校验和原始路径（只是**线索**；`extract_legacy` 含 `_require_bgr` 守卫） | 是（整文件） |
 | `_dwt_dct_svd.py` | 层① 的算式底座：invisible-watermark 0.2.0 `dwtDctSvd.py` 的仓内逐字转录（含 MIT 许可正文与 H/V 互换等上游怪癖），仅依赖 cv2/numpy/pywt，导出 `embed_bits`/`decode_bits`；类区与类名必须与上游逐字一致（不得改/私有化），P11 修正只在 `watermark_invisible._CarrierEmbed` 子类里做 | 否（逐字转录） |
 | `perturb.py` | 层②。`Perturber` ABC + `_REGISTRY`；`get(name, **kwargs)` 是工厂 | 加类注册即可 |
 | `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重；加载前要求 `config.json` + 至少一个 `*.safetensors`（Q2/P43） | 是 |
@@ -193,8 +193,8 @@ uv run photo-guard protect input.jpg
 | `watermark_visible.py` | 层③。`apply()` 分派 subject/tile/center；`_load_font` 的 TTF 路径列表**不得缩**；无 OS 字体时兜底 `load_default(size=size)`（Pillow ≥12.2，Q2/P41），不得退回无视 `size` 的无参位图 | 是 |
 | `compress.py` | `fit_long_edge`；0 保留原尺寸，负数非法 | 是 |
 | `device.py` | CPU/CUDA/MPS 懒发现与显式选择 | 是 |
-| `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程；worker 持有 `ProtectOptions` 副本、不写调用方；关窗有界（5s 宽限后保持窗口）；取消仅 SD 当前图可中断；任务状态机（前置忙碌门、成功才清结果、按页取消、sender 守卫，P36）；设备发现用专用 QThread（P44）；CSV 导出对公式前缀加 `'`（P37）；`closeEvent`/验证启动保存设置（P45）；`VerifyWorker` expected+legacy 互斥（P46）；自动发现与期望同时设置时先发现后比对（P35） | 是 |
-| `gui_logic.py` | GUI 的 Qt-free 逻辑（`SETTINGS_KEYS`、勾选→层集合、设置强转/回落、`csv_safe_cell`、`verify_argument_conflict`）；禁 Qt 导入 | 是 |
+| `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程；worker 持有 `ProtectOptions` 副本、不写调用方；关窗有界（5s 宽限后保持窗口）；取消仅 SD 当前图可中断；任务状态机（前置忙碌门、成功才清结果、按页取消、sender 守卫，P36）；设备发现用专用 QThread（P44）；CSV 导出对公式前缀加 `'`（P37）；`closeEvent`/保护启动成功/验证启动保存设置（P45）；`VerifyWorker` expected+legacy 互斥（P46）；自动发现与期望同时设置时先发现后比对（P35） | 是 |
+| `gui_logic.py` | GUI 的 Qt-free 逻辑（`SETTINGS_KEYS`、勾选→层集合、设置强转/回落含 `validate_output_dir`（P29）、`csv_safe_cell`、`verify_argument_conflict`）；禁 Qt 导入 | 是 |
 | `resources.py` | 源码树与打包布局（Nuitka / macOS bundle）下的资源定位。bundle 内按**候选根**探测（`Contents/Resources` 与 `Contents/MacOS`）：Nuitka 对 data-dir 与 data-files 的落点不同（P33，证据 `docs/fix-plan.md` §9.9），故 `find_resource` 逐根查、`application_root` 只作主根 | 否 |
 
 ### 8.4 可选 extra 的懒加载契约

@@ -8,7 +8,9 @@
 > **当前进度（2026-09-29 收尾）**：已落地批次 **1 / A / B / C / D / I**。批 I = `661b7eb`（落档三次审计的 12 项新条目）→ `a3fffbd`（修复 P27/P31/P32）→ `893c1be`（回写）→ `26e11ed`（登记 P33 并更正 S2 落点结论）；**四个提交已全部推送**到 `origin/main`，推送后的 CI 实测见 §9.10。
 > **既有发布缺陷复验（`0bb150e` 修复 + `f23c428` 回写，已推送）**：G9①④（Windows 校验和步骤）与 P33（macOS bundle 资源路径）在旧 `release-desktop` #4（`36553114743`，SHA `f23c428`）的 Windows/macOS 真机构建中已取证成功；该 run 为手工调度，Release 附加步骤 skipped 属预期，见 §9.10 第 11 小节。
 > **本轮远端结果（2026-09-30）**：批 J 的 **G9②③ + G10** 本地实施见 §10.7，已按授权将 `000a504` 推送 `main` 一次：该 SHA 的 `ci` 三系统 + GUI、`docker` 及一次手工 `release-desktop` 构建均 **success**；Windows 安装包和 macOS DMG 已下载，与各自 SHA256 清单一致（§10.8）。旧 #4 的 G9①④/P33 也已补到真机构建成功。**未推 tag、未公开 Release**；批 J 的 G8 与仅在 tag push 执行的 publish 仍未完成。
-> **`v0.1.0` 正式发布已验证（2026-10-09）**：唯一获授权的 annotated tag 指向 G8 后的远端 `9b1ba41`，没有带上本地仅文档 `51187a8`；tag-push `release-desktop` run `37878702620` 的 verify、Windows、macOS 与独立 publish **全部 success**。GitHub Release `407614662` 已公开，四项资产均已下载；两份二进制的 SHA256 分别与各自发布清单一致（§10.10）。G8 技术检查与本次发布成功**不等于**第三方二进制再分发法律审查完成；批 H、G11③ 与 P34–P37/DOC3 仍待各自批次。
+> **`v0.1.0` 正式发布已验证（2026-10-09）**：唯一获授权的 annotated tag 指向 G8 后的远端 `9b1ba41`，没有带上本地仅文档 `51187a8`；tag-push `release-desktop` run `37878702620` 的 verify、Windows、macOS 与独立 publish **全部 success**。GitHub Release `407614662` 已公开，四项资产均已下载；两份二进制的 SHA256 分别与各自发布清单一致（§10.10）。G8 技术检查与本次发布成功**不等于**第三方二进制再分发法律审查完成；批 H、G11③ 与 P34–P37/DOC3 仍待各自批次（后续：H 见 §10.11，G11 见 §10.20，P35–P37 见 §10.25/§10.28；P34/DOC3 仍待）。
+> **2026-11-09 批次进展**：F′1+P22（`e534199`）、F′2（`de09f9d`）、O1（`c56e057`）、O2（`b69e9b8`）已推送；ci/docker 全绿，release dispatch `42741197178` 真机绿（publish skipped）；远端 `main=dc16a70`；见 §10.20–§10.23。
+> **2026-11-11/13 批次进展**：P35（`8c0dcda`）、Q1（`a5ab94d`，P38–P40）、Q2（`c21f69b`，P41–P43）、Q3（`e569741`，P36/P37/P44–P46）已推送；ci 四腿 436/2/12、gui 48、docker 20 步全绿；远端 `main=36e9584`；见 §10.25–§10.28。
 
 ---
 
@@ -16,22 +18,22 @@
 
 | ID | 标题 | 严重度 | 工作量 | 批次 | 一句话摘要 | 状态 |
 |---|---|---|---|---|---|---|
-| P1 | PhotoGuard 真实路径零质量断言 / slow 死配置 / PGD 无 seed | high（真路径零断言、slow 死配置）/ medium（无 seed、ε 名不副实）/ low（scaling_factor） | S（≤25 行代码 + 1 个 slow 文件 + 3 条 fast 用例 + Dockerfile 1 行 + docker.yml 2 步） | 3 | 真 SD 路径零断言、slow 死配置、PGD 无 seed；建慢档真断言并补 seed/L∞ 语义。 | [x] 批 N 已落地（2026-10-09）：seed/Generator（按 device、每次 attack 内新建）、真 L∞、校验前置与按层校验、`test_photoguard_slow.py` 11 例、docker `test` target 慢档步；spike H1/9A/9C/9D/9E 全过、9F 推送后已取证（docker `37918657113` 18/18 步全绿）；见 §10.16 |
+| P1 | PhotoGuard 真实路径零质量断言 / slow 死配置 / PGD 无 seed | high（真路径零断言、slow 死配置）/ medium（无 seed、ε 名不副实）/ low（scaling_factor） | S（≤25 行代码 + 1 个 slow 文件 + 3 条 fast 用例 + Dockerfile 1 行 + docker.yml 2 步） | 3 → **N** | 真 SD 路径零断言、slow 死配置、PGD 无 seed；建慢档真断言并补 seed/L∞ 语义。 | [x] 批 N 已落地（2026-10-09）：seed/Generator（按 device、每次 attack 内新建）、真 L∞、校验前置与按层校验、`test_photoguard_slow.py` 11 例、docker `test` target 慢档步；spike H1/9A/9C/9D/9E 全过、9F 推送后已取证（docker `37918657113` 18/18 步全绿）；见 §10.16 |
 | P2 | GUI 零真实测试 + 自证式假覆盖 | P1-high | M | C | 413 行 gui.py 从未被测试 import，两个「GUI 测试」抄逻辑自证；本 issue 抽出 Qt-free 的 gui_logic 与 gui 档覆盖。 | [x] 批次 C 已落地（`ab816d0`+`aadf27d`） |
 | P3 | 验证无法盲检 + 旧版 raw 验证启发式可能误判通过 | P0 | M | 1 | verify 必须先给长度（忘了长度 envelope 便不可达），旧版 raw 又只查「坏字符过半」，故错长度/局部损坏会 exit 0 报出错误 payload；改为密集梯度 CRC 盲检 + 严格旧版判据。 | [x] 批次 1 已完成 |
 | P4 | 无容量/最小尺寸校验：超容量写出全零尾巴且退出 0 | P1 | S-M（改 `:94` 时转 P6/P7） | 2 → **M1** | 隐水印无容量校验：超容量时尾部比特被轮空解出 0x00，protect 仍退 0；改为缩放后按块数预检 + 成品可恢复性自检。 | [x] 批 M1 已落地（2026-10-09）：写侧预检只做结构上界 + temp 先验后 replace 的成品自检；先红 11 例；见 §10.14 |
 | P5 | PhotoGuard 保真度与强度边界 / 文档承诺大于实现 | P2 | S~M（约半天；Spike 另机 30–60 min） | 5 → **M2** | PhotoGuard 只实现 encoder-attack 变体，三处衰减（uint8/JPEG q85/明水印）从未测量、文档承诺大于实现；补配对度量与边界声明。 | [x] 批 M2 已落地（2026-10-10）：docstring 偏差清单 + `latent_norm` + 保留率两例（用例 2 的「低频>高频」指标经六轮探针实测不可达，经用户裁定改测「扰动残存」）+ Spike A 直连出数；README 降级句与带日期+sha 数字；见 §10.17 |
 | P6 | 两个核心效果假设无实测 / 无 efficacy benchmark | P1-high | S（不碰 src/、tests/、锁文件） | 5 → **M1** | 两处对外承诺（隐水印抗重编码、扰动残存）全无实测，现有用例只锁决策不测效果；新增 core-only 的 bench 脚本 + 每周 CI，把两者变成可复现 CSV。 | [x] 批 M1 已落地（2026-10-09）：bench 12 格 + weekly efficacy.yml；本地 noise 档 30/36 pass（复核修正口径，见 §10.14）；S1/S2/S4 结论与读端降级自证法见 §10.14 |
 | P7 | 杂项：输出格式硬编码 / device 重复探测 / GUI 取消 / 共享可变 options | P3-low（升 P2-medium 需 desktop 档确证 stale-QThread 报错） | Small（1 新公开符号；无新依赖/marker） | O1/O2 | protect 硬编码 JPEG 容器、device 重复探测、GUI 关窗无界、worker 改写调用方 options；改为按扩展名选容器、传已探测列表、线程生命周期有界关窗。 | [x] O1+O2 已落地（2026-11-09）：`save_format` + PNG 警告 + device 复用；`_check_cancelled` 前置、options 副本、有界关窗；desktop T8/T9/T10 全过；见 §10.22/§10.23 |
-| P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [x] 批次 L 已落地（2026-10-09）：唯一 loader `_load_oriented_rgb`（EXIF 方向 + 剥 EXIF + 留 ICC）+ 4 个调用点收口；先红 10 例、含 verify 侧 pin；见 §10.13 |
-| P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [x] 批 N 已落地（2026-10-09）：`detect_salient_box` 退化返回 `None` + `_centre_box`（clamp ≥1px）+ docstring 如实；先红 2 例、反向实验双红；P9 单提交态 `-m slow --collect-only` 退 5；见 §10.16 |
+| P8 | EXIF 方向未处理 + EXIF 静默丢弃（竖拍变横图） | P1-high | M | 2 → **L** | 读图只做 `convert("RGB")`：方向未转置、ICC 静默丢弃，竖拍图永久变横图；新增私有 loader 转置方向、剥 EXIF 留 ICC，protect/verify 共用。 | [x] 批次 L 已落地（2026-10-09）：唯一 loader `_load_oriented_rgb`（EXIF 方向 + 剥 EXIF + 留 ICC）+ 4 个调用点收口；先红 10 例、含 verify 侧 pin；见 §10.13 |
+| P9 | 文档与实现漂移（README 项数 / slow 描述 / subject Tier-3） | P3-low（tier 3 不可达） | S | 3 → **N** | 事实声明无断言/无可复现命令——用例数手抄必腐烂、slow marker 被写成已有的层、tier 3 仅 cv2 抛错时可达；改为只写命令 + saliency 退化返回 None。**文档半边已随 2026-09-28 的 CLAUDE.md 合并消解，剩余 subject 代码面。** | [x] 批 N 已落地（2026-10-09）：`detect_salient_box` 退化返回 `None` + `_centre_box`（clamp ≥1px）+ docstring 如实；先红 2 例、反向实验双红；P9 单提交态 `-m slow --collect-only` 退 5；见 §10.16 |
 | P10 | 信封回环对多数 payload 长度失败（根因：JPEG 4:2:0 色度下采样） | **P0** | M（载体参数 + 候选读路径 + swap 修复 + 回归重钉） | 2 前置 | 现行 (通道1,step36) 仅 31/66 与 17/66 可通过验真；裁定改 (通道0,step72) 后四格全 66/66，代价 ≈1dB PSNR。 | [x] 批次 2 已落地（`910a298`） |
 | P11 | 库的编码回程交换 H/V 细节带（每个受保护图背非预期失真） | P1（换亮度后升为阻断） | S（一个子类 + 等价证明） | 2（与 P10 同批） | `dwtDctSvd.py:27/:30` 取出 (h1,v1,d1) 却按 (v1,h1,d1) 送回 idwt2；色度上 mean 0.50/max 19，换亮度会成 mean 10.3–12.8/max 106。 | [x] 批次 2 已落地（`910a298`） |
-| G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [x] 批次 D1 已落地（`22ce170` 先红 + `fbeed66` 转绿，2026-09-29）；G5/G2/P15/P19 属同批 D2/D3，未开工 |
-| G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；S1 已验，S2/S3 待 CI/Windows |
+| G1 | core 安装被拖入 torch + extra 漏声明 + 双份 cv2 | P0-blocker（「core 无 torch」契约今天结构性不可满足） | M | 4 | core 依赖 invisible-watermark 导入期无条件拉入 torch、夹带第二份 cv2，extra 又漏声明 torch/huggingface-hub；改为仓内逐字转录 DWT-DCT-SVD 算式。 | [x] 批次 D1 已落地（`22ce170` 先红 + `fbeed66` 转绿，2026-09-29）；G5/G2/P15/P19 已并入 D2/D3 并落地（§10.5/§10.9） |
+| G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；S1–S3 已验（§10.8/§10.10） |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
-| G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [x] 批次 L 已落地（2026-10-09）：格式表 / 64 MP 上限 / 单帧 / 透明叠白，guard 全在 `.load()` 前且 JPEG `draft` 居中；先红 9 例；HEIC 递延（裁定见 §10.13） |
-| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1/A2/A7/A8 本机实测，A3/A4/A5/A6 待推送与 Windows |
+| G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 → **L** | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [x] 批次 L 已落地（2026-10-09）：格式表 / 64 MP 上限 / 单帧 / 透明叠白，guard 全在 `.load()` 前且 JPEG `draft` 居中；先红 9 例；HEIC 递延（裁定见 §10.13） |
+| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1–A8 全部已验（§10.5） |
 | P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
 | P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
 | P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [x] 批次 A 已落地（`def0a80`） |
@@ -64,8 +66,8 @@
 | P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`；旧 dispatch #4 的 macOS smoke/DMG/校验/上传真机全绿，见 §9.10 第 11 小节） |
 | P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | 未排批次（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 读码推断；待 POSIX/Windows 复现 |
 | P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | S | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [x] 已修（2026-11-11，`0a236e8`；CI `42980703360` / docker `42980703329`）：自动发现+期望显式比对；长信封抬盲检上限；盲检失败回退精确错误；先红 3 例后绿；见 §10.25 |
-| P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | 待裁定修法 | Q3 | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [x] Q3 已落地（2026-11-11）：前置忙碌门 + 成功才清结果/改按钮 + 按页取消 + sender 守卫；见 §10.28 |
-| P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | 待裁定修法 | Q3 | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [x] Q3 已落地（2026-11-11）：所有数据格对 `= + - @`/tab/CR/LF 前缀加 `'`，并捕 `UnicodeEncodeError`；见 §10.28 |
+| P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | S（已落地） | Q3 | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [x] Q3 已落地（2026-11-11）：前置忙碌门 + 成功才清结果/改按钮 + 按页取消 + sender 守卫；见 §10.28 |
+| P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | S（已落地） | Q3 | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [x] Q3 已落地（2026-11-11）：所有数据格对 `= + - @`/tab/CR/LF 前缀加 `'`，并捕 `UnicodeEncodeError`；见 §10.28 |
 | P38 | `verify --expected-payload` 长度不符误报「未取回」 | med-high（验真语义） | S | Q1 | 只按期望载荷的长度解码一次；图内信封长度不同时 `_reconstruct_bytes` 分组改变、解出垃圾 → 退 1，与 README「与图内信封不符 → 2」矛盾。 | [x] Q1 已落地（2026-11-11）：失败后回退盲检（上限取默认/期望/`--max-payload-bytes` 的最大值），找到任意合法信封即按不符退 2；见 §10.26 |
 | P39 | 盲检默认上界 128 存储字节与 protect 容量不对称 | med | S | Q1 | 默认只覆盖原始载荷 ≤84 B；更长信封「写得进、默认读不出」且无提示，GUI auto-only 同样受限。 | [x] Q1 已落地（2026-11-11）：实测后 128→256（覆盖 180 B）；超限时 `protect` 返回可执行警告，CLI stderr 与 GUI 批次日志均展示；见 §10.26 |
 | P40 | 层① 读路径三处收口：legacy 无 BGR 守卫 / 坏头冒充 CRC / verify 的 OSError 误包 | low | S | Q1 | P31 的「每个入口」漏了 `extract_legacy`；坏信封头从未算 CRC 却报 `CRC32 failed`；`save_image_atomic` 把 verify 回调的 `OSError` 包成写失败。 | [x] Q1 已落地（2026-11-11）：三处均修；载体先到先得与周期载荷写读不对称只登记、未改；见 §10.26 |
@@ -75,8 +77,8 @@
 | P44 | GUI 启动在主线程 import torch + system_profiler | medium（启动体验） | M | Q3 | 构造窗口时同步探测设备，窗口延迟数秒；探测失败还会阻止 GUI 启动；重新检测会重置选择。 | [x] Q3 已落地（2026-11-11）：专用 QThread + `DeviceDiscoveryWorker`；combo 初始自动项；失败保留旧表/选择；见 §10.28 |
 | P45 | 设置只在开始保护成功后保存 | low | S | Q3 | 改完设置直接关窗或只用验证会丢；拒绝启动反而保存。 | [x] Q3 已落地（2026-11-11）：`closeEvent` 首行 + 验证成功 + 保护成功保存；`sync()`；拒绝不保存；见 §10.28 |
 | P46 | GUI 允许 expected 与 legacy 同时填写 | low | S | Q3 | 后者被 `VerifyWorker` 静默忽略；CLI 侧是互斥组。 | [x] Q3 已落地（2026-11-11）：入口拒绝 + Worker 防御 + UI 联动禁用；`auto+legacy` 仍登记残留；见 §10.28 |
-| DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | 未排批次（文档面） | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [ ] 读码确认算法；措辞待产品裁定 |
-| DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | 未排批次（文档面） | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾「未开工」与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [ ] 未开始 |
+| DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
+| DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
 
 ---
 
@@ -105,14 +107,15 @@
 | F′ | G11、P22、P23、G7（原批 F 扩两处以纳入 G11）；**开工首项（2026-10-10）：Ubuntu 26.04 迁移预检 + action 版本升级，详见 §10.18** | `docker build` 冒烟退 0、镜像内 `id -u` 非 0（本机未跑 docker，列为待办）；ISCC 缺失时 workflow 响亮失败（退出非 0）；`git check-attr` 验 `.gitattributes`、**`.github/workflows/` 目录 glob 下的全部 workflow 本地 PyYAML 解析（现为四份：`ci`/`docker`/`release-desktop`/`efficacy`——口径已由「三个」升级，防漏解析新增文件）**；新增零覆盖用例在 core 环境可收集、全绿（不联网、不引真模型）；**Ubuntu 26.04 预检腿（10-19 前）全绿或豁免登记；run 注解的 Node 20 弃用 warning 清零**。**F′1 已落地（2026-11-09，G11 + P22 + 26.04 第四腿；CI 已取证：ci `42576250788` / docker `42576250849`，见 §10.20）；F′2 已完成（2026-11-09，P23 + G7a/G7b；ci `42588064656` / docker `42588064654` / release dispatch `42741197178`，见 §10.21）。** |
 
 | **Q1** | P38（N1）→ P39（N2）→ P40（N9+N10） | 不同长度的 `--expected-payload` 退 2（含与 `--max-payload-bytes` 组合）；超限信封 protect 退 0 + 可执行警告；`extract_legacy` 的 2D/4ch → `ValueError`；坏头 → malformed 文案、真 CRC → 原文；verify 回调 `OSError` 原样；fast/gui/compliance 全绿。**Q1 已完成（2026-11-11）：三条裁定按推荐执行；Step 0 实测 1080×810 miss 在 128/256/512/1024 上界为 0.23/0.36/0.85/2.82 s，取 256；先红 9 例；fast 428 passed、collect 440、gui 33 passed / 0 skip、compliance 18；见 §10.26。** |
-| **Q2** | P41（N3）→ P42（N4）→ P43（N5） | 镜像字号探针 ≥20px；NaN/Inf 预算退 2 且不落成品；空/半模型目录在 download/build/smoke 均被拒；fast/gui/compliance 全绿。**Q2 已完成（2026-11-11）：N6 移入 Q3；先红 20 例；fast 452 passed、collect 464、gui 33 passed / 0 skip、compliance 18；docker 取证待推送；见 §10.27。** |
+| **Q2** | P41（N3）→ P42（N4）→ P43（N5） | 镜像字号探针 ≥20px；NaN/Inf 预算退 2 且不落成品；空/半模型目录在 download/build/smoke 均被拒；fast/gui/compliance 全绿。**Q2 已完成（2026-11-11）：N6 移入 Q3；先红 20 例；fast 452 passed、collect 464、gui 33 passed / 0 skip、compliance 18；docker 取证已推送（`c21f69b`，全绿，见 §10.27）。** |
 | **Q3** | P36 + P37 + P44（N6）+ P45（N7）+ P46（N8） | 忙时不清结果/不动按钮/不保存；CSV 危险前缀加 `'`；设备发现离主线程且失败可用；关窗/验证启动保存设置；expected+legacy 互斥；fast/gui/compliance 全绿。**Q3 已完成（2026-11-11）：先红 32 项（17 纯函数 + 10 GUI + 5 lifecycle）；fast 436 passed、collect 496、gui 48 passed / 0 skip、compliance 18；见 §10.28。** |
+| **Q4** | DOC3 + DOC4 + R1–R4 | 头部两 bullet；§1 G1/G2/G5/P36/P37/Q2/批次列；§3 六个已裁定勾选 + 待定表；AGENTS §8.3 四行 + Q1–Q3 新欠；README 信任边界；compliance 18、无代码改动。**Q4 已完成（2026-11-13）：见 §10.29。** |
 
 五条硬定序，实施时不得调换：
 
 1. **batch 3 内 P9 先于 P2/P1。** P9 撤销 `README.md:238` 与 `CLAUDE.md:71` 的聚合数字，并把「不写死用例数」定为唯一政策；若 P2/P1 先落地，两者会各自往文档里塞新数字，P9 再改即第二次返工，且 G1/G2/G5 的文档步骤都引用这条政策。
-2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P3 于批次 1 定义的 `watermark_invisible.max_stored_bytes(h, w)`（P4 只消费该函数；P4 本体属批次 2，尚未落地）。
-3. **G1 的 spike 必须在 batch 4 开工前完成，并按结论分支。** G1 的 spike A/B/C（`_dwt_dct_svd` 与 `invisible-watermark` 0.2.0 逐位等价）不通过就走兜底分支（core 继续声明 torch、撤回 `CLAUDE.md:12`），此时 G1/G5/G2 依赖的 core-only 闭包、extra 声明与 lock 差异面全部改写；G1 也是唯一能改变「fast 档仍经 `imwatermark` → `rivaGan.py:2` 引 torch」这一现状的条目——今天 P3 的 `'torch' in sys.modules` 断言仍为 `True`，只有 G1 落地后才应为 `False`。
+2. **batch 5 内 P6 先于 P5。** P5 的 README 数字替换与「强度未测量」措辞依赖 P6 的 `bench/README.md` 先给出实测口径（`rms_ratio` 定义、钉住范围、CSV 列名与 `artifact_subsampling`）；P6 的 `blocks_per_bit` 又改调 P3 于批次 1 定义的 `watermark_invisible.max_stored_bytes(h, w)`（P4 只消费该函数；P4 已由批 M1 落地，§10.14）。
+3. **G1 的 spike 必须在 batch 4 开工前完成，并按结论分支。** G1 的 spike A/B/C（`_dwt_dct_svd` 与 `invisible-watermark` 0.2.0 逐位等价）不通过就走兜底分支（core 继续声明 torch、撤回 `CLAUDE.md:12`），此时 G1/G5/G2 依赖的 core-only 闭包、extra 声明与 lock 差异面全部改写；G1 也是唯一能改变「fast 档仍经 `imwatermark` → `rivaGan.py:2` 引 torch」这一现状的条目——今天 P3 的 `'torch' in sys.modules` 断言仍为 `True`，只有 G1 落地后才应为 `False`（后续：G1 已落地，该断言现为 `False`，见 §10.9）。
 4. **P17 不早于 P2（同属 GUI 测试面）。** P17 的断言替换须落在 P2 收敛后的测试结构上，先落地 P2 再动 P17，避免同一测试面二次返工。
 5. **P28 先于 P8（2026-09-29 新增，同属输出面）。** 两者都改 `outputs.save_image_atomic`（P28 修 `mkdir`/`stat` 的报错包装与 `-o <dir>` 的早失败，P8 加 ICC 穿透与唯一 loader）；先落 P28 可避免 P8 在同一函数上二次返工，也避免 P8 的新用例钉在一个待改的报错形态上。
 
@@ -137,15 +140,15 @@
 
   另有三个非门禁 spike：P2 的 S1/S2/S3（S1 因只读环境未跑，须在首次 desktop 档执行前补做）、P5 的 Spike A/B（Spike A 为 PR 必附的人工实测，无结论则该 PR 的闸门不成立）、P7 的单条条件性 spike（`_thread_stopped` 先于 `deleteLater` 连接）。
 - [x] P8 与 G4 对 ICC 的归属：顺序已由 R3/R4 定死（P8 创建唯一 loader、G4 只扩 `draft_long_edge` 与 guard；save 助手一次谈定为 `save_image_atomic(image, path, *, image_format="JPEG", quality=None, icc_profile=None)` 并穿透），但「成品是否把源 ICC 归一化到 sRGB」仍是策略选择。 — 影响 P8、G4、P7、G3 — 建议：原样保留源 ICC、不做色彩管理（透明叠白只作用于像素），并在 README 明写「不做色彩空间转换」。 → **已裁定（2026-10-09，批 L 开工前）：原样保留源 ICC、不做色彩管理**；README「输入契约」段与已知边界已明写；实现：loader 取出 ICC → `save_image_atomic(..., icc_profile=icc)`（形参 G3 时已就绪），零像素改动（§10.13 L1）。
-- [ ] 是否允许非 JPEG 输出（P7 的 `save_format` 允许 `-o out.png` 退 0 + 警告）与 AGENTS.md 五「成品应为预压缩 JPEG」的张力。 — 影响 P7、G3、P4、P6 — 建议：取读法 A（allow+warn）：`-o out.png` 退 0 并打 `warning: writing PNG, not JPEG`，`-o out.bmp`/未知名退 2、不落文件；若取读法 B（视为禁令）则 PNG 也退 2，并须删除相应回环用例。
-- [ ] G2 的阻塞项：项目许可与版权行（holder、year、是否使用 `pyproject.toml:7` 的邮箱）。 — 影响 G2、G5 — 建议：MIT 正文 + `Copyright (c) 2026 <holder>`，holder 由用户给定，邮箱只留在 pyproject 作者字段。
-- [ ] 是否继续随包再分发 SD VAE 权重，以及是否把「许可与署名」写进 AGENTS.md。 — 影响 G2、G5、P6 — 建议：继续分发，但在 notices 里把权重钉死到 configured repo（MIT）并加 `--check` 门；AGENTS.md 本次不改，把「是否入规范」记为独立待办。
+- [x] 是否允许非 JPEG 输出（P7 的 `save_format` 允许 `-o out.png` 退 0 + 警告）与 AGENTS.md 五「成品应为预压缩 JPEG」的张力。 — 影响 P7、G3、P4、P6 — 建议：取读法 A（allow+warn）：`-o out.png` 退 0 并打 `warning: writing PNG, not JPEG`，`-o out.bmp`/未知名退 2、不落文件；若取读法 B（视为禁令）则 PNG 也退 2，并须删除相应回环用例。 → **已裁定（2026-11-09，O1）：allow+warn；见 §10.22**
+- [x] G2 的阻塞项：项目许可与版权行（holder、year、是否使用 `pyproject.toml:7` 的邮箱）。 — 影响 G2、G5 — 建议：MIT 正文 + `Copyright (c) 2026 <holder>`，holder 由用户给定，邮箱只留在 pyproject 作者字段。 → **已裁定（2026-09-29）：MIT 正文 + `Copyright (c) 2026 INORI-LIN`；邮箱只留 pyproject 作者字段**
+- [x] 是否继续随包再分发 SD VAE 权重，以及是否把「许可与署名」写进 AGENTS.md。 — 影响 G2、G5、P6 — 建议：继续分发，但在 notices 里把权重钉死到 configured repo（MIT）并加 `--check` 门；AGENTS.md 本次不改，把「是否入规范」记为独立待办。 → **已裁定（2026-09-29）：继续分发 + notices 钉 configured repo + `--check` 门；AGENTS.md 不改**
 - [x] G4 的 HEIC 支持与像素上限形态：递延还是现在 `uv add pillow-heif`；上限固定还是 `--max-input-pixels` 可调。 — 影响 G4、P8、P6 — 建议：HEIC 递延（懒调 `register_heif_opener()` 属依赖变更，离线不可验证），上限先固定 `MAX_INPUT_PIXELS = 64_000_000`。 → **已裁定（2026-10-09，批 L 开工前）：HEIC 递延（不新增依赖、无新 ID；今天 HEIC 已因 `UnidentifiedImageError`→OSError 退 2，本次只补可操作话术）、上限固定 `64_000_000`（无新 CLI 旗标）**（§10.13 L2/L4）。
-- [ ] G5 的两处：smoke 在 `UV_PROJECT_ENVIRONMENT=$TMP/venv`（项目外）跑，与 AGENTS.md:88「依赖装项目本地 `.venv`」的张力；以及仓库 public/private 决定 macOS leg 每 PR 跑还是转 nightly。 — 影响 G5、P2 — 建议：接受项目外隔离 venv（冲突显式标注）或改「复制 checkout 再 sync」；macOS 建议 `ci.yml` 加 `macos-15` 每 PR 跑，并只在 Linux 上跑 smoke。
+- [x] G5 的两处：smoke 在 `UV_PROJECT_ENVIRONMENT=$TMP/venv`（项目外）跑，与 AGENTS.md:88「依赖装项目本地 `.venv`」的张力；以及仓库 public/private 决定 macOS leg 每 PR 跑还是转 nightly。 — 影响 G5、P2 — 建议：接受项目外隔离 venv（冲突显式标注）或改「复制 checkout 再 sync」；macOS 建议 `ci.yml` 加 `macos-15` 每 PR 跑，并只在 Linux 上跑 smoke。 → **已裁定（2026-09-29）：接受项目外隔离 venv；macOS 每 PR 跑**
 - [x] P5/P6 的契约与阈值：AGENTS.md 三-②「输出崩坏、失真」强于可证明者，是 README 如实降级还是用户自行补边界；P6 首轮若 portrait_like/smooth_lowtex 的 q85 <100% 走哪条产品决策。 — 影响 P5、P6、P1 — 建议：README 如实写「只实现 encoder-attack 变体、强度未测量、提高成本非必然崩坏」，并把与 AGENTS.md 的差异上报；首轮不达则按 Q2 改默认 payload 长度或只在 README 限定承诺范围，禁缩语料、禁降钉。 → **已裁定（2026-10-09，批 M1 开工前，拆两条）**：**(i) README 降级口径＝采纳**——「只实现 encoder-attack 变体、强度未测量、提高成本非必然崩坏、残留比例无基线」写进 README/photoguard docstring（由 M2/P5 落地），与 AGENTS 三② 的差异经 §10.x 上报，**AGENTS §一–§七 不自改**；**(ii) Q2 首轮未达决策＝留待首轮数据**（M1 的 bench 首轮为 30/36（复核修正后口径，见 §10.14），`portrait_like`/`smooth_lowtex` 亦 100%，未触发 Q2；若将来触发，按 README 限定范围优先，禁缩语料/降钉）。P6 的 **Q5（抗 inpaint 权重路径）＝选项 (a) 只留书面协议**。
 - [x] P8 的损坏 EXIF 语义：硬拒绝（`ValueError` → exit 2）还是警告后继续 exit 0。 — 影响 P8、G4 — 建议：硬拒绝，避免重引已删除的静默降级路径（`jfif_unit=0/1` 一致，均退 2）。 → **已裁定（2026-10-09，批 L 开工前）：硬拒绝 → exit 2**；限定「EXIF 存在且解析失败」——缺失 EXIF 不受影响（§10.13 L3）。
-- [ ] P19 的线索路径（`--payload-bytes` 分支）是否改独立退出码（如 3）？ — 影响 P19、cli.py、README 退出码表、`docker.yml` 断言、P3 的结论 — 建议：采纳独立退出码 3，把「线索（未验证）」与「证据」在机器可读通道上分开；落地时同步 README 与 `docker.yml` 断言，并用新用例钉住。
-- [ ] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。
+- [x] P19 的线索路径（`--payload-bytes` 分支）是否改独立退出码（如 3）？ — 影响 P19、cli.py、README 退出码表、`docker.yml` 断言、P3 的结论 — 建议：采纳独立退出码 3，把「线索（未验证）」与「证据」在机器可读通道上分开；落地时同步 README 与 `docker.yml` 断言，并用新用例钉住。 → **已裁定（2026-09-29）：独立退码 3；README 与 docker.yml 已同步**
+- [x] P15 的模型加载：是否 `use_safetensors=True` 硬失败（目录无 safetensors 即拒载、不回退 `.bin`/pickle）？`download` 与加载两侧的 `revision` 钉在哪一版？ — 影响 P15、photoguard.py、download.py、cli.py 提示文案、Docker 烘焙复现 — 建议：硬失败；`revision` 在 spike（真 diffusers + 只放 `.bin` 是否走 `torch.load`）出结论后钉到一个不可变的 commit/版本，下载与加载两侧取同一个值。 → **已裁定（2026-09-29）：`use_safetensors=True` 硬失败；`revision` 下载/加载同钉 `31f26fde…`**
 - [x] P14 的旧版 verify 遇「不可能长度」（`--payload-bytes` 超出 `max_stored_bytes(h, w)`）保 exit 1（现状）还是改 2？ — 影响 P14、cli.py 退出码契约、README — 建议：改 2（与 P4 的「超容量退 2」一致，属参数错误），并新增一条 exit 2 用例钉住；若保 1 则须在 README 写明该分支含不可能长度。 → **已裁定（2026-09-28，批次 B 开工前）：改 2**；护栏只落在 `extract` 与 `extract_legacy`，`extract_envelope`（`--expected-payload` 路径）未动——加它会把该路径从 exit 1 变 2，属另一项契约变更，登记为同类残留。
 
 **本批已裁定（2026-09-23，批次 1）**：其中三条在批次 1 开工前经确认并按推荐执行 —— ①九个 spike 作为**不可跳过的开工门槛**（P3-A 因此被拦下并改走失败分支）；②`verify` 不带 flag 改为 0/1 盲检（当时唯一的退出码映射变更；**P19 之后该措辞作废**：线索路径由 0 改 3，见 §4.3 与 §7 P19）；③`max_stored_bytes(h, w)` 由 P3 定义、P4 只消费。另有一条新裁定：④**P10 升为 P0 独立处理**，批次 2 开工前先做机制定位（含 Y 通道对照），且在此之前**不得收紧 P4 的成品自检**。本节其余条目仍待各自批次开工时确认。
@@ -155,17 +158,17 @@
 | 待定主题 | 影响批次 | 阻塞对象 |
 |---|---|---|
 | P8/G4 的 ICC 归属（原样保留源 ICC vs 归一 sRGB） | 批次 2（P8）/ E（G4）→ **批 L** | P8、G4、P7 —— **已裁定（2026-10-09）：原样保留（§10.13 L1）** |
-| 是否允许非 JPEG 输出（P7 的 allow+warn vs 视为禁令） | E | P7、G3、P4、P6 |
-| G2 的许可与版权行（holder / year / 是否用 pyproject 邮箱） | D | G2、G5 |
-| SD VAE 权重重分发与是否把「许可与署名」写进 AGENTS | D | G2、G5、P6 |
+| 是否允许非 JPEG 输出（P7 的 allow+warn vs 视为禁令） | E | P7、G3、P4、P6 —— **已裁定（2026-11-09，O1）：allow+warn** |
+| G2 的许可与版权行（holder / year / 是否用 pyproject 邮箱） | D | G2、G5 —— **已裁定（2026-09-29）：MIT + `Copyright (c) 2026 INORI-LIN`** |
+| SD VAE 权重重分发与是否把「许可与署名」写进 AGENTS | D | G2、G5、P6 —— **已裁定（2026-09-29）：继续分发；AGENTS 不改** |
 | G4 的 HEIC 支持与像素上限形态（递延 vs 现在加依赖；固定上限 vs 可调） | E → **批 L** | G4、P8、P6 —— **已裁定（2026-10-09）：HEIC 递延、上限固定 64 MP（§10.13 L2/L4）** |
-| G5 的 smoke 隔离 venv 口径与 macOS leg 频率 | D | G5、P2 |
+| G5 的 smoke 隔离 venv 口径与 macOS leg 频率 | D | G5、P2 —— **已裁定（2026-09-29）：项目外隔离 venv；macOS 每 PR** |
 | P5/P6 的契约与阈值（README 降级口径；首轮未达时的产品决策） | E → **M1/M2** | P5、P6、P1 —— **已裁定（2026-10-09）：README 降级口径采纳（M2/P5 落地）；Q2 留待首轮数据（M1 首轮 30/36，未触发）；Q5=(a) 书面协议** |
 | P8 的损坏 EXIF 语义（硬拒绝 vs 警告后继续） | 批次 2（P8）→ **批 L** | P8、G4 —— **已裁定（2026-10-09）：硬拒绝 exit 2（§10.13 L3）** |
-| P19 的线索路径是否改独立退码 3 | D | P19、cli、README、docker.yml |
-| P15 的 `use_safetensors` 硬失败与 `revision` 钉法 | D | P15、photoguard、download |
+| P19 的线索路径是否改独立退码 3 | D | P19、cli、README、docker.yml —— **已裁定（2026-09-29）：独立退码 3** |
+| P15 的 `use_safetensors` 硬失败与 `revision` 钉法 | D | P15、photoguard、download —— **已裁定（2026-09-29）：硬失败 + revision 同钉版** |
 
-配套说明：批次 D 的 **G1 已裁定 (a)**（本条上方第 1 条已勾），**不在待定之列**；批次 2 遗留（P8/P4）与 P9 余项**仍未排批次**（§1 状态列已标注「待排」）。
+配套说明：批次 D 的 **G1 已裁定 (a)**（本条上方第 1 条已勾），**不在待定之列**；批次 2 遗留（P8/P4）与 P9 余项均已落地（L/M1/N；见 §10.13/§10.14/§10.16）。
 
 **批次 D 的分批与开工裁定（2026-09-29）**：用户裁定批次 D **拆三个子批顺序推进**：D1=G1（**已落地**，`22ce170`+`fbeed66`）→ D2=G2 + G5/G6 → D3=P15 + P19。上表中与 D 相关的五条**已按 §3 建议项裁定**，自本条起不再属「待定」：① G2 许可与版权行 = MIT 正文 + `Copyright (c) 2026 INORI-LIN`（邮箱只留 pyproject 作者字段）；② SD VAE 继续随包再分发，notices 钉死 configured repo + `--check` 门，**AGENTS.md 本次不改**（仅 G5 第 8 步若采纳 `.github/` 排除集变更时同步 §十一 一句）；③ G5 接受「项目外隔离 venv 跑 smoke」，macOS leg **每 PR 跑**（仓库 public）；④ P19 线索路径改**独立退码 3**，同步 README 退出码表与 `docker.yml` 断言；⑤ P15 用 `use_safetensors=True` **硬失败**，`revision` 待 spike 出结论后下载/加载两侧钉同一版。上表其余五行（P8/G4 的 ICC、非 JPEG 输出、G4 的 HEIC/上限、P5/P6 契约、P8 的损坏 EXIF）**仍在待定之列**，随各自批次开工前确认。
 
@@ -2215,7 +2218,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 ### 10.2 P1 追加与残留收口
 
-- **P1 追加一条**（不新增 ID）：SD-only 旗标（`--perturber-steps` / `-eps` / `-step-size`）应仅在 `perturb` 层参与时校验 —— `cli.py:104-107` 目前**无条件**校验，`--layers visible --perturber noop --perturber-steps 0` 会退 2（该旗标对本次运行无影响）。`--perturber-eps 0` 的静默 no-op（noise 变恒等、sd 的 delta 恒 0 却报成功）属 P1 既有范围。
+- **P1 追加一条**（不新增 ID）：SD-only 旗标（`--perturber-steps` / `-eps` / `-step-size`）应仅在 `perturb` 层参与时校验 —— `cli.py:104-107` 目前**无条件**校验，`--layers visible --perturber noop --perturber-steps 0` 会退 2（该旗标对本次运行无影响）。`--perturber-eps 0` 的静默 no-op（noise 变恒等、sd 的 delta 恒 0 却报成功）属 P1 既有范围。（后续：§10.16 已按有效层集校验）
 - **残留收口四处**：① P14 的「`extract_envelope` 未加护栏」→ 由 P27 收口；② P24 在 README 上登记的退出码说明 → 由 P27 取代（细分未拆，非数值冲突）；③ 原批 E 作废 → 重切 K/L/M/O；④ 批 D 的「待推送才可验」清单（§9.7）不变。
 
 ### 10.3 待复现与非既成事实
@@ -2430,7 +2433,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **实现文件**：`.github/workflows/{ci,docker,release-desktop,efficacy}.yml`、`Dockerfile`、`.dockerignore`、`.gitattributes`、`pyproject.toml`、`README.md`、`AGENTS.md` §九/§十、`tests/test_release_workflow.py`、新增 `tests/test_ci_hardening.py`。
 - **本地验证（2026-11-09）**：四份 workflow PyYAML 解析通过；`git check-attr` 显示 `*.sh`/`Dockerfile` 均为 `text eol=lf`，`git ls-files --eol` 全 `i/lf w/lf`（无 renormalize）；`test_ci_hardening.py` + `test_release_workflow.py` 14 passed；fast 档 331 passed / 12 deselected；compliance 18 passed；`~/.local/bin/uv lock --offline` 后 `uv.lock` 零 diff；另用 uv 0.13.7 官方二进制复核同样零 diff（排除 setup-uv v7 默认版本重写锁的风险）。本机无 docker，镜像项只能 CI 取证。
 - **推送与 CI 取证（2026-11-09，sha `e534199`）**：`git push origin main` 一次（`955a910..e534199`，1 提交、非强推、不带 tag；`v0.1.0` tag 对象 `994de7a5` / peeled `9b1ba41` 未动）。**ci run `42576250788` success**：`test (ubuntu-26.04)` / `test (ubuntu-latest)` / `test (macos-15)` / `test (windows-latest)` 各 **311 passed, 2 skipped, 12 deselected**；`gui`（26.04）**20 passed / 323 deselected，0 skip**。**26.04 腿与 gui 首跑即绿**，`smoke_wheel.sh` 在 26.04 上完成双 wheel 构建/隔离安装/入口冒烟。run 注解无 Node 20 弃用；仅剩 setup-uv 缓存争用 warning（两条 ubuntu 腿同键）与 macOS arm64 排队 notice；`ubuntu-latest` 的迁移公告确认 26.04 预检及时。**docker run `42576250849` success**：20 步全绿（含 post/complete），关键证据——P22 步 `image uid=1001 runner uid=1001`、`Config.User=app`、`Healthcheck` 含 `photo-guard`；`notices OK for Linux / x86_64 (62 rows)`；noise/SD 两处 `recovered: 线索（未验证）: ci-test` 整行；test target 构建成功；`slow-tier preflight OK`；慢档 **12 passed in 12.53s**；拒载步 `refusal rc=2`。`release-desktop`/`efficacy` 本轮只做静态锁，未 dispatch；其 action 升版由静态测试与下一次 tag/周一 cron 覆盖。
-- **残留**：P23/G7 留 F′2；`ubuntu-26.04` 第四腿与 gui job 的回切是 2026-11-19 后的独立小提交；base digest 的安全刷新单独排期；头部活进展块仍归 DOC4。两条非阻塞 warning 未在本批处理：setup-uv 缓存争用（两条 ubuntu 腿同键）与 uv 0.13.7 对 `uv_build<0.12` 的 build-system 提示（构建与 wheel 冒烟均成功）。
+- **残留**：P23/G7 留 F′2（后续：§10.21 已落地）；`ubuntu-26.04` 第四腿与 gui job 的回切是 2026-11-19 后的独立小提交；base digest 的安全刷新单独排期；头部活进展块仍归 DOC4。两条非阻塞 warning 未在本批处理：setup-uv 缓存争用（两条 ubuntu 腿同键）与 uv 0.13.7 对 `uv_build<0.12` 的 build-system 提示（构建与 wheel 冒烟均成功）。
 
 ### 10.21 批 F′2 落地记录（P23 + G7a + G7b，2026-11-09）
 
@@ -2448,7 +2451,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **先红（旧码）**：`tests/test_output_format.py` 7 failed（AttributeError / 容器仍 JPEG / 无 `image_format`）；`test_cli_exits.py` 新增 5 failed（无警告、`.bmp`/尾点/尾空格退 0、P20 无警告）；`test_device.py` 2 failed（探测 2 次、`_other_adapters()` 不收参数）；`test_output_integrity.py` 1 failed（`failed to write` 而非 warning）。
 - **本地验证（2026-11-09）**：目标四文件 **111 passed**；`-m 'not slow and not gui'` **386 passed / 32 deselected**；`--collect-only` **418**（现场值，不写死）；compliance 18 passed；`uv.lock` 零 diff。未改 GUI、AGENTS §五、`plan_batch`、依赖或退码。
 - **推送与 CI 取证（2026-11-09，sha `c56e057`）**：`git push origin main` 一次（3 提交、非强推、不带 tag；`v0.1.0` 未动）。ci `42777410112` **success**：四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **386 passed, 2 skipped, 12 deselected**；gui **20 passed / 398 deselected**。docker `42777409791` **success**：20 步全绿；P22 `image uid=1001 runner uid=1001`、notices 62 行、noise/SD 线索整行、慢档 **12 passed in 12.70s**、拒载 `rc=2`。`release-desktop`/`efficacy` 未触发。
-- **残留**：`.png` 隐藏名按 JPEG；P20 只读目标 lift 后若回贴失败可能保持可写（只警告，不断言 mode）；真实 exFAT/SMB/NTFS-3G 手工验证待办；O2 的 GUI 取消/共享 options + desktop T8/T9/T10 未做。
+- **残留**：`.png` 隐藏名按 JPEG；P20 只读目标 lift 后若回贴失败可能保持可写（只警告，不断言 mode）；真实 exFAT/SMB/NTFS-3G 手工验证待办；O2 的 GUI 取消/共享 options + desktop T8/T9/T10 未做（后续：§10.23 已完成）。
 
 ### 10.23 批 O2 落地记录（P7 GUI 取消/共享 options/有界关窗，2026-11-09）
 
@@ -2471,13 +2474,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   - D. 对照 `_thread_running=False`：`_start_worker` 被调用，证明差异来自忙碌门而非测试替身。
   机制与 `gui.py:363-395`（状态后置缺失）及 `:422-426`（`cancel_task` 命中 `self.worker`）一致。证据：`/tmp/pg-batchP/p36/output.txt`。
 - **P37（confirmed）**：`export_csv()` 导出后以 `utf-8-sig` 回读：正常值 `owner:alice` 保持不变；`=cmd|' /C calc'!A0`、`+SUM(1,1)`、`-2+3`、`@SUM(1,1)`、`"\t=1+1"` 的对应单元格仍以公式前缀或前导 tab 开头，`formula_like` 全为 `true`；表头与行数正常，`errors` 为空，BOM 为 `efbbbf`。**未执行任何公式**；表格软件是否真的求值仍属人工确认，不把 `csv.reader` 读回写成“已执行命令”。机制与 `gui.py:458-468` 一致。证据：`/tmp/pg-batchP/p37/output.txt`。
-- **结论与下一步**：三条全部 `confirmed`；§1 状态改为「已复现，待裁定修法」，仍保持 `[ ]`。本批未改 `src/`、`tests/`、CI 或依赖，未提交。下一步由用户裁定修法：P35 入口互斥或显式比对；P36 `_start_worker` 返回 bool + 状态后置 + 共用忙碌门；P37 公式前缀中和；先红用例分别落 `tests/test_gui_qt.py` / `tests/test_gui_lifecycle.py`。P34、DOC3/DOC4 未动。
+- **结论与下一步**：三条全部 `confirmed`；§1 状态改为「已复现，待裁定修法」，仍保持 `[ ]`（后续：P35/P36/P37 已 `[x]`，见 §10.25/§10.28）。本批未改 `src/`、`tests/`、CI 或依赖，未提交。下一步由用户裁定修法：P35 入口互斥或显式比对；P36 `_start_worker` 返回 bool + 状态后置 + 共用忙碌门；P37 公式前缀中和；先红用例分别落 `tests/test_gui_qt.py` / `tests/test_gui_lifecycle.py`。P34、DOC3/DOC4 未动。
 
 ### 10.25 P35 修复记录（方案 B，2026-11-11）
 
 - **裁定**：采用方案 B（自动发现 + 期望显式比对），不采用入口互斥、也不让期望静默优先。理由：自动发现回答“图里是什么”，期望值回答“是否等于我要求的”；两者同时设置是更强的验真，不应被禁止，也不应静默忽略其一。
 - **实现**：`gui.py` 的 `VerifyWorker.run` 在 `auto_discover` 分支：
-  - 有 `expected` 时把盲检上限抬到 `max(config.DEFAULT_MAX_PAYLOAD_BYTES, watermark_invisible.packed_size(expected))`，避免默认 128 B 对长期望产生假阴性；
+  - 有 `expected` 时把盲检上限抬到 `max(config.DEFAULT_MAX_PAYLOAD_BYTES, watermark_invisible.packed_size(expected))`，避免默认 128 B 对长期望产生假阴性（后续：Q1/P39 已改 256 B，见 §10.26）；
   - 盲检成功且与期望不一致 → `ValueError("自动发现 payload 与期望不符: …")`，由既有外层映射为 `未通过`，detail 同时带图内值与期望值；
   - 盲检抛 `NoPayloadError` → 回退 `verify_expected`，保留精确的容量/CRC 错误；成功则 `通过`；
   - 无 `expected` 的纯自动发现、仅期望、仅旧版字节数三条路径行为不变；`auto + legacy` 的既有 auto 优先级本批不改。
@@ -2530,3 +2533,19 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **验证（本机，2026-11-11）**：fast **436 passed / 60 deselected**、collect **496**、gui **48 passed / 448 deselected，0 skip**、compliance **18 passed**；`git diff --check` 干净；未改 workflow/依赖/锁文件。本轮只改 GUI 与测试/文档，`release-desktop`/`efficacy` 预期不触发。
 - **范围与残留**：改动面 = `gui.py`/`gui_logic.py` + 3 个 GUI 测试文件 + README/AGENTS/本文档；未碰 `device.py`、CLI、`pipeline`、`outputs`、依赖、关窗常量。残留：`auto+legacy` 仍静默忽略；N12 小口径（取消文案、进度 `%`、预览残留、PNG quality 帮助）未做；`device.py` 非 `ImportError` 仍可能让 CLI `devices` 崩（本批只在 GUI 层兜住）；CUDA 枚举在后台线程使用 primary context，GPU 路径不在 CI 覆盖；发现线程纳入关窗宽限但不可取消。
 - **推送与 CI 取证（2026-11-13，sha `e569741`）**：`git push origin main` 一次（`157bfa9..e569741`，2 提交、非强推、不带 tag；`v0.1.0` 未动）。`ci` run `43356089271` **success**——四腿（ubuntu-26.04 / ubuntu-latest / macos-15 / windows-latest）各 **436 passed, 2 skipped, 12 deselected**，`gui` **48 passed / 448 deselected，0 skip**；`docker` run `43356089288` **success**——20/20 步，`font probe OK: 33px`、`slow-tier preflight OK`、`image uid=1001 runner uid=1001`、`notices OK for Linux / x86_64 (62 rows)`、慢档 **12 passed in 13.03s**、拒载 `refusal rc=2`。`release-desktop` / `efficacy` 未触发（符合预期）。**口径说明**：CI 的 436 与本地 fast 一致；gui 48 = 上一轮 33 + 本批 15 个 GUI 用例。
+
+### 10.29 批 Q4 落地记录（DOC3/DOC4/R1–R4，2026-11-13）
+
+- **性质与裁定**：纯文档对账，基线 `36e9584`；不改代码/测试/CI/依赖。DOC3 采用「逐处限定 + README 信任边界段」；§10.x 历史保留时点正文，只加 5 处前向指针；R1 标为示例并指向 workflow。
+- **DOC3**：README `:5/:9/:117/:127/:180` 与 AGENTS `:4/:14/:16/:41/:187` 共 10 处限定为「完整性/线索，非作者/归属认证」；README「已知边界」新增一段「信任边界（CRC32 能证明什么）」：CRC 公开可重算、不绑定像素/作者；信封命中只证载荷被嵌入且可读；旧版只是线索；来源举证靠原图/拍摄记录/外部签名或时间戳。AGENTS §8.3 `watermark_invisible.py` 行同步为「判完整性与载荷内容，不判作者/归属」。
+- **DOC4**：
+  - 头部块补两条（2026-11-09 F′/O；2026-11-11/13 P35/Q1–Q3），并给 v0.1.0 句加前向指针。
+  - §1：G1 尾句「未开工」→「已并入 D2/D3 并落地」；G2/G5 尾部改为已验；P36/P37 工作量列 →「S（已落地）」；Q2 行 docker 取证改为已推送；P1/P8/P9/G4 批次列补 `→ N/L/N/L`；DOC3/DOC4 升 `[x]`。
+  - §3：六个已裁定项 `[ ]`→`[x]`（非 JPEG、G2 许可、SD VAE、G5 smoke/macOS、P19 退码 3、P15 safetensors/revision），「待定登记」表六行同步标记；`P8/P4/P9 仍未排批次` → 均已落地（L/M1/N）。
+  - §2 硬定序第 2/3 条：P4 已由 M1 落地；G1 已落地、`torch in sys.modules` 现为 False（保留原文 + 前向指针）。
+  - AGENTS §8.3：`pipeline.py` 补 HEIC/透明叠白/三读侧包装/硬链接同文件拒/P38/P39；`outputs.py` 补 `sanitize_suffix`/`_name_key`/`plan_batch`/P40 `in_verify`；`watermark_invisible.py` 补 P40 坏头 malformed/`extract_legacy` 的 `_require_bgr`；`gui_logic.py` 补 `validate_output_dir`；`gui.py` 的 P45 保存点补「保护启动成功」。
+- **R1–R4**：R1 README 冒烟节改为「冒烟示例（完整口径以 docker.yml 为准）」并列出未展示步骤；R2「见上方退出码表」→「见下文『退出码』」；R3 删除合规示例的 `--exclude=test_compliance.py`；R4「库里的 `dwtDct`」→「上游 imwatermark 0.2.0（仓内逐字转录）」。
+- **历史指针（5）**：§10.2 无条件校验 → §10.16；§10.20 P23/G7 → §10.21；§10.22 O2 未做 → §10.23；§10.24 仍 `[ ]` → §10.25/§10.28；§10.25 默认 128 B → §10.26。均只加括注，不改正文。
+- **验证（2026-11-13）**：`pytest tests/test_compliance.py` **18 passed**；`git diff --name-only` 仅 `README.md`/`AGENTS.md`/`docs/fix-plan.md`；`git diff --check` 干净；grep 抽查 README 的 `--exclude=test_compliance`/`见上方退出码表`/`与 docker.yml 一致` 均为 0，AGENTS 的 `库里的 dwtDct`/`可判真伪` 均为 0，§1–§3 的 `未开工`/`待裁定修法` 为 0；历史 §10.x 对旧文本的引用按惯例保留。AGENTS §8.3 表列数 5。未跑 fast/gui/docker（无代码改动）。
+- **残留**：DOC3 只做措辞与边界声明，未实现签名/时间戳认证方案（产品级，另立）；R1 的完整步骤清单仍以 workflow 为准（避免 README 再漂）；§10.x 历史证据保留，只加指针。
+- **推送状态**：本批提交仅本地；远端 `main` 仍 `36e9584`，推送待用户显式授权。
