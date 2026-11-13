@@ -53,3 +53,16 @@ def test_validate_capacity_accepts_the_floor_itself(tmp_path) -> None:
         watermark_invisible.embed(image, stored), len(stored.encode("utf-8"))
     )
     assert recovered == stored
+
+
+def test_embed_refuses_a_payload_over_the_image_capacity() -> None:
+    """R1: the library entry point owns the same ceiling as the pipeline.
+
+    Pre-fix ``embed`` only enforced the 256x256 floor; an over-capacity payload made the
+    transcribed loop recycle bits and produced an image that could never be read back.
+    """
+    image = np.random.default_rng(3).integers(40, 210, (256, 256, 3), dtype=np.uint8)
+    capacity = watermark_invisible.max_stored_bytes(256, 256)
+
+    with pytest.raises(ValueError, match="capacity"):
+        watermark_invisible.embed(image, "A" * (capacity + 1))

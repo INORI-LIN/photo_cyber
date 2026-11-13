@@ -181,3 +181,60 @@ def test_find_envelope_returns_none_when_capacity_is_below_an_envelope() -> None
     tiny = np.zeros((256, 256, 3), dtype=np.uint8)
     # 128 stored bytes is the 256x256 ceiling, so a ceiling of 16 admits no envelope.
     assert wi.find_envelope(tiny, 16) is None
+
+
+def test_verify_expected_reuses_scores_across_exact_and_blind_reads(
+    tmp_path, monkeypatch
+) -> None:
+    """R1: one block scan per carrier, even when the exact-length read misses.
+
+    Before the reader cache, ``verify_expected`` scanned both carriers for the exact length
+    and then scanned both again for the blind fallback. The second pass adds no information:
+    the score array depends on (image, carrier), not on the length.
+    """
+    rng = np.random.default_rng(42)
+    pixels = rng.integers(60, 200, (600, 800, 3), dtype=np.uint8)
+    src = tmp_path / "clean.jpg"
+    Image.fromarray(pixels, "RGB").save(src, quality=92)
+
+    calls: list[tuple[int | None, int | None]] = []
+    original = wi._block_scores
+
+    def counting(image, *, channel=None, scale=None):
+        calls.append((channel, scale))
+        return original(image, channel=channel, scale=scale)
+
+    monkeypatch.setattr(wi, "_block_scores", counting)
+
+    with pytest.raises(wi.NoPayloadError):
+        pipeline.verify_expected(src, "owner:alice")
+
+    assert len(calls) == len(wi.carrier_candidates())
+
+
+def test_reader_shares_scores_between_exact_and_blind(probe_bgr: np.ndarray, monkeypatch) -> None:
+    """R1: the private reader is the single owner of a decode's score arrays."""
+    calls: list[str] = []
+    original = wi._block_scores
+
+    def counting(image, *, channel=None, scale=None):
+        calls.append("scores")
+        return original(image, channel=channel, scale=scale)
+
+    monkeypatch.setattr(wi, "_block_scores", counting)
+    reader = wi._ImageReader(probe_bgr)
+
+    with pytest.raises(wi.NoPayloadError):
+        wi.extract_envelope(probe_bgr, 29, _reader=reader)
+    assert wi.find_envelope(probe_bgr, 256, _reader=reader) is None
+
+    # Two carriers, one scan each; the exact-length and blind paths share both.
+    assert calls == ["scores", "scores"]
+
+
+def test_raw_payload_ceiling_matches_the_envelope_ladder() -> None:
+    """R1: the 13-byte header + 4-char base64 quantum lives in one place."""
+    assert wi.raw_payload_ceiling(wi.config.DEFAULT_MAX_PAYLOAD_BYTES) == 180
+    assert wi.raw_payload_ceiling(16) == 0
+    assert wi.raw_payload_ceiling(17) == 3
+    assert wi.pack_payload("owner:alice") == "PG1:8f2e1789:b3duZXI6YWxpY2U="

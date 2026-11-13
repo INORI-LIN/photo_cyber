@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from . import config, device, gui_logic, outputs, perturb, pipeline, watermark_invisible
+from . import config, device, gui_logic, outputs, perturb, pipeline
 
 _FORMAT_EXTENSIONS = {
     "JPEG": ("jpg", "jpeg"),
@@ -173,31 +173,14 @@ class VerifyWorker(QObject):
                 try:
                     if self.auto_discover:
                         if self.expected:
-                            # P35: auto discovery is the "what is in the image" step and
-                            # the expected value is an assertion on top of it. Raise the
-                            # blind-search ceiling to the expected envelope's stored
-                            # length, or a payload over the default ceiling would be
-                            # reported as "no envelope" even when it is present.
-                            max_bytes = max(
-                                config.DEFAULT_MAX_PAYLOAD_BYTES,
-                                watermark_invisible.packed_size(self.expected),
+                            # P35/R1: discovery is the "what is in the image" step and the
+                            # expected value is an assertion on top of it. One reader now
+                            # serves both reads; the mismatch message still names both
+                            # values (the pipeline helper owns that contract).
+                            value, discovered = pipeline._verify_auto_expected(
+                                path, self.expected
                             )
-                            try:
-                                value = pipeline.discover_payload(path, max_bytes)
-                            except watermark_invisible.NoPayloadError:
-                                # Let the exact-length path produce its more precise
-                                # capacity/CRC error instead of a generic "no envelope".
-                                value = pipeline.verify_expected(
-                                    path, self.expected, max_payload_bytes=max_bytes
-                                )["payload"]
-                                status = "通过"
-                            else:
-                                if value != self.expected:
-                                    raise ValueError(
-                                        "自动发现 payload 与期望不符: "
-                                        f"自动发现 {value!r}, 期望 {self.expected!r}"
-                                    )
-                                status = "通过（自动发现）"
+                            status = "通过（自动发现）" if discovered else "通过"
                         else:
                             value = pipeline.discover_payload(path)
                             status = "通过（自动发现）"

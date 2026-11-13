@@ -290,7 +290,9 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         # capacity is usually much larger), but writing it silently would make "protect
         # succeeded" and "verify finds nothing" both true. Warn with the exact command.
         if opts.payload_envelope and stored_size > config.DEFAULT_MAX_PAYLOAD_BYTES:
-            raw_ceiling = ((config.DEFAULT_MAX_PAYLOAD_BYTES - 13) // 4) * 3
+            raw_ceiling = watermark_invisible.raw_payload_ceiling(
+                config.DEFAULT_MAX_PAYLOAD_BYTES
+            )
             payload_warnings.append(
                 f"envelope payload is {stored_size} stored bytes; the default blind search "
                 f"stops at {config.DEFAULT_MAX_PAYLOAD_BYTES}. Verify with "
@@ -395,11 +397,14 @@ def verify_expected(
     """
     size = watermark_invisible.packed_size(expected_payload)
     bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
+    # R1: one score pass per carrier; the exact-length read and the blind fallback below
+    # would otherwise scan the same image twice each.
+    reader = watermark_invisible._ImageReader(bgr)
     try:
-        payload = watermark_invisible.extract_envelope(bgr, size)
+        payload = watermark_invisible.extract_envelope(bgr, size, _reader=reader)
     except watermark_invisible.NoPayloadError:
         ceiling = max(config.DEFAULT_MAX_PAYLOAD_BYTES, size, max_payload_bytes or 0)
-        found = watermark_invisible.find_envelope(bgr, ceiling)
+        found = watermark_invisible.find_envelope(bgr, ceiling, _reader=reader)
         if found is not None:
             # Do not echo the recovered value: it comes from the suspect image and may carry
             # control characters; the mismatch itself is the actionable fact.
@@ -411,3 +416,35 @@ def verify_expected(
     if payload != expected_payload:
         raise ValueError("watermark payload does not match the expected payload")
     return {"payload": payload, "verified": True, "payload_bytes": size}
+
+
+def _verify_auto_expected(
+    suspect_path: Path, expected_payload: str, *, max_payload_bytes: int | None = None
+) -> tuple[str, bool]:
+    """GUI auto+expected: discover first, then assert equality (P35), on one decode.
+
+    Returns ``(payload, discovered)``. ``discovered`` preserves the GUI's two distinct
+    statuses: a blind hit is "通过（自动发现）", an exact-length-only hit is "通过".
+
+    The pre-fix GUI called ``discover_payload`` and then ``verify_expected``, which scanned
+    the same image six times on a miss and loaded/decoded it twice. This function keeps the
+    exact messages (the mismatch message names both values) while sharing one
+    :class:`watermark_invisible._ImageReader` across all three read paths.
+    """
+    size = watermark_invisible.packed_size(expected_payload)
+    bgr = _pil_rgb_to_bgr(_load_oriented_rgb(suspect_path)[0])
+    reader = watermark_invisible._ImageReader(bgr)
+    ceiling = max(config.DEFAULT_MAX_PAYLOAD_BYTES, size, max_payload_bytes or 0)
+    found = watermark_invisible.find_envelope(bgr, ceiling, _reader=reader)
+    if found is not None:
+        payload, _length = found
+        if payload != expected_payload:
+            raise ValueError(
+                "自动发现 payload 与期望不符: "
+                f"自动发现 {payload!r}, 期望 {expected_payload!r}"
+            )
+        return payload, True
+    payload = watermark_invisible.extract_envelope(bgr, size, _reader=reader)
+    if payload != expected_payload:
+        raise ValueError("watermark payload does not match the expected payload")
+    return payload, False

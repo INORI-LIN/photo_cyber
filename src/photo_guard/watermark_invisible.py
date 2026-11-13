@@ -34,6 +34,11 @@ import pywt
 from . import _dwt_dct_svd, config
 
 _MAGIC = "PG1"
+# ``PG1:<8 hex>:`` — the fixed part of the envelope header. Every length and capacity
+# calculation below derives from these two constants, so a header change cannot leave one
+# of them silently stale (R1).
+_HEADER_OVERHEAD = len(f"{_MAGIC}:00000000:")
+_HEADER_STEP = 4  # one base64 quantum
 
 # The library's embed/decode loops run over ``range(2)``, so only channels 0..1 can carry
 # bits at all (P21).
@@ -267,6 +272,10 @@ def embed(image_bgr: np.ndarray, payload: str) -> np.ndarray:
         # transcribed loop, and the empty envelope is undiscoverable by construction.
         raise ValueError("payload must not be empty")
     _require_bgr(image_bgr)
+    # R1: the library entry point owns the same structural ceiling as the pipeline. Without
+    # this, an over-capacity payload makes the transcribed loop recycle bits and produces an
+    # image that can never be read back — while the caller sees a normal return value.
+    _require_capacity(image_bgr, len(payload.encode("utf-8")))
     bits = list(np.unpackbits(np.frombuffer(payload.encode("utf-8"), dtype=np.uint8)))
     encoder = _CarrierEmbed(
         watermarks=bits,
@@ -313,16 +322,38 @@ def pack_payload(payload: str) -> str:
     return f"{_MAGIC}:{crc:08x}:{encoded}"
 
 
+def _parse_envelope(text: str) -> tuple[int, bytes] | None:
+    """Split a structurally valid ``PG1:<8 hex>:<canonical base64>`` header.
+
+    Returns ``(crc32, raw_bytes)`` or ``None``. This is the single parser behind both
+    :func:`unpack_payload` and :func:`_envelope_header_is_well_formed`, so the two can no
+    longer drift apart (R1). The canonical re-encode check is what separates "malformed
+    header" from "bit loss" (Q1/N10): a body that does not round-trip was never produced by
+    :func:`pack_payload`.
+    """
+    parts = text.split(":", 2)
+    if len(parts) != 3 or parts[0] != _MAGIC:
+        return None
+    _, crc_text, encoded = parts
+    if len(crc_text) != 8 or any(char not in "0123456789abcdefABCDEF" for char in crc_text):
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(encoded.encode("ascii"))
+    except (ValueError, binascii.Error):  # binascii.Error/UnicodeEncodeError are ValueError
+        return None
+    if base64.urlsafe_b64encode(raw).decode("ascii") != encoded:
+        return None
+    return int(crc_text, 16), raw
+
+
 def unpack_payload(stored: str) -> tuple[str, bool]:
     """Return ``(payload, verified)``; raw legacy payloads are unverified."""
     if not stored.startswith(f"{_MAGIC}:"):
         return stored, False
-    try:
-        _, crc_text, encoded = stored.split(":", 2)
-        raw = base64.urlsafe_b64decode(encoded.encode("ascii"))
-        expected = int(crc_text, 16)
-    except (ValueError, binascii.Error) as exc:
-        raise ValueError("invalid photo-guard watermark envelope") from exc
+    parsed = _parse_envelope(stored)
+    if parsed is None:
+        raise ValueError("invalid photo-guard watermark envelope")
+    expected, raw = parsed
     if (zlib.crc32(raw) & 0xFFFFFFFF) != expected:
         raise ValueError("watermark CRC check failed")
     return raw.decode("utf-8"), True
@@ -332,18 +363,29 @@ def packed_size(payload: str) -> int:
     return len(pack_payload(payload).encode("utf-8"))
 
 
+def raw_payload_ceiling(max_stored_bytes: int) -> int:
+    """Largest raw payload whose envelope fits in ``max_stored_bytes`` stored bytes.
+
+    The inverse of ``13 + 4*ceil(n/3)``. Used by the protect-side warning so the number
+    quoted to the user cannot drift from the ladder actually searched by the reader.
+    """
+    if max_stored_bytes <= _HEADER_OVERHEAD:
+        return 0
+    return ((max_stored_bytes - _HEADER_OVERHEAD) // _HEADER_STEP) * 3
+
+
 def envelope_lengths(max_bytes: int) -> list[int]:
     """Stored lengths an envelope can occupy: ``PG1:<8 hex>:<base64>`` is ``13 + 4k``."""
     lengths = []
-    length = 13 + 4
+    length = _HEADER_OVERHEAD + _HEADER_STEP
     while length <= max_bytes:
         lengths.append(length)
-        length += 4
+        length += _HEADER_STEP
     return lengths
 
 
 def find_envelope(
-    image_bgr: np.ndarray, max_bytes: int | None = None
+    image_bgr: np.ndarray, max_bytes: int | None = None, *, _reader: "_ImageReader | None" = None
 ) -> tuple[str, int] | None:
     """Blind search: ``(payload, stored_length)`` or ``None``.
 
@@ -355,27 +397,10 @@ def find_envelope(
         max_bytes = config.DEFAULT_MAX_PAYLOAD_BYTES
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
-    _require_bgr(image_bgr)
-    height, width = image_bgr.shape[:2]
-    ceiling = min(max_bytes, max_stored_bytes(height, width))
-    lengths = envelope_lengths(ceiling)
-    if not lengths:
-        return None
-    # One extraction pass per carrier, then one cheap reconstruction per candidate length:
-    # the score array depends on the carrier but not on the length.
-    for channel, scale in carrier_candidates():
-        scores = _block_scores(image_bgr, channel=channel, scale=scale)
-        for length in lengths:
-            raw = _reconstruct_bytes(scores, length)
-            if not raw.startswith(_MAGIC.encode("ascii") + b":"):
-                continue
-            try:
-                payload, verified = unpack_payload(raw.decode("ascii"))
-            except (UnicodeDecodeError, ValueError):
-                continue
-            if verified:
-                return payload, length
-    return None
+    if _reader is None:
+        _require_bgr(image_bgr)
+        _reader = _ImageReader(image_bgr)
+    return _reader.find_envelope(max_bytes)
 
 
 def _envelope_header_is_well_formed(text: str) -> bool:
@@ -385,20 +410,137 @@ def _envelope_header_is_well_formed(text: str) -> bool:
     non-canonical base64 body is a malformed header, not bit loss — the two need different
     messages or the reader chases the wrong cause.
     """
-    parts = text.split(":", 2)
-    if len(parts) != 3:
-        return False
-    _, crc_text, encoded = parts
-    if len(crc_text) != 8 or any(char not in "0123456789abcdefABCDEF" for char in crc_text):
-        return False
-    try:
-        raw = base64.urlsafe_b64decode(encoded.encode("ascii"))
-    except ValueError:  # binascii.Error / UnicodeEncodeError are ValueError subclasses
-        return False
-    return base64.urlsafe_b64encode(raw).decode("ascii") == encoded
+    return _parse_envelope(text) is not None
 
 
-def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
+class _ImageReader:
+    """One decode's block scores, shared by every read path (R1).
+
+    The score array depends on ``(image, carrier)``, not on the requested length. Before
+    this cache the three readers recomputed it per call — ``verify_expected`` scanned four
+    times on a miss and the GUI's auto+expected path six — which is pure waste on a 12 MP
+    image (~3 s per carrier). One reader per image makes every later read free.
+
+    The cache is deliberately scoped to one instance: it holds one image's scores, is
+    released with the caller's stack frame, and is never a module-level LRU.
+    """
+
+    def __init__(self, image_bgr: np.ndarray) -> None:
+        self.image = image_bgr
+        self._scores: dict[tuple[int, int], np.ndarray] = {}
+
+    def _scores_for(self, channel: int, scale: int) -> np.ndarray:
+        key = (channel, scale)
+        scores = self._scores.get(key)
+        if scores is None:
+            scores = _block_scores(self.image, channel=channel, scale=scale)
+            self._scores[key] = scores
+        return scores
+
+    def find_envelope(self, max_bytes: int) -> tuple[str, int] | None:
+        height, width = self.image.shape[:2]
+        ceiling = min(max_bytes, max_stored_bytes(height, width))
+        lengths = envelope_lengths(ceiling)
+        if not lengths:
+            return None
+        # One extraction pass per carrier, then one cheap reconstruction per candidate
+        # length: the score array depends on the carrier but not on the length.
+        for channel, scale in carrier_candidates():
+            scores = self._scores_for(channel, scale)
+            for length in lengths:
+                raw = _reconstruct_bytes(scores, length)
+                if not raw.startswith(_MAGIC.encode("ascii") + b":"):
+                    continue
+                try:
+                    payload, verified = unpack_payload(raw.decode("ascii"))
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                if verified:
+                    return payload, length
+        return None
+
+    def extract_envelope(self, payload_bytes: int) -> str:
+        crc_failed = False
+        malformed = False
+        for channel, scale in carrier_candidates():
+            raw = _reconstruct_bytes(self._scores_for(channel, scale), payload_bytes)
+            try:
+                text = raw.decode("ascii")
+            except UnicodeDecodeError:
+                continue
+            if not text.startswith(f"{_MAGIC}:"):
+                continue
+            if not _envelope_header_is_well_formed(text):
+                malformed = True
+                continue
+            try:
+                payload, verified = unpack_payload(text)
+            except ValueError:
+                crc_failed = True
+                continue
+            if verified:
+                return payload
+        if crc_failed:
+            raise IntegrityUncertainError(
+                "envelope decoded but its CRC32 failed — the payload may differ, or the "
+                "carrier may have lost bits (see P10/P11)"
+            )
+        if malformed:
+            raise IntegrityUncertainError(
+                "envelope decoded but its header is malformed (CRC must be 8 hex digits and "
+                "the payload canonical base64) — the payload may differ, or the carrier may "
+                "have lost bits (see P10/P11)"
+            )
+        raise NoPayloadError("no photo-guard envelope at that length")
+
+    def extract_legacy(self, payload_bytes: int) -> "LegacyExtraction":
+        found: tuple[int, int] | None = None
+        scores: np.ndarray | None = None
+        for channel, scale in carrier_candidates():
+            candidate = self._scores_for(channel, scale)
+            raw = _reconstruct_bytes(candidate, payload_bytes)
+            if is_recoverable_text(raw):
+                found = (channel, scale)
+                scores = candidate
+                break
+        if found is None or scores is None:
+            raise NoPayloadError(
+                "decoded bytes are not recoverable text "
+                "(strict UTF-8, printable, non-repetitive)"
+            )
+        channel, scale = found
+        bits = payload_bytes * 8
+        blocks_per_bit = len(scores) // bits
+        margin = boundary_margin(scores, payload_bytes)
+        advisory = (
+            margin >= config.LEGACY_MIN_MEAN_MARGIN
+            and blocks_per_bit >= config.LEGACY_MIN_BLOCKS_PER_BIT
+        )
+        if advisory:
+            notes = "advisory gates passed"
+        elif blocks_per_bit < config.LEGACY_MIN_BLOCKS_PER_BIT:
+            notes = (
+                f"advisory gate unmet: {blocks_per_bit} blocks/bit "
+                f"< {config.LEGACY_MIN_BLOCKS_PER_BIT}"
+            )
+        else:
+            notes = (
+                f"advisory gate unmet: mean_margin {margin:.4f} "
+                f"< {config.LEGACY_MIN_MEAN_MARGIN}"
+            )
+        return LegacyExtraction(
+            text=raw.decode("utf-8"),
+            blocks_per_bit=blocks_per_bit,
+            mean_margin=margin,
+            advisory_pass=advisory,
+            notes=notes + "; raw payloads carry no checksum, so this is a clue, not proof",
+            carrier=(channel, scale),
+        )
+
+
+def extract_envelope(
+    image_bgr: np.ndarray, payload_bytes: int, *, _reader: "_ImageReader | None" = None
+) -> str:
     """Decode an envelope at a known stored length. CRC is the only authority.
 
     P27 closed the last gap in P14's rule: an impossible length is a parameter error on
@@ -406,41 +548,10 @@ def extract_envelope(image_bgr: np.ndarray, payload_bytes: int) -> str:
     ``extract_legacy`` instead of scanning every block and then claiming "no envelope".
     """
     _require_capacity(image_bgr, payload_bytes)
-    _require_bgr(image_bgr)
-    crc_failed = False
-    malformed = False
-    for channel, scale in carrier_candidates():
-        raw = _reconstruct_bytes(
-            _block_scores(image_bgr, channel=channel, scale=scale), payload_bytes
-        )
-        try:
-            text = raw.decode("ascii")
-        except UnicodeDecodeError:
-            continue
-        if not text.startswith(f"{_MAGIC}:"):
-            continue
-        if not _envelope_header_is_well_formed(text):
-            malformed = True
-            continue
-        try:
-            payload, verified = unpack_payload(text)
-        except ValueError:
-            crc_failed = True
-            continue
-        if verified:
-            return payload
-    if crc_failed:
-        raise IntegrityUncertainError(
-            "envelope decoded but its CRC32 failed — the payload may differ, or the "
-            "carrier may have lost bits (see P10/P11)"
-        )
-    if malformed:
-        raise IntegrityUncertainError(
-            "envelope decoded but its header is malformed (CRC must be 8 hex digits and "
-            "the payload canonical base64) — the payload may differ, or the carrier may "
-            "have lost bits (see P10/P11)"
-        )
-    raise NoPayloadError("no photo-guard envelope at that length")
+    if _reader is None:
+        _require_bgr(image_bgr)
+        _reader = _ImageReader(image_bgr)
+    return _reader.extract_envelope(payload_bytes)
 
 
 # --------------------------------------------------------------- legacy raw ---
@@ -496,52 +607,15 @@ class LegacyExtraction:
     carrier: tuple[int, int]
 
 
-def extract_legacy(image_bgr: np.ndarray, payload_bytes: int) -> LegacyExtraction:
+def extract_legacy(
+    image_bgr: np.ndarray, payload_bytes: int, *, _reader: "_ImageReader | None" = None
+) -> LegacyExtraction:
     """Decode a raw (checksum-less) payload as a *clue*, with its advisory metrics."""
     _require_capacity(image_bgr, payload_bytes)
     # Q1/N9: this entry point was the one reader P31 missed. A 2-D array died inside cv2
     # (cv2.error, outside the CLI's exit-2 mapping) and a 4-channel array was silently
     # accepted with its extra channel ignored.
-    _require_bgr(image_bgr)
-    # Without a checksum the carrier cannot be confirmed, so each candidate is tried and the
-    # first that yields recoverable text wins; the result records which one it was.
-    found: tuple[int, int] | None = None
-    for channel, scale in carrier_candidates():
-        scores = _block_scores(image_bgr, channel=channel, scale=scale)
-        raw = _reconstruct_bytes(scores, payload_bytes)
-        if is_recoverable_text(raw):
-            found = (channel, scale)
-            break
-    if found is None:
-        raise NoPayloadError(
-            "decoded bytes are not recoverable text "
-            "(strict UTF-8, printable, non-repetitive)"
-        )
-    channel, scale = found
-    bits = payload_bytes * 8
-    blocks_per_bit = len(scores) // bits
-    margin = boundary_margin(scores, payload_bytes)
-    advisory = (
-        margin >= config.LEGACY_MIN_MEAN_MARGIN
-        and blocks_per_bit >= config.LEGACY_MIN_BLOCKS_PER_BIT
-    )
-    if advisory:
-        notes = "advisory gates passed"
-    elif blocks_per_bit < config.LEGACY_MIN_BLOCKS_PER_BIT:
-        notes = (
-            f"advisory gate unmet: {blocks_per_bit} blocks/bit "
-            f"< {config.LEGACY_MIN_BLOCKS_PER_BIT}"
-        )
-    else:
-        notes = (
-            f"advisory gate unmet: mean_margin {margin:.4f} "
-            f"< {config.LEGACY_MIN_MEAN_MARGIN}"
-        )
-    return LegacyExtraction(
-        text=raw.decode("utf-8"),
-        blocks_per_bit=blocks_per_bit,
-        mean_margin=margin,
-        advisory_pass=advisory,
-        notes=notes + "; raw payloads carry no checksum, so this is a clue, not proof",
-        carrier=(channel, scale),
-    )
+    if _reader is None:
+        _require_bgr(image_bgr)
+        _reader = _ImageReader(image_bgr)
+    return _reader.extract_legacy(payload_bytes)

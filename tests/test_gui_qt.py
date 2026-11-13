@@ -22,7 +22,7 @@ from PIL import Image
 from PySide6.QtCore import QEventLoop, QSettings, QTimer
 from PySide6.QtWidgets import QApplication
 
-from photo_guard import config, gui, outputs, pipeline
+from photo_guard import config, gui, outputs, pipeline, watermark_invisible
 
 pytestmark = pytest.mark.gui
 
@@ -374,6 +374,32 @@ def test_expected_only_mismatch_still_fails(tmp_path) -> None:
 
     assert len(rows) == 1
     assert rows[0][1] == "未通过"
+
+
+def test_auto_discover_with_expected_scans_each_carrier_once(tmp_path, monkeypatch) -> None:
+    """R1: auto+expected must not rescan the same image for every read path.
+
+    Pre-fix the miss path was discover (2 carriers) → exact length (2) → blind fallback (2).
+    One reader per image makes the score array a per-carrier constant, so the whole path is
+    two scans regardless of how many lengths are tried.
+    """
+    product = tmp_path / "clean.jpg"
+    pixels = np.random.default_rng(9).integers(60, 200, (320, 320, 3), dtype=np.uint8)
+    Image.fromarray(pixels, "RGB").save(product, quality=92)
+
+    calls: list[tuple[int | None, int | None]] = []
+    original = watermark_invisible._block_scores
+
+    def counting(image, *, channel=None, scale=None):
+        calls.append((channel, scale))
+        return original(image, channel=channel, scale=scale)
+
+    monkeypatch.setattr(watermark_invisible, "_block_scores", counting)
+
+    rows = _verify_rows(product, "owner:alice", True)
+
+    assert rows[0][1] == "未通过"
+    assert len(calls) == len(watermark_invisible.carrier_candidates())
 
 
 # --- Q3: device discovery, settings, mutual exclusion, CSV export -------------------
