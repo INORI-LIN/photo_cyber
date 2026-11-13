@@ -18,12 +18,11 @@ from PIL import Image
 
 from photo_guard import config, pipeline
 from photo_guard.cli import main
+from tests.support import textured_rgb
 
 
 def _textured(size: tuple[int, int], *, seed: int = 4) -> Image.Image:
-    rng = np.random.default_rng(seed)
-    arr = rng.integers(40, 210, (size[1], size[0], 3), dtype=np.uint8)
-    return Image.fromarray(arr, "RGB")
+    return textured_rgb(size, seed=seed, low=40, high=210)
 
 
 def _protect(src: Path, out: Path, **overrides) -> dict:
@@ -159,24 +158,29 @@ def test_palette_transparency_goes_white(tmp_path) -> None:
 
 
 def test_large_jpeg_is_drafted_before_decode(tmp_path, monkeypatch) -> None:
-    """4000x3000 asks for a scale-2 draft, and the long edge must still land on 1080."""
+    """2400x2160 asks for a scale-2 draft, and the long edge must still land on 1080."""
     from PIL import JpegImagePlugin
 
     calls: list[tuple[str, tuple[int, int]]] = []
+    sizes: list[tuple[int, int]] = []
     original = JpegImagePlugin.JpegImageFile.draft  # the JPEG plugin overrides the base no-op
 
     def spy(self, mode, size):
         calls.append((mode, size))
-        return original(self, mode, size)
+        result = original(self, mode, size)
+        sizes.append(self.size)
+        return result
 
     monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", spy)
     source = tmp_path / "large.jpg"
-    _textured((4000, 3000), seed=22).save(source, quality=92)
+    _textured((2400, 2160), seed=22).save(source, quality=92)
     out = tmp_path / "out.jpg"
 
     info = _protect(source, out)
 
     assert calls and calls[0][1] == (1080, 1080)
+    # 2400//1080 == 2 and 2160//1080 == 2, so Pillow must actually halve both sides.
+    assert sizes[0] == (1200, 1080)
     assert max(info["size"]) == 1080
 
 

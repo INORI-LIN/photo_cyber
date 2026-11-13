@@ -19,52 +19,18 @@ import pytest
 pytest.importorskip("PySide6")
 
 from PIL import Image
-from PySide6.QtCore import QEventLoop, QSettings, QTimer
-from PySide6.QtWidgets import QApplication
 
 from photo_guard import config, gui, outputs, pipeline, watermark_invisible
+from tests._gui_helpers import ensure_app, envelope_product, pump_until, redirect_settings
 
 pytestmark = pytest.mark.gui
 
-_APP = QApplication.instance() or QApplication([])
-
-
-def _pump_until(predicate, timeout_ms: int = 10_000) -> None:
-    """Run the main loop until ``predicate`` holds (no sleeps in the test body)."""
-    loop = QEventLoop()
-    poll = QTimer()
-    poll.setInterval(10)
-    deadline = QTimer()
-    deadline.setSingleShot(True)
-    poll.timeout.connect(lambda: loop.quit() if predicate() else None)
-    deadline.timeout.connect(loop.quit)
-    poll.start()
-    deadline.start(timeout_ms)
-    loop.exec()
-    poll.stop()
-    assert predicate(), f"condition not met within {timeout_ms} ms"
-
-
-def _ini_settings_factory():
-    """Force QSettings to an INI under the path set by the test.
-
-    QSettings.setDefaultFormat does not affect ``QSettings(org, app)`` on PySide6 6.11
-    (measured while adding Q3/N7): the constructor kept using the native plist, so the
-    fixture was silently reading the developer's real preferences. Passing the format and
-    scope explicitly is the only reliable redirect.
-    """
-    return lambda *_args, **_kwargs: QSettings(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        "PhotoGuard",
-        "PhotoGuardDesktop",
-    )
+_APP = ensure_app()
 
 
 @pytest.fixture
 def window(tmp_path, monkeypatch):
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
-    monkeypatch.setattr(gui, "QSettings", _ini_settings_factory())
+    redirect_settings(tmp_path, monkeypatch)
     # Q3/N6: discovery is asynchronous now; never import the real torch in a GUI test.
     monkeypatch.setattr(
         gui.device,
@@ -72,7 +38,7 @@ def window(tmp_path, monkeypatch):
         lambda **_kwargs: [gui.device.DeviceInfo("cpu", "test-cpu")],
     )
     win = gui.MainWindow()
-    _pump_until(lambda: not win._device_discovery_running())
+    pump_until(lambda: not win._device_discovery_running())
     win.payload.setText(config.DEFAULT_PAYLOAD)
     win.visible_text.setText(config.DEFAULT_VISIBLE_TEXT)
     win.suffix.setText(outputs.DEFAULT_SUFFIX)
@@ -82,7 +48,7 @@ def window(tmp_path, monkeypatch):
         yield win
     finally:
         win.close()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
 
 
 def test_default_checkboxes_are_invisible_and_visible(window) -> None:
@@ -303,23 +269,7 @@ def test_verify_worker_stops_after_current_item_when_cancelled(monkeypatch) -> N
 
 def _envelope_product(tmp_path: Path, payload: str, *, size: int = 320) -> Path:
     """A real envelope product; ``size`` also sets the output long edge."""
-    rng = np.random.default_rng(size)
-    pixels = rng.integers(40, 210, (size, size, 3), dtype=np.uint8)
-    source = tmp_path / f"p35-source-{size}.jpg"
-    product = tmp_path / f"p35-product-{size}.jpg"
-    Image.fromarray(pixels, "RGB").save(source, quality=92)
-    pipeline.protect(
-        source,
-        product,
-        pipeline.ProtectOptions(
-            payload=payload,
-            payload_envelope=True,
-            layers=frozenset({pipeline.LAYER_INVISIBLE}),
-            long_edge=size,
-            quality=92,
-        ),
-    )
-    return product
+    return envelope_product(tmp_path, payload, size=size, prefix="p35")
 
 
 def _verify_rows(product: Path, expected: str, auto: bool) -> list[tuple[str, str, str]]:
@@ -405,17 +355,12 @@ def test_auto_discover_with_expected_scans_each_carrier_once(tmp_path, monkeypat
 # --- Q3: device discovery, settings, mutual exclusion, CSV export -------------------
 
 
-def _redirect_settings(tmp_path: Path, monkeypatch) -> None:
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
-    monkeypatch.setattr(gui, "QSettings", _ini_settings_factory())
-
-
 def _device(backend: str, name: str, index: int | None = None):
     return gui.device.DeviceInfo(backend, name, index=index)
 
 
 def _construct_window(tmp_path: Path, monkeypatch, fake):
-    _redirect_settings(tmp_path, monkeypatch)
+    redirect_settings(tmp_path, monkeypatch)
     monkeypatch.setattr(gui.device, "discover_devices", fake)
     return gui.MainWindow()
 
@@ -435,14 +380,14 @@ def test_device_discovery_runs_off_the_main_thread(tmp_path, monkeypatch) -> Non
     win = _construct_window(tmp_path, monkeypatch, fake)
     try:
         assert win.device_table.rowCount() == 0
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         assert seen["ident"] != threading.get_ident()
         assert win.device_table.rowCount() == 1
     finally:
         gate.set()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         win.close()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
 
 
 def test_device_discovery_failure_keeps_the_window_usable(tmp_path, monkeypatch) -> None:
@@ -451,13 +396,13 @@ def test_device_discovery_failure_keeps_the_window_usable(tmp_path, monkeypatch)
 
     win = _construct_window(tmp_path, monkeypatch, fake)
     try:
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         assert "设备检测失败" in win.statusBar().currentMessage()
         assert win.device_combo.count() >= 1
         assert tuple(win.device_combo.currentData()) == ("auto", None)
     finally:
         win.close()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
 
 
 def test_refresh_preserves_the_selected_device_and_falls_back(tmp_path, monkeypatch) -> None:
@@ -469,7 +414,7 @@ def test_refresh_preserves_the_selected_device_and_falls_back(tmp_path, monkeypa
 
     win = _construct_window(tmp_path, monkeypatch, fake)
     try:
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         index = next(
             i for i in range(win.device_combo.count())
             if tuple(win.device_combo.itemData(i)) == ("cuda", 0)
@@ -478,16 +423,16 @@ def test_refresh_preserves_the_selected_device_and_falls_back(tmp_path, monkeypa
 
         win.refresh_devices()
         assert tuple(win.device_combo.currentData()) == ("cuda", 0)
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         assert tuple(win.device_combo.currentData()) == ("cuda", 0)
 
         devices.pop()  # the next probe no longer offers cuda
         win.refresh_devices()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         assert tuple(win.device_combo.currentData()) == ("auto", None)
     finally:
         win.close()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
 
 
 class _Event:
@@ -504,7 +449,7 @@ class _Event:
 def test_close_saves_settings_for_the_next_window(tmp_path, monkeypatch) -> None:
     """Q3/N7: changing settings and closing must persist them (old code saved only on protect)."""
     first = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
-    _pump_until(lambda: not first._device_discovery_running())
+    pump_until(lambda: not first._device_discovery_running())
     first.quality.setValue(77)
     event = _Event()
     first.closeEvent(event)
@@ -512,17 +457,17 @@ def test_close_saves_settings_for_the_next_window(tmp_path, monkeypatch) -> None
 
     second = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
     try:
-        _pump_until(lambda: not second._device_discovery_running())
+        pump_until(lambda: not second._device_discovery_running())
         assert second.quality.value() == 77
     finally:
         second.close()
-        _pump_until(lambda: not second._device_discovery_running())
+        pump_until(lambda: not second._device_discovery_running())
 
 
 def test_verify_start_saves_settings(tmp_path, monkeypatch) -> None:
     win = _construct_window(tmp_path, monkeypatch, lambda **_kwargs: [])
     try:
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
         source = tmp_path / "verify.jpg"
         Image.new("RGB", (320, 320), (40, 80, 120)).save(source, quality=92)
         win.verify_files.add_paths([source])
@@ -533,7 +478,7 @@ def test_verify_start_saves_settings(tmp_path, monkeypatch) -> None:
         assert int(win.settings.value("quality")) == 66
     finally:
         win.close()
-        _pump_until(lambda: not win._device_discovery_running())
+        pump_until(lambda: not win._device_discovery_running())
 
 
 def test_verify_worker_rejects_both_modes() -> None:

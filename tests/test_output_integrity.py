@@ -24,18 +24,14 @@ from PIL import Image
 
 from photo_guard import outputs, pipeline
 from photo_guard.cli import main
+from tests.support import write_textured
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _textured(path: Path, size: tuple[int, int] = (640, 480)) -> Path:
     """A small textured JPEG: cheap, and the invisible layer needs ≥256×256."""
-    import numpy as np
-
-    rng = np.random.default_rng(11)
-    arr = rng.integers(60, 200, (size[1], size[0], 3), dtype=np.uint8)
-    Image.fromarray(arr, "RGB").save(path, quality=92)
-    return path
+    return write_textured(path, size, seed=11, low=60, high=200, quality=92)
 
 
 def _digest(path: Path) -> str:

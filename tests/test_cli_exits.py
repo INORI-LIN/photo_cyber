@@ -18,17 +18,15 @@ import base64
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 from PIL import Image
 
 from photo_guard.cli import _tolerate_legacy_console, main
+from tests.support import write_textured
 
 
-def _seed_textured(path: Path) -> None:
-    rng = np.random.default_rng(7)
-    arr = rng.integers(60, 200, (1200, 1600, 3), dtype=np.uint8)
-    Image.fromarray(arr, "RGB").save(path, quality=92)
+def _seed_textured(path: Path, size: tuple[int, int] = (640, 480)) -> None:
+    write_textured(path, size, seed=7, low=60, high=200, quality=92)
 
 
 class _RecordingStream:
@@ -418,7 +416,7 @@ def test_verify_with_a_zero_payload_bytes_exits_two(tmp_path: Path, capsys) -> N
 
 
 def test_verify_with_an_impossible_payload_bytes_exits_two(tmp_path: Path, capsys) -> None:
-    """P14: 1200x1600 holds 3750 stored bytes, so 100000 is a parameter error (exit 2).
+    """P14: 640x480 holds 600 stored bytes, so 100000 is a parameter error (exit 2).
 
     The old code treated it as "no payload recovered" (exit 1) after a multi-second spin.
     """
@@ -536,7 +534,8 @@ def test_protect_over_capacity_exits_two_and_writes_nothing(tmp_path: Path, caps
     """
     src = tmp_path / "in.jpg"
     out = tmp_path / "out.jpg"
-    _seed_textured(src)
+    # Keep the exact 1080x810 capacity boundary (1704 vs 1705) on the original size.
+    _seed_textured(src, (1600, 1200))
 
     assert main(["protect", str(src), "-o", str(out), "--payload", "A" * 1705]) == 2
     assert "can carry at most" in capsys.readouterr().err

@@ -28,41 +28,27 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-import numpy as np
 from PIL import Image
-from PySide6.QtCore import QEventLoop, QObject, QSettings, QTimer, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, Signal
 
-from photo_guard import config, gui, outputs, pipeline
+from photo_guard import config, gui, outputs
 from photo_guard.gui import MainWindow
+from tests._gui_helpers import ensure_app, envelope_product, pump_until, redirect_settings
+from tests.support import write_textured
 
 pytestmark = pytest.mark.gui
 
-_APP = QApplication.instance() or QApplication([])
-
-
-def _settle(milliseconds: int = 50) -> None:
-    """Pump the loop once more so deferred deletes queued by the teardown are delivered."""
-    loop = QEventLoop()
-    QTimer.singleShot(milliseconds, loop.quit)
-    loop.exec()
+_APP = ensure_app()
 
 
 def _pump_until(predicate, timeout_ms: int = 30_000) -> None:
     """Run the main event loop until ``predicate`` holds, then let Qt settle."""
-    loop = QEventLoop()
-    poll = QTimer()
-    poll.setInterval(10)
-    poll.timeout.connect(lambda: loop.quit() if predicate() else None)
-    deadline = QTimer()
-    deadline.setSingleShot(True)
-    deadline.timeout.connect(loop.quit)
-    poll.start()
-    deadline.start(timeout_ms)
-    loop.exec()
-    poll.stop()
-    _settle()
-    assert predicate(), f"worker did not settle within {timeout_ms} ms"
+    pump_until(
+        predicate,
+        timeout_ms,
+        settle_ms=50,
+        failure=f"worker did not settle within {timeout_ms} ms",
+    )
 
 
 class _FakeWorker(QObject):
@@ -82,10 +68,9 @@ class _FakeWorker(QObject):
 
 @pytest.fixture
 def window(tmp_path, monkeypatch):
-    source = tmp_path / "in.jpg"
-    rng = np.random.default_rng(5)
-    pixels = rng.integers(40, 210, (240, 320, 3), dtype=np.uint8)
-    Image.fromarray(pixels, "RGB").save(source, quality=90)
+    source = write_textured(
+        tmp_path / "in.jpg", (320, 240), seed=5, low=40, high=210, quality=90
+    )
 
     # Q3/N6: keep the real torch import and system_profiler out of the GUI tests.
     monkeypatch.setattr(
@@ -93,19 +78,8 @@ def window(tmp_path, monkeypatch):
         "discover_devices",
         lambda **_kwargs: [gui.device.DeviceInfo("cpu", "test-cpu")],
     )
-    # Q3/N7: QSettings(org, app) ignores setDefaultFormat here (PySide6 6.11), so inject an
-    # explicitly-INI factory; otherwise the tests read the developer's real plist.
-    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path))
-    monkeypatch.setattr(
-        gui,
-        "QSettings",
-        lambda *_args, **_kwargs: QSettings(
-            QSettings.Format.IniFormat,
-            QSettings.Scope.UserScope,
-            "PhotoGuard",
-            "PhotoGuardDesktop",
-        ),
-    )
+    # Q3/N7: keep QSettings in a temporary INI, never the developer's real plist.
+    redirect_settings(tmp_path, monkeypatch)
     win = MainWindow()
     _pump_until(lambda: not win._device_discovery_running())
     monkeypatch.setattr(win, "_save_settings", lambda: None)  # never write the real QSettings
@@ -412,23 +386,7 @@ def test_close_after_grace_keeps_window_and_stops_retrying(tmp_path) -> None:
 
 
 def _p35_product(tmp_path, payload: str, *, size: int = 320) -> Path:
-    rng = np.random.default_rng(size)
-    pixels = rng.integers(40, 210, (size, size, 3), dtype=np.uint8)
-    source = tmp_path / "p35-in.jpg"
-    product = tmp_path / "p35-out.jpg"
-    Image.fromarray(pixels, "RGB").save(source, quality=92)
-    pipeline.protect(
-        source,
-        product,
-        pipeline.ProtectOptions(
-            payload=payload,
-            payload_envelope=True,
-            layers=frozenset({pipeline.LAYER_INVISIBLE}),
-            long_edge=size,
-            quality=92,
-        ),
-    )
-    return product
+    return envelope_product(tmp_path, payload, size=size, prefix="p35")
 
 
 def test_start_verify_with_auto_and_wrong_expected_reports_failure(window, tmp_path) -> None:

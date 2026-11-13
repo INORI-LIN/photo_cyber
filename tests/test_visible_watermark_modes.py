@@ -64,9 +64,11 @@ def test_tile_covers_the_bottom_band_of_a_tall_image() -> None:
 
     The offset accumulates ``diag`` per row without wrapping, so once it passed the canvas
     width the x-range went empty: measured 0 changed pixels in the bottom third of a
-    1080x6000 image (the top two thirds were painted).
+    1080x6000 image (the top two thirds were painted). 540x3000 still reproduces the empty
+    band on the pre-fix loop (probe: bands [9969, 1234, 0]) while the fixed loop paints all
+    three (probe: [11567, 11408, 12169]).
     """
-    arr = np.full((6000, 1080, 3), 128, dtype=np.uint8)
+    arr = np.full((3000, 540, 3), 128, dtype=np.uint8)
     out = watermark_visible.apply_tile(Image.fromarray(arr, "RGB"), "© test")
 
     changed = (np.array(out) != arr).any(axis=2)

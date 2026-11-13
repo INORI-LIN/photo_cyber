@@ -20,7 +20,7 @@ def _opts(layers: frozenset[str]) -> pipeline.ProtectOptions:
         perturber_kwargs={"epsilon": 2.0 / 255.0},
         visible_mode="tile",
         visible_text="© layers",
-        long_edge=1080,
+        long_edge=640,
         quality=85,
         layers=layers,
     )

@@ -16,6 +16,7 @@ import pytest
 from PIL import Image
 
 from photo_guard import outputs, pipeline, watermark_invisible
+from tests.support import write_textured
 
 
 def _solid(path, size=(320, 260), color=(10, 20, 30)):
@@ -25,12 +26,7 @@ def _solid(path, size=(320, 260), color=(10, 20, 30)):
 
 def _textured(path, size=(1200, 1200)):
     """Large enough to carry a ~257-byte envelope with margin (Q1/N2)."""
-    import numpy as np
-
-    rng = np.random.default_rng(23)
-    arr = rng.integers(60, 200, (size[1], size[0], 3), dtype=np.uint8)
-    Image.fromarray(arr, "RGB").save(path, quality=92)
-    return path
+    return write_textured(path, size, seed=23, low=60, high=200, quality=92)
 
 
 def test_protect_refuses_over_capacity_before_writing(tmp_path) -> None:

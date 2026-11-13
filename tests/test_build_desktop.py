@@ -7,22 +7,19 @@ never runs.
 """
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 import tomllib
 
 import pytest
+
+from tests.support import complete_model, load_script
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_DESKTOP = ROOT / "packaging" / "build_desktop.py"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("pg_build_desktop_f2", BUILD_DESKTOP)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(BUILD_DESKTOP, "pg_build_desktop_f2")
 
 
 def _version() -> str:
@@ -90,10 +87,7 @@ def test_incomplete_model_is_rejected(monkeypatch, tmp_path) -> None:
 
 def _prepare_success(monkeypatch, tmp_path):
     module = _load()
-    model = tmp_path / "model"
-    model.mkdir()
-    (model / "config.json").write_text("{}", encoding="utf-8")
-    (model / "diffusion_pytorch_model.safetensors").write_bytes(b"")
+    model = complete_model(tmp_path / "model")
     calls: list[dict] = []
 
     def fake_run(command, cwd, check):

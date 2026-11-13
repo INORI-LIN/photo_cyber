@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from photo_guard import config, download, photoguard
+from tests.support import complete_model
 
 
 class _FakeVAE:
@@ -33,14 +34,6 @@ def _stub(monkeypatch, name: str, **attributes) -> types.ModuleType:
         setattr(module, key, value)
     monkeypatch.setitem(sys.modules, name, module)
     return module
-
-
-def _complete_model(path: Path) -> Path:
-    """The minimum a loader/build/smoke gate now accepts (Q2/N5)."""
-    path.mkdir(parents=True, exist_ok=True)
-    (path / "config.json").write_text("{}", encoding="utf-8")
-    (path / "diffusion_pytorch_model.safetensors").write_bytes(b"")
-    return path
 
 
 def test_model_dir_completeness_requires_config_and_a_safetensors_file(tmp_path) -> None:
@@ -77,7 +70,7 @@ def test_the_loader_pins_safetensors_and_the_revision(monkeypatch, tmp_path) -> 
     ))
     monkeypatch.setattr(photoguard.device_mod, "resolve_device", lambda *a, **k: ("cpu", None, None))
 
-    model = _complete_model(tmp_path / "model")
+    model = complete_model(tmp_path / "model")
     attack = photoguard._SDEncoderAttack(photoguard.PGDConfig(model_id=str(model)))
     attack._load()
 
@@ -127,7 +120,7 @@ def test_the_download_pins_the_revision_and_filters_formats(monkeypatch, tmp_pat
 
     def fake_snapshot_download(**kwargs):
         captured.append(kwargs)
-        _complete_model(Path(kwargs["local_dir"]))
+        complete_model(Path(kwargs["local_dir"]))
         return str(kwargs["local_dir"])
 
     _stub(monkeypatch, "huggingface_hub", snapshot_download=fake_snapshot_download)
@@ -167,7 +160,7 @@ def test_download_defaults_to_models_dir_and_creates_parent(monkeypatch, tmp_pat
 
     def fake_snapshot_download(**kwargs):
         captured.append(kwargs)
-        _complete_model(Path(kwargs["local_dir"]))
+        complete_model(Path(kwargs["local_dir"]))
         return str(kwargs["local_dir"])
 
     _stub(monkeypatch, "huggingface_hub", snapshot_download=fake_snapshot_download)

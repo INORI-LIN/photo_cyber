@@ -6,21 +6,18 @@ Every ``main`` test redirects ``NOTICES``/``ROOT`` to ``tmp_path`` so the real
 """
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
+
+from tests.support import load_script
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "packaging" / "generate_notices.py"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("pg_generate_notices_f2", GENERATOR)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(GENERATOR, "pg_generate_notices_f2")
 
 
 class _Meta:

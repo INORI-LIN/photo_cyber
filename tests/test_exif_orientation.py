@@ -19,6 +19,7 @@ from PIL import Image, ImageOps
 
 from photo_guard import pipeline
 from photo_guard.cli import main
+from tests.support import textured_rgb
 
 ORIENTATION_TAG = 0x0112
 # Synthetic ICC blob: the pass-through contract is byte equality, and Pillow embeds the
@@ -27,9 +28,7 @@ ICC_BYTES = b"PG-TEST-ICC\x00" + bytes(range(64))
 
 
 def _textured(size: tuple[int, int], *, seed: int = 3) -> Image.Image:
-    rng = np.random.default_rng(seed)
-    arr = rng.integers(40, 210, (size[1], size[0], 3), dtype=np.uint8)
-    return Image.fromarray(arr, "RGB")
+    return textured_rgb(size, seed=seed, low=40, high=210)
 
 
 def _app1(orientation: int) -> bytes:
@@ -295,15 +294,26 @@ def test_missing_exif_is_not_rejected(tmp_path) -> None:
     assert info["size"] == (420, 260)
 
 
-def test_long_edge_zero_keeps_the_original_size(tmp_path) -> None:
+def test_long_edge_zero_keeps_the_original_size(tmp_path, monkeypatch) -> None:
     """README:167 promises 0 = keep original size; the loader must not draft in that mode."""
+    from PIL import JpegImagePlugin
+
+    calls: list[tuple[str, tuple[int, int]]] = []
+    original = JpegImagePlugin.JpegImageFile.draft
+
+    def spy(self, mode, size):
+        calls.append((mode, size))
+        return original(self, mode, size)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", spy)
     source = tmp_path / "big.jpg"
-    _textured((3200, 2400), seed=16).save(source, quality=92)
+    _textured((1600, 1200), seed=16).save(source, quality=92)
     out = tmp_path / "out.jpg"
 
     info = _protect(source, out, visible_text="© t", long_edge=0)
 
-    assert info["size"] == (3200, 2400)
+    assert calls == []
+    assert info["size"] == (1600, 1200)
 
 
 def test_verify_side_corrupt_exif_exits_two(tmp_path, capsys) -> None:

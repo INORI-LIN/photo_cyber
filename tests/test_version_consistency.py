@@ -6,10 +6,11 @@ is not an importable package on purpose, so the module under test is loaded from
 """
 from __future__ import annotations
 
-import importlib.util
 import re
 import tomllib
 from pathlib import Path
+
+from tests.support import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILD_DESKTOP = REPO_ROOT / "packaging" / "build_desktop.py"
@@ -18,11 +19,7 @@ VERSION_LITERAL = re.compile(r"\b\d+\.\d+\.\d+\b")
 
 
 def _load_build_desktop():
-    spec = importlib.util.spec_from_file_location("pg_build_desktop", BUILD_DESKTOP)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(BUILD_DESKTOP, "pg_build_desktop")
 
 
 def _pyproject_version() -> str:

@@ -24,15 +24,13 @@ import numpy as np
 from PIL import Image
 
 from photo_guard import config, pipeline
+from tests.support import textured_rgb
 
 SIZE = (480, 360)
 
 
 def _textured(size: tuple[int, int] = SIZE, seed: int = 3) -> Image.Image:
-    return Image.fromarray(
-        np.random.default_rng(seed).integers(40, 210, (size[1], size[0], 3), dtype=np.uint8),
-        "RGB",
-    )
+    return textured_rgb(size, seed=seed, low=40, high=210)
 
 
 def _protect(source: Path, out: Path, *, epsilon: float) -> np.ndarray:

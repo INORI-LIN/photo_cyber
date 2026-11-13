@@ -7,23 +7,20 @@ without needing a Windows host.
 """
 from __future__ import annotations
 
-import importlib.util
 import sys
 import types
 from pathlib import Path
 
 import pytest
 
+from tests.support import load_script
+
 ROOT = Path(__file__).resolve().parents[1]
 FIND_ISCC = ROOT / "packaging" / "find_iscc.py"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("pg_find_iscc_f2", FIND_ISCC)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(FIND_ISCC, "pg_find_iscc_f2")
 
 
 def test_env_override_wins_and_prints_only_the_path(monkeypatch, tmp_path, capsys) -> None:

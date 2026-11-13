@@ -8,23 +8,19 @@ because ``packaging/`` is not an importable package.
 """
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 
 from photo_guard import config, device
+from tests.support import complete_model, load_script
 
 _ENTRY = Path(__file__).resolve().parents[1] / "packaging" / "desktop_entry.py"
 
 
 def _load_entry():
-    spec = importlib.util.spec_from_file_location("pg_desktop_entry", _ENTRY)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script(_ENTRY, "pg_desktop_entry")
 
 
 def _bundle_root(tmp_path: Path) -> Path:
@@ -33,14 +29,6 @@ def _bundle_root(tmp_path: Path) -> Path:
     (root / "LICENSE").write_text("MIT License\n", encoding="utf-8")
     (root / "THIRD_PARTY_NOTICES.md").write_text("# Third-party notices\n", encoding="utf-8")
     return root
-
-
-def _complete_model(path: Path) -> Path:
-    """Q2/N5: config.json + one safetensors file is the minimum the smoke accepts."""
-    path.mkdir(parents=True, exist_ok=True)
-    (path / "config.json").write_text("{}", encoding="utf-8")
-    (path / "diffusion_pytorch_model.safetensors").write_bytes(b"")
-    return path
 
 
 def test_smoke_test_rejects_a_missing_model_directory(monkeypatch, tmp_path) -> None:
@@ -57,7 +45,7 @@ def test_smoke_test_rejects_an_empty_model_id(monkeypatch) -> None:
 
 def test_smoke_test_passes_with_an_existing_model_directory(monkeypatch, tmp_path, capsys) -> None:
     entry = _load_entry()
-    model = _complete_model(tmp_path / "model")
+    model = complete_model(tmp_path / "model")
     monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(model))
     monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(_bundle_root(tmp_path)))
     assert entry._smoke_test() == 0
@@ -86,7 +74,7 @@ def test_smoke_test_rejects_a_bundle_without_licence_material(
     root = _bundle_root(tmp_path)
     (root / missing).unlink()
     monkeypatch.setattr(
-        config, "PHOTOGUARD_MODEL_ID", str(_complete_model(tmp_path / "model"))
+        config, "PHOTOGUARD_MODEL_ID", str(complete_model(tmp_path / "model"))
     )
     monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(root))
     assert entry._smoke_test() == 4
@@ -104,7 +92,7 @@ def test_smoke_test_resolves_the_macos_bundle_layout(monkeypatch, tmp_path, caps
     (macos / "desktop_entry").write_text("", encoding="utf-8")
     (macos / "LICENSE").write_text("MIT License\n", encoding="utf-8")
     (macos / "THIRD_PARTY_NOTICES.md").write_text("# notices\n", encoding="utf-8")
-    model_dir = _complete_model(contents / "Resources" / "models" / "sd-vae-ft-mse")
+    model_dir = complete_model(contents / "Resources" / "models" / "sd-vae-ft-mse")
 
     monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -126,7 +114,7 @@ def test_smoke_test_lists_the_roots_it_looked_in(monkeypatch, tmp_path, capsys) 
     (macos / "desktop_entry").write_text("", encoding="utf-8")
     # The model lives outside the bundle here: this test is about the licence-material
     # roots, and N5 would otherwise stop the smoke at the model check first.
-    model_dir = _complete_model(tmp_path / "model")
+    model_dir = complete_model(tmp_path / "model")
 
     monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -143,7 +131,7 @@ def test_smoke_test_lists_the_roots_it_looked_in(monkeypatch, tmp_path, capsys) 
 def test_smoke_test_rejects_a_machine_without_a_cpu_device(monkeypatch, tmp_path) -> None:
     """A discovery result with only unsupported adapters must fail code 3, not pass."""
     entry = _load_entry()
-    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(_complete_model(tmp_path / "model")))
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(complete_model(tmp_path / "model")))
     monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(_bundle_root(tmp_path)))
     monkeypatch.setattr(
         device,
