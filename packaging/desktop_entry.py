@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 
 
-def _smoke_test() -> int:
+def _smoke_test(with_photoguard: bool = False) -> int:
+    """Exit codes: 2 = model/bundle material, 3 = no CPU backend, 4 = licences,
+    5 = PhotoGuard runtime missing, 6 = CUDA torch in a Windows bundle (DOC6)."""
     from photo_guard import config, device, pipeline, resources
 
     if not config.PHOTOGUARD_MODEL_ID:
@@ -40,12 +42,34 @@ def _smoke_test() -> int:
     if not any(item.backend == "cpu" for item in device.discover_devices(include_unsupported=False)):
         return 3
     pipeline.validate_options(pipeline.ProtectOptions())
+    if with_photoguard:
+        # DOC6/R7: the bundles declare PyTorch + diffusers, but the old smoke never imported
+        # them — a build that dropped torch still reported success and only failed on the
+        # user's first `--perturber sd` run. The flag stays opt-in because a core/dev tree
+        # legitimately has no torch.
+        try:
+            import torch
+            import diffusers  # noqa: F401  (both are part of the shipped runtime)
+        except (ImportError, OSError) as exc:
+            print(f"PhotoGuard runtime is missing from the bundle: {exc}", file=sys.stderr)
+            return 5
+        cuda = getattr(getattr(torch, "version", None), "cuda", None)
+        # The line is the Windows evidence DOC6 asked for: the release log records it.
+        print(
+            f"PhotoGuard runtime: torch={getattr(torch, '__version__', 'unknown')} cuda={cuda}"
+        )
+        if sys.platform == "win32" and cuda is not None:
+            print(
+                f"Windows bundle must ship CPU-only torch, but torch.version.cuda={cuda}",
+                file=sys.stderr,
+            )
+            return 6
     print("Photo Guard desktop smoke test passed")
     return 0
 
 
 if __name__ == "__main__":
     if "--smoke-test" in sys.argv:
-        raise SystemExit(_smoke_test())
+        raise SystemExit(_smoke_test("--with-photoguard" in sys.argv))
     from photo_guard.gui import main
     raise SystemExit(main())

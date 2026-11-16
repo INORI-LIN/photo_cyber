@@ -140,3 +140,71 @@ def test_smoke_test_rejects_a_machine_without_a_cpu_device(monkeypatch, tmp_path
     )
 
     assert entry._smoke_test() == 3
+
+
+# --- R7/DOC6: the bundle must actually contain the PhotoGuard runtime -----------------
+
+
+def _prepare_smoke(monkeypatch, tmp_path):
+    entry = _load_entry()
+    model = complete_model(tmp_path / "model")
+    monkeypatch.setattr(config, "PHOTOGUARD_MODEL_ID", str(model))
+    monkeypatch.setenv("PHOTO_GUARD_RESOURCE_DIR", str(_bundle_root(tmp_path)))
+    return entry
+
+
+def _fake_runtime(cuda):
+    import types
+
+    torch = types.ModuleType("torch")
+    torch.__version__ = "2.12.1+cpu"
+    torch.version = types.SimpleNamespace(cuda=cuda)
+    return {"torch": torch, "diffusers": types.ModuleType("diffusers")}
+
+
+def test_smoke_with_photoguard_rejects_a_missing_runtime(monkeypatch, tmp_path, capsys) -> None:
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setitem(sys.modules, "torch", None)
+
+    assert entry._smoke_test(with_photoguard=True) == 5
+
+    assert "runtime is missing" in capsys.readouterr().err
+
+
+def test_smoke_with_photoguard_passes_on_a_cpu_runtime(monkeypatch, tmp_path, capsys) -> None:
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        device, "discover_devices", lambda **_kwargs: [device.DeviceInfo("cpu", "Test CPU")]
+    )
+    for name, module in _fake_runtime(None).items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    assert entry._smoke_test(with_photoguard=True) == 0
+
+    assert "cuda=None" in capsys.readouterr().out
+
+
+def test_smoke_with_photoguard_rejects_cuda_on_windows(monkeypatch, tmp_path, capsys) -> None:
+    import types
+
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        device, "discover_devices", lambda **_kwargs: [device.DeviceInfo("cpu", "Test CPU")]
+    )
+    for name, module in _fake_runtime("13.0").items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(
+        entry, "sys", types.SimpleNamespace(platform="win32", stderr=sys.stderr)
+    )
+
+    assert entry._smoke_test(with_photoguard=True) == 6
+
+    assert "CPU-only" in capsys.readouterr().err
+
+
+def test_smoke_without_the_flag_ignores_a_missing_runtime(monkeypatch, tmp_path) -> None:
+    """The check is opt-in: a core/dev tree without torch still reports success."""
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setitem(sys.modules, "torch", None)
+
+    assert entry._smoke_test() == 0

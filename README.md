@@ -15,7 +15,7 @@
 - 主体、平铺、居中三种明水印模式；
 - 新版隐水印支持版本头和 CRC 完整性校验；
 - 批量验证及 CSV 结果导出；
-- CPU、NVIDIA CUDA、Apple Metal/MPS 设备选择；
+- CPU、NVIDIA CUDA（Linux 源码/Docker）与 Apple Metal/MPS 设备选择；Windows 安装包为 CPU 版；
 - CLI、Docker 和 Windows/macOS 离线安装包构建；
 - 模型只从本地目录加载，保护和验证过程不联网。
 
@@ -23,12 +23,12 @@
 
 | 平台 | CPU | GPU 加速 | 发布形式 |
 |---|---:|---|---|
-| Windows x64 | ✅ | NVIDIA CUDA | 安装程序 `.exe` |
+| Windows x64 | ✅ | —（CPU 版安装包；源码安装可换 cu130 torch） | 安装程序 `.exe` |
 | macOS Apple Silicon | ✅ | Apple Metal/MPS | `.dmg` / `.app` |
 | Linux | ✅ | NVIDIA CUDA | 源码 / Docker |
 | Intel Mac | — | — | 不提供安装包 |
 
-Windows AMD/Intel 显卡和其他适配器会显示在设备列表中，但当前 PhotoGuard 不使用这些设备，会回退 CPU。选择 `Auto` 时按 **CUDA → MPS → CPU** 决定后端；明确选择不可用设备会报错，不会静默切换。
+Windows AMD/Intel 显卡和其他适配器会显示在设备列表中，但当前 PhotoGuard 不使用这些设备，会回退 CPU。Windows 安装包内的 PyTorch 是 CPU 版，因此 `Auto` 最终只会落到 CPU；需要 NVIDIA CUDA 时按「从源码启动」换装 cu130 版 torch。macOS/Linux 上选择 `Auto` 时按 **CUDA → MPS → CPU** 决定后端；明确选择不可用设备会报错，不会静默切换。
 
 ## 桌面版快速开始
 
@@ -39,7 +39,7 @@ Windows AMD/Intel 显卡和其他适配器会显示在设备列表中，但当�
 - `PhotoGuard-Windows-x64-Setup.exe`
 - `PhotoGuard-macOS-arm64.dmg`
 
-完整安装包包含 Qt、PyTorch、diffusers 和 SD VAE，安装后可离线使用。当前构建未进行 Windows 代码签名或 Apple notarization，首次启动可能出现未知开发者提示。
+完整安装包包含 Qt、PyTorch（Windows 为 CPU 版）、diffusers 和 SD VAE，安装后可离线使用。当前构建未进行 Windows 代码签名或 Apple notarization，首次启动可能出现未知开发者提示。
 
 ### 从源码启动
 
@@ -58,6 +58,13 @@ uv run photo-guard-gui
 uv sync --frozen --extra desktop --extra photoguard
 uv run photo-guard download-models
 uv run photo-guard-gui
+```
+
+Windows 默认安装的 torch 与安装包一致（CPU 版）。需要 NVIDIA CUDA 时，在同步 photoguard extra 之后换装与锁文件同版本的 cu130 轮子（之后重跑 `uv sync --frozen` 会按锁文件还原为 CPU 版）：
+
+```bash
+uv pip install --index-url https://download.pytorch.org/whl/cu130 "torch==2.12.1+cu130"
+uv run photo-guard devices   # 应显示 CUDA
 ```
 
 `download-models` 是唯一需要连接 Hugging Face 的模型准备步骤。模型默认保存到项目的 `models/sd-vae-ft-mse/`，之后运行阶段强制使用本地文件。下载完成后会校验 `config.json` 与至少一个 `*.safetensors`；缺失即失败退 2，不会把空目录或半下载目录当作成功。
@@ -406,7 +413,7 @@ uv run python packaging/build_desktop.py
 - 输入契约（见上文）之外的边界：HEIC/HEIF/AVIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）；RGB/灰度输入的 ICC 原样保留、不做色彩管理；CMYK 是有管理的例外（有 ICC 转 sRGB 并写 sRGB profile，无 ICC 朴素转+丢 profile+警告）；16-bit/float 输入拒绝；16-bit RGB TIFF 仍可能被 Pillow 降位（已知残余）；
 - **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零）；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
 - **SD 层有 4 MP 的每图像素上限**（`PHOTOGUARD_MAX_PIXELS`）：VAE 编码器的全分辨率激活内存随像素线性增长（4 MP fp16 约 0.95 GiB，12 MP 约 2.86 GiB）；`--long-edge 0` 或长边 >约 2000 的图配 `--perturber sd` 会退 2 并给出建议长边，确有大内存时可 `--max-perturb-pixels` 显式放开；
-- 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
+- Windows 安装包仅 CPU（NVIDIA 显卡也不加速）；需要 CUDA 请按源码安装换 cu130 torch。当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
 - 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。首轮实测（2026-10-09，`138022c`，本机 noise 档）：36 格中 **30 格通过**，其中指定格 textured_detail 的 identity 与 jpeg_q85 均 100%（37 B 信封 / 296 bit）；`downscale_720` 与 `combo_repost` 全数失败——与「缩小后无法验真」的已知边界一致。
 
 ## 参考
