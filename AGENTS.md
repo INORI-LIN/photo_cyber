@@ -190,7 +190,7 @@ uv run photo-guard protect input.jpg
 | `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重；加载前要求 `config.json` + 至少一个 `*.safetensors`（Q2/P43） | 是 |
 | `download.py` | `download-models`；**唯一**允许联网的模块，不得扩面；下载后跑同一完整性判据，缺文件即失败 | 否（刻意最小） |
 | `subject.py` | 纯 cv2 三级降级：Haar 人脸 → Sobel 显著性窗 → 几何中心 | 是 |
-| `watermark_visible.py` | 层③。`apply()` 分派 subject/tile/center；`_load_font` 的 TTF 路径列表**不得缩**；无 OS 字体时兜底 `load_default(size=size)`（Pillow ≥12.2，Q2/P41），不得退回无视 `size` 的无参位图 | 是 |
+| `watermark_visible.py` | 层③。`apply()` 分派 subject/tile/center；`apply_center`/`apply_subject` 的默认 alpha 必须取 `config.DEFAULT_VISIBLE_ALPHA`（P58）；字号先取旧 `target_w // len(text)` 估算，再按实测 bbox **只缩不放**（`_fit_font`，P58）；`_load_font` 的 TTF 路径列表**不得缩**；无 OS 字体时兜底 `load_default(size=size)`（Pillow ≥12.2，Q2/P41），不得退回无视 `size` 的无参位图 | 是 |
 | `compress.py` | `fit_long_edge`；0 保留原尺寸，负数非法 | 是 |
 | `device.py` | CPU/CUDA/MPS 懒发现与显式选择 | 是 |
 | `gui.py` | PySide6 批量 protect/verify；工作负载必须离开 Qt 主线程；worker 持有 `ProtectOptions` 副本、不写调用方；关窗有界（5s 宽限后保持窗口）；取消仅 SD 当前图可中断；任务状态机（前置忙碌门、成功才清结果、按页取消、sender 守卫，P36）；设备发现用专用 QThread（P44）；CSV 导出对公式前缀加 `'`（P37）；`closeEvent`/保护启动成功/验证启动保存设置（P45）；`VerifyWorker` expected+legacy 互斥（P46）；自动发现与期望同时设置时先发现后比对（P35）；Quit 事件有界收尾（`_QuitGuard` 拦截 `QEvent.Quit`，`prepare_to_quit` 复用 5s 宽限，超时消费事件保持运行，P49）；验证页盲检上界等价 `--max-payload-bytes` 并随设置持久化（P50）；预览按控件尺寸缩放解码且不放大（`QImageReader.setScaledSize`，P51） | 是 |

@@ -18,6 +18,7 @@
 > **2026-11-16 Q7**：P34/P52 已落地（`fb371eb`）+ 本回写；符号链接目标与硬链接别名不再被 chmod、temp 用保留 fd 写入并核对 dev/ino；collect 523、fast 511/31.5s、gui 53；见 §10.36；本地未推送。
 > **2026-11-16 R5**：P56/P57 已落地（`c95eaf9`）+ 本回写；SD 层 4MP 上限 + `--max-perturb-pixels`、顶层 `-v` 日志与 traceback；collect 534、fast 522/32.3s、gui 53；见 §10.37；本地未推送。
 > **2026-11-16 R4**：P55 已落地（`5cd6814`）+ 本回写；`PGDConfig` steps≥1、构造器拒绝未知 kwarg、perturber 必须配层、alpha 按层校验；collect 540、fast 528/32.3s、gui 53；见 §10.38；本地未推送。
+> **2026-11-16 R6**：P58 已落地（`2546bd6`）+ 本回写；center/subject 默认 alpha 对齐 0.10、字号实测只缩不放；collect 544、fast 532/32.8s、gui 53；见 §10.39；本地未推送。
 
 ---
 
@@ -98,7 +99,7 @@
 | P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [x] R4 已落地（`5cd6814`）：`PGDConfig` 要求 `steps≥1`；两个构造器去掉 `**_: Any`（未知 kwarg → TypeError）；`validate_options` 拒绝“配置了 perturber/实例但层关闭”；alpha 仅在 visible 层启用时校验。sd `steps=0` 首次 `apply` 抛错且未导入 torch。见 §10.38。 |
 | P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：`PHOTOGUARD_MAX_PIXELS=4_000_000`；protect 在 resize 后、embed 与模型加载前检查，CLI 加 `--max-perturb-pixels`；6MP 探针退 2、无成品、建议长边 2449。见 §10.37。 |
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
-| P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [ ] 已登记 R6 |
+| P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [x] R6 已落地（`2546bd6`）：两处默认 alpha 对齐 `config.DEFAULT_VISIBLE_ALPHA`（0.10）；新增 `_fit_font`，保留旧估算为起点、实测超宽才按比例收缩（只缩不放）。19 CJK @320×240 由 291px 降到 183/158；Latin 默认渲染逐字节不变。见 §10.39。 |
 | DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；**A（README 改 CPU）已拍板（2026-11-13）**；待 R7 落地 |
 
 ---
@@ -139,7 +140,7 @@
 | **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | 每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤27s、collect ≤493。**R3 已完成（2026-11-13，`f4d5252`）：D1/D2/D3/D4/E1/E2；watermark `1..66`→13 个边界长度×2 载体（用户拍板语料缩减，非等价）；collect 501→493、fast 30.14→26.27s、gui 49→45；见 §10.33。** |
 | **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 已完成（2026-11-16，`5cd6814`）：collect 534→540、fast 528/32.3s、gui 53、compliance 18；见 §10.38。** |
 | **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
-| **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 未开工。** |
+| **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 已完成（2026-11-16，`2546bd6`）：collect 540→544、fast 532/32.8s、gui 53、compliance 18；见 §10.39。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；DOC6=A（README 如实写 Windows CPU）已拍板（2026-11-13）。** |
 
 五条硬定序，实施时不得调换：
@@ -2712,3 +2713,13 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **测试**：+6（`test_photoguard_shape.py` steps 参数化 2 例；`test_perturb_registry.py` 未知 kwarg 参数化 2 例；`test_pipeline_layers.py` 层/实例一致性 1 例；`test_core_improvements.py` alpha 按层 1 例）。`test_pipeline_layers._opts` 随子集在 noise/noop 间切换（语义同步，不放宽断言）。
 - **结果**：collect 534→540；fast 528 passed / 32.3s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed；slow 档 `--collect-only` 12 例。
 - **残余/边界**：`steps` 的 bool 按 int 接受（`True` = 1）；`perturb.get("noise", cancel_check=...)` 由静默接受变为 TypeError（预期破坏，程序化调用者需按实现传参）；GUI 仍不暴露 noise 作为可选项。
+
+### 10.39 批 R6：P58 默认 alpha 与字号（2026-11-16，`2546bd6` + 本回写）
+
+- **P58 先红（本机实测）**：`apply_center(base, "© test")` 与显式 `alpha=0.10` 的最大像素差为 **32**（默认仍是 0.35，超出 AGENTS 三③ 的 5–15%）；320×240 上 19 个 CJK 字符渲染宽 **291 px**，center 目标 192（0.6w），subject 目标约 173（0.95×主体框）；200×150 与 160×120 同文本分别渲染 **200 / 160 px**。
+- **根因**：`target_w // max(len(text), 1)` 假设每字符 1 em，且 `max(24, ...)` 地板在长文本/小图上压过宽度约束；CJK（或 fallback tofu）实测更宽。
+- **实现**：`apply_center`/`apply_subject` 的 alpha 默认改为 `config.DEFAULT_VISIBLE_ALPHA`。新增 `_rendered_width` 与 `_fit_font(text, target_w, base_size)`：保留旧估算作为起点（Latin 默认渲染逐字节不变），仅当实测 bbox 宽 > 目标时按比例缩小并二次校正；显式 `font_size` 仍由调用方负责（可溢出，`0` 保持旧的“自动”语义）。
+- **修后实测**：320×240 同文本 center 291→**183**、subject 291→**158**；200×150 center 200→**111**；默认调用与显式 0.10 **逐字节相等**。
+- **测试**：+4（`test_visible_watermark_modes.py`：默认 alpha、center/subject 长 CJK 不溢出、只缩不放方向锁）。断言基于“相对底图的差异宽度”，不依赖具体字体度量，Docker 无 CJK 字体时同样成立。
+- **结果**：collect 540→544；fast 532 passed / 32.8s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed。
+- **残余/边界**：不设最小可读字号（极端小图 + 超长文本可缩到 1px，保证不溢出但不可读）；不做文本换行/截断；不扩 CJK 字体候选（字体覆盖仍是独立残余）；tile 模式不变。
