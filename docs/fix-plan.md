@@ -17,6 +17,7 @@
 > **2026-11-16 Q6**：P49/P50/P51 已落地（`e5a1262`）+ 本回写；Quit 事件有界收尾、验证页盲检上界、预览缩放解码；collect 517、fast 505/31.3s、gui 53；见 §10.35；本地未推送。
 > **2026-11-16 Q7**：P34/P52 已落地（`fb371eb`）+ 本回写；符号链接目标与硬链接别名不再被 chmod、temp 用保留 fd 写入并核对 dev/ino；collect 523、fast 511/31.5s、gui 53；见 §10.36；本地未推送。
 > **2026-11-16 R5**：P56/P57 已落地（`c95eaf9`）+ 本回写；SD 层 4MP 上限 + `--max-perturb-pixels`、顶层 `-v` 日志与 traceback；collect 534、fast 522/32.3s、gui 53；见 §10.37；本地未推送。
+> **2026-11-16 R4**：P55 已落地（`5cd6814`）+ 本回写；`PGDConfig` steps≥1、构造器拒绝未知 kwarg、perturber 必须配层、alpha 按层校验；collect 540、fast 528/32.3s、gui 53；见 §10.38；本地未推送。
 
 ---
 
@@ -94,7 +95,7 @@
 | DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [x] Q5 已完成（2026-11-13，`ba1c607` + 本回写）：AGENTS §8.1/§8.3、README ICC/退出码/边界、fix-plan 头部/G5/DOC5；G5 A3–A6 保持未勾；见 §10.34 |
 | P53 | 读侧重复评分：GUI auto+expected 6 次、CLI expected-miss 4 次载体扫描 | med（性能/维护） | S（已落地） | R1 | 同一图同一载体的 `_block_scores` 被每条读路径重算；12MP 每载体约 1.5–3s，GUI 未命中最坏约 9–18s。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_ImageReader` 按载体缓存 + `_verify_auto_expected`；2 次扫描，12MP 实测 3.39s |
 | P54 | `embed()` 无容量闸，超容量静默截断 | med-high（静默毁图） | S（已落地） | R1 | 库入口只有 256² 地板；超容量时转录循环复用比特，返回正常图像但永不可读；pipeline 的闸只保护其调用方。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_require_capacity` 接入 `embed` |
-| P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [ ] 已登记 R4 |
+| P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [x] R4 已落地（`5cd6814`）：`PGDConfig` 要求 `steps≥1`；两个构造器去掉 `**_: Any`（未知 kwarg → TypeError）；`validate_options` 拒绝“配置了 perturber/实例但层关闭”；alpha 仅在 visible 层启用时校验。sd `steps=0` 首次 `apply` 抛错且未导入 torch。见 §10.38。 |
 | P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：`PHOTOGUARD_MAX_PIXELS=4_000_000`；protect 在 resize 后、embed 与模型加载前检查，CLI 加 `--max-perturb-pixels`；6MP 探针退 2、无成品、建议长边 2449。见 §10.37。 |
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [ ] 已登记 R6 |
@@ -136,7 +137,7 @@
 | **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
 | **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 已完成（2026-11-13，`f985855`）：新增 `tests/support.py` + `tests/_gui_helpers.py`；6 份造图/5 份加载/3 份模型目录/2 套 GUI harness 迁移；input 2400×2160、exif 1600×1200、CLI 640×480、layers `long_edge=640`、tile 540×3000；collect 501 不变，fast 37.84→30.14s，gui 49。见 §10.32。** |
 | **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | 每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤27s、collect ≤493。**R3 已完成（2026-11-13，`f4d5252`）：D1/D2/D3/D4/E1/E2；watermark `1..66`→13 个边界长度×2 载体（用户拍板语料缩减，非等价）；collect 501→493、fast 30.14→26.27s、gui 49→45；见 §10.33。** |
-| **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 未开工。** |
+| **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 已完成（2026-11-16，`5cd6814`）：collect 534→540、fast 528/32.3s、gui 53、compliance 18；见 §10.38。** |
 | **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 未开工。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；DOC6=A（README 如实写 Windows CPU）已拍板（2026-11-13）。** |
@@ -2699,3 +2700,15 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **测试**：+11（`test_pipeline_layers.py` 5：常量、超限、边界、noise 不受限、正数校验按层生效；`test_cli_exits.py` 6：CLI 超限/非正、`-v` traceback、默认单行、`-v` 日志、默认 stderr 空）。前 9 条在现码上先红。
 - **结果**：collect 523→534；fast 522 passed / 32.3s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 36 passed；`test_output_integrity` 等受影响文件 138 passed。
 - **残余/边界**：检查只在 `pipeline`（`build_attack` 是内部 API，直接调用不受保护）；GUI 不暴露该旋钮（用「输出长边」或按错误文案降尺寸）；`-v` 只接受顶层（`protect -v` 仍报 unrecognized）；Windows 无控制台，GUI 日志仍不可见（另属 DOC/发布面）。
+
+### 10.38 批 R4：P55 校验归属（2026-11-16，`5cd6814` + 本回写）
+
+- **P55 四个子项与修法**：
+  1. `PGDConfig.__post_init__` 增加 `steps` 必须为正整数。修前 `steps=0` 时 `attack` 的循环零次，直接把初始噪声当成功返回；CLI 的 `--perturber-steps <= 0` 快速门（不导入 torch）**保留**，PGDConfig 是库层 owner。
+  2. `GaussianNoisePerturber` / `SDEncoderPerturber` 去掉 `**_: Any`；拼错或不支持的 kwarg 现在抛 `TypeError`。GUI `ProtectWorker` 只为 `perturber == "sd"` 注入 `cancel_check`（noise 是一次向量运算，没有可取消步骤）。
+  3. `pipeline.validate_options`：当 `perturb` 层关闭时，配置了非 noop 的 `perturber` 或注入了 `perturber_instance` 一律 `ValueError`（层集合是库契约；CLI 仍自动补层，用户无感）。
+  4. `visible_alpha` 的范围检查移入 `LAYER_VISIBLE in layers`，与 text/mode 的按层规则一致。
+- **实测（本机探针）**：`PGDConfig(steps=0)` → `ValueError: steps must be a positive integer`；`perturb.get("noise", cancel_check=...)` → `TypeError`；`layers={visible}` + `perturber="noise"` → `ValueError: … the perturb layer is disabled …`；`visible_alpha=2.0` + invisible-only → 通过；`perturb.get("sd", steps=0).apply(...)` → 首次 `apply` 抛同一 ValueError，且 `torch` **未进入 sys.modules**（懒加载契约未破）。
+- **测试**：+6（`test_photoguard_shape.py` steps 参数化 2 例；`test_perturb_registry.py` 未知 kwarg 参数化 2 例；`test_pipeline_layers.py` 层/实例一致性 1 例；`test_core_improvements.py` alpha 按层 1 例）。`test_pipeline_layers._opts` 随子集在 noise/noop 间切换（语义同步，不放宽断言）。
+- **结果**：collect 534→540；fast 528 passed / 32.3s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed；slow 档 `--collect-only` 12 例。
+- **残余/边界**：`steps` 的 bool 按 int 接受（`True` = 1）；`perturb.get("noise", cancel_check=...)` 由静默接受变为 TypeError（预期破坏，程序化调用者需按实现传参）；GUI 仍不暴露 noise 作为可选项。

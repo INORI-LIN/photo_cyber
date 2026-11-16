@@ -180,13 +180,13 @@ uv run photo-guard protect input.jpg
 
 | 模块 | 职责 / 边界 | 可整体替换 |
 |---|---|---|
-| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧/8-bit，HEIC/HEIF/AVIF 给可操作提示] + EXIF 方向转置 + 剔 EXIF 留 ICC（CMYK：有 ICC 经 ImageCms 转 sRGB 并写 sRGB profile；无 ICC 朴素转+丢 profile+警告）+ 透明叠白 `ALPHA_MATTE`；guard 全在 `.load()` 前、JPEG `draft` 居中）；三条读侧包装 `verify_legacy`/`discover_payload`/`verify_expected`（P38 长度不符回退盲检）；输出路径守卫：拒绝等于输入（`_same_file`，含硬链接/符号链接同文件）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC）+ P39 超默认盲检上限的 `warnings`；SD 层像素闸 `_require_perturb_budget`（resize 后、embed 与模型加载前；`PHOTOGUARD_MAX_PIXELS` + `ProtectOptions.max_perturb_pixels`，P56）；模块 logger（P57，默认静默） | 否 |
+| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧/8-bit，HEIC/HEIF/AVIF 给可操作提示] + EXIF 方向转置 + 剔 EXIF 留 ICC（CMYK：有 ICC 经 ImageCms 转 sRGB 并写 sRGB profile；无 ICC 朴素转+丢 profile+警告）+ 透明叠白 `ALPHA_MATTE`；guard 全在 `.load()` 前、JPEG `draft` 居中）；三条读侧包装 `verify_legacy`/`discover_payload`/`verify_expected`（P38 长度不符回退盲检）；输出路径守卫：拒绝等于输入（`_same_file`，含硬链接/符号链接同文件）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC）+ P39 超默认盲检上限的 `warnings`；SD 层像素闸 `_require_perturb_budget`（resize 后、embed 与模型加载前；`PHOTOGUARD_MAX_PIXELS` + `ProtectOptions.max_perturb_pixels`，P56）；`validate_options` 按层校验 alpha，并拒绝“perturber/实例已配置但层关闭”（P55）；模块 logger（P57，默认静默） | 否 |
 | `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名。支持可选 `verify` 回调：在 temp 上先验后 `os.replace`（P4/M-A）；P40 回调的 `OSError` 原样抛出（`in_verify`），不包成写失败。权限只从**普通**目标继承（`os.lstat` + `S_ISREG`）；前置解锁仅 Windows 且 `st_nlink == 1`，符号链接目标与硬链接别名不会被 chmod（P34）；temp 用保留 fd 写入，并在 `verify` 前与 `replace` 前各核对一次 `dev/ino`（P52）。批量命名细则：`sanitize_suffix`/`_name_key`/`plan_batch`（大小写不敏感去重） | 是 |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect`；顶层 `-v/--verbose`：DEBUG 日志与异常 traceback 到 stderr（P57，默认零输出）；SD 像素上限透传 `--max-perturb-pixels` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |
 | `watermark_invisible.py` | 层①。两条读取路径权威不同：CRC 信封（判完整性与载荷内容，不判作者/归属；P40 坏头 `malformed` 由 `_envelope_header_is_well_formed` 区分）、无校验和原始路径（只是**线索**；`extract_legacy` 含 `_require_bgr` 守卫） | 是（整文件） |
 | `_dwt_dct_svd.py` | 层① 的算式底座：invisible-watermark 0.2.0 `dwtDctSvd.py` 的仓内逐字转录（含 MIT 许可正文与 H/V 互换等上游怪癖），仅依赖 cv2/numpy/pywt，导出 `embed_bits`/`decode_bits`；类区与类名必须与上游逐字一致（不得改/私有化），P11 修正只在 `watermark_invisible._CarrierEmbed` 子类里做 | 否（逐字转录） |
-| `perturb.py` | 层②。`Perturber` ABC + `_REGISTRY`；`get(name, **kwargs)` 是工厂 | 加类注册即可 |
+| `perturb.py` | 层②。`Perturber` ABC + `_REGISTRY`；`get(name, **kwargs)` 是工厂；构造器不接受未知 kwarg（拼错即 `TypeError`，P55）；配了 perturber/实例但 layers 不含 `perturb` 由 `pipeline.validate_options` 拒绝 | 加类注册即可 |
 | `photoguard.py` | 真实 SD VAE 编码器 PGD 攻击；仅以 `local_files_only=True` 读本地权重；加载前要求 `config.json` + 至少一个 `*.safetensors`（Q2/P43） | 是 |
 | `download.py` | `download-models`；**唯一**允许联网的模块，不得扩面；下载后跑同一完整性判据，缺文件即失败 | 否（刻意最小） |
 | `subject.py` | 纯 cv2 三级降级：Haar 人脸 → Sobel 显著性窗 → 几何中心 | 是 |
