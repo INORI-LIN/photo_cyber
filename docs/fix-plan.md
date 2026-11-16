@@ -15,6 +15,7 @@
 > **2026-11-13 全项目分析 R2/R3**：R2（`f985855`）测试基建 + 小图化；R3（`f4d5252`）去重/参数化；collect 501→493、fast 30.14→26.27s、gui 45；watermark `1..66`→边界集（已拍板例外）；DOC6=A、P56=4MP 已拍板；本地未推送。
 > **2026-11-13 Q5**：P47/P48 已落地（`ba1c607`）+ 本回写；非 8-bit 退 2、CMYK 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告；collect 504、fast 492/27.40s、gui 45；DOC5 见 §10.34；本地未推送。
 > **2026-11-16 Q6**：P49/P50/P51 已落地（`e5a1262`）+ 本回写；Quit 事件有界收尾、验证页盲检上界、预览缩放解码；collect 517、fast 505/31.3s、gui 53；见 §10.35；本地未推送。
+> **2026-11-16 Q7**：P34/P52 已落地（`fb371eb`）+ 本回写；符号链接目标与硬链接别名不再被 chmod、temp 用保留 fd 写入并核对 dev/ino；collect 523、fast 511/31.5s、gui 53；见 §10.36；本地未推送。
 
 ---
 
@@ -68,7 +69,7 @@
 | DOC1 | AGENTS.md §八–§十一 与代码脱节六条 | med | S | H | G1 之后 §8.6/§十 的 torch 说明已失真；CI 腿数、§九 冒烟步数、§8.3 缺行、§8.2 旧库名。 | [x] 批次 H 已落地（`8ecbb65`，2026-10-09；§十一 正则句已随 G8 落地） |
 | DOC2 | README 两条失实（权限位回贴 / 生成器只读） | low | S | H | 成功写盘会回贴原权限位；notices 生成器会重写平台段。 | [x] 批次 H 已落地（`8ecbb65`，2026-10-09；权限位句按消歧改写并保留 P34 hedge） |
 | P33 | macOS bundle 许可材料落点与 `application_root()` 不一致 | **high**（发布链阻塞） | S | J | `--include-data-files` 的产物落 `Contents/MacOS/`，而 `application_root()` 在 bundle 内只认 `Contents/Resources/`（models 那份 data-dir 恰好落对），于是 macOS smoke 恒退 4、DMG 与 S2 永久跳过。改法 = resources 候选根解析。 | [x] 已修（`0bb150e`；旧 dispatch #4 的 macOS smoke/DMG/校验/上传真机全绿，见 §9.10 第 11 小节） |
-| P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | 待复现 | Q7（输出面） | 写盘前 `stat`/`chmod` 跟随链接；替换链接后权限回贴落到新文件，旧目标可能保持可写。见 §10.6。 | [ ] 已登记 Q7；读码推断，待 POSIX/Windows 复现 |
+| P34 | 只读符号链接目标的权限可能被意外改写 | high（潜在原文件副作用） | S（已复现） | Q7（输出面） | 写盘前 `stat`/`chmod` 跟随链接并作用于共享 inode；替换链接后权限回贴落到新文件，旧目标或硬链接别名可能保持可写。见 §10.6/§10.36。 | [x] Q7 已落地（`fb371eb`）：POSIX 实测 target 0444→0644、硬链接 sibling 0444→0644；改用 `os.lstat` + `S_ISREG`，解锁仅 Windows 且 `nlink==1`。修后 target/sibling 均保持 0444、字节不变。见 §10.36。 |
 | P35 | GUI 自动发现与期望值同时设置时跳过比对 | high（验真误判） | S | 未排批次（GUI 面） | 自动发现优先于期望值，可能把不匹配载荷显示为通过。见 §10.6。 | [x] 已修（2026-11-11，`0a236e8`；CI `42980703360` / docker `42980703329`）：自动发现+期望显式比对；长信封抬盲检上限；盲检失败回退精确错误；先红 3 例后绿；见 §10.25 |
 | P36 | GUI 忙碌拒绝启动后按钮/结果状态可能损坏 | medium | S（已落地） | Q3 | 验证忙时保护按钮可能停用；两个入口的结果清空早于忙碌门。见 §10.6。 | [x] Q3 已落地（2026-11-11）：前置忙碌门 + 成功才清结果/改按钮 + 按页取消 + sender 守卫；见 §10.28 |
 | P37 | GUI 导出的未信任 CSV 单元格可能被表格软件解析为公式 | medium（导出边界） | S（已落地） | Q3 | 直接导出恢复的载荷与路径，CSV 转义并非公式中和。见 §10.6。 | [x] Q3 已落地（2026-11-11）：所有数据格对 `= + - @`/tab/CR/LF 前缀加 `'`，并捕 `UnicodeEncodeError`；见 §10.28 |
@@ -86,7 +87,7 @@
 | P49 | macOS Cmd+Q 绕过 `closeEvent`，运行中线程无人等待 | med-low | S | Q6 | `closeEvent` 只覆盖窗口关闭；`app.quit()`/Cmd+Q 不触发有界关窗，实测工作线程存活时 `exec` 10s 内不返回（不是"直接退出"）；可能残留 `.photoguard-*.tmp`。见 §10.30/§10.35。 | [x] Q6 已落地（`e5a1262`）：`_QuitGuard` 拦截 `QEvent.Quit`，`prepare_to_quit` 取消并 5s 有界等待，超时消费事件。offscreen 实测先红（exec 10s 不返回、`aboutToQuit` 不触发），修后 0.97s 退出 0 且无 QThread 警告。真机 Cmd+Q 未手测。见 §10.35。 |
 | P50 | GUI auto-only 无法发现长信封且无盲检上界输入 | low-med | S | Q6 | `VerifyWorker` auto-only 用默认 256 存储字节上界，GUI 没有 `--max-payload-bytes` 等价输入；protect 只显示警告，用户仍无法在 GUI 内自验。见 §10.30。 | [x] Q6 已落地（`e5a1262`）：验证页「盲检上界」0=默认 256，透传 `discover_payload`/`_verify_auto_expected`/`verify_expected` 并持久化；549 存储字节在 0/800 下分别未通过/通过。见 §10.35。 |
 | P51 | 预览在主线程全分辨率解码 | low | S | Q6 | `_update_preview` 用 `QPixmap(path)` 同步解码原图；64 MP 输入可卡顿/OOM，loader 的 64 MP 门不覆盖预览。见 §10.30。 | [x] Q6 已落地（`e5a1262`）：`QImageReader.setScaledSize` + `setAutoTransform`，尺寸由 `gui_logic.fit_within` 计算且不放大；3000×2000 预览解码为 400×267。见 §10.35。 |
-| P52 | 原子写 temp 的 TOCTOU | low（共享目录） | S | Q7 | `_create_temp_file` 先 `O_EXCL` 建文件并关闭，`image.save(temp)` 再按路径重开；世界可写目录中 temp 可被换成符号链接。见 §10.30。 | [ ] 未开工（Q7） |
+| P52 | 原子写 temp 的 TOCTOU | low（共享目录） | S | Q7 | `_create_temp_file` 先 `O_EXCL` 建文件并关闭，`image.save(temp)` 再按路径重开；世界可写目录中 temp 可被换成符号链接。见 §10.30/§10.36。 | [x] Q7 已落地（`fb371eb`）：`_create_temp_file` 返回 `(path, fd)`，`image.save` 写 fd，`verify` 前后各核对 `dev/ino`；换链实测从“victim 被写入 JPEG”变为 `failed to write`，victim/destination 不变。`lstat→rename` 窗口仍在，未宣称清零。见 §10.36。 |
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
 | DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [x] Q5 已完成（2026-11-13，`ba1c607` + 本回写）：AGENTS §8.1/§8.3、README ICC/退出码/边界、fix-plan 头部/G5/DOC5；G5 A3–A6 保持未勾；见 §10.34 |
@@ -130,7 +131,7 @@
 | **Q4** | DOC3 + DOC4 + R1–R4 | 头部两 bullet；§1 G1/G2/G5/P36/P37/Q2/批次列；§3 六个已裁定勾选 + 待定表；AGENTS §8.3 四行 + Q1–Q3 新欠；README 信任边界；compliance 18、无代码改动。**Q4 已完成（2026-11-13）：见 §10.29。** |
 | **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 已完成（2026-11-13，`ba1c607` + 本回写）：P47 非 8-bit 退 2；P48 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告、坏 ICC 退 2；collect 504、fast 492/27.40s、gui 45、compliance 18；见 §10.34。** |
 | **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已完成（2026-11-16，`e5a1262`）：P49/P50/P51 全部落地；collect 504→517、fast 505 passed/31.3s、gui 53 passed；见 §10.35。** |
-| **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
+| **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已完成（2026-11-16，`fb371eb`）：P34/P52 全部落地；collect 517→523、fast 511 passed/31.5s、gui 53、compliance 18；见 §10.36。** |
 | **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
 | **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 已完成（2026-11-13，`f985855`）：新增 `tests/support.py` + `tests/_gui_helpers.py`；6 份造图/5 份加载/3 份模型目录/2 套 GUI harness 迁移；input 2400×2160、exif 1600×1200、CLI 640×480、layers `long_edge=640`、tile 540×3000；collect 501 不变，fast 37.84→30.14s，gui 49。见 §10.32。** |
 | **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | 每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤27s、collect ≤493。**R3 已完成（2026-11-13，`f4d5252`）：D1/D2/D3/D4/E1/E2；watermark `1..66`→13 个边界长度×2 载体（用户拍板语料缩减，非等价）；collect 501→493、fast 30.14→26.27s、gui 49→45；见 §10.33。** |
@@ -2673,3 +2674,15 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **结果**：collect 504→517；fast 505 passed / 31.3s（基线 492 / 27.4s，**+3.9s 全部来自新增的 GUI 生命周期/端到端用例**，其中 P49 两个子进程约 2.2s、P50 e2e 约 1.1s）；gui 45→53 passed / 0 skip；compliance 18；四条 fail-loud 锁 31 passed。
 - **口径更正**：`pytest -m 'not slow'` **包含** `gui` marker（Q6 计划里"fast 不受影响"的预估是错的）；fast 与 gui 的时间差只在 `-m gui` 单独运行时才成立。
 - **残余/边界**：真机 Cmd+Q 未手测（offscreen 覆盖同一 Quit 事件路径）；程序化 `QApplication.quit()` 不走事件、不被接管（入口从不调用）；系统注销/关机时若宽限未过会消费 Quit，可能延迟系统终止（与 `closeEvent` 的"不强杀线程"同一立场）；`QSpinBox` 上限 1e6，超出由控件夹取，CLI 仍是权威入口。
+
+### 10.36 批 Q7：P34 输出权限 + P52 temp fd（2026-11-16，`fb371eb` + 本回写）
+
+- **P34 先红（POSIX 实测）**：`out.jpg -> target.jpg`（target `0444`）经 `save_image_atomic` 后，target mode 变为 **`0644`**（前置 `chmod` 沿链接解锁，成功路径不回贴旧目标），target 字节不变；`out.jpg` 被换成普通文件并继承 target 的 `0444`。同一机制也作用于硬链接：`b.jpg` 与只读 `a.jpg` 同 inode 时，写 `b` 后 **`a` 也变成 `0644`**（原登记只写了符号链接，硬链接是本次新证据）。
+- **P34 实现**：`previous_mode` 改用 `os.lstat`，且仅 `stat.S_ISREG` 才记录（同时记 `st_nlink`）；前置解锁条件收紧为 `os.name == "nt"` 且 `not mode & 0o200` 且 `nlink == 1`。POSIX 不再前置 chmod（rename 只看目录权限），硬链接别名天然安全；符号链接目标 `previous_mode is None`，不解锁也不回贴，`os.replace` 仍替换链接本身，新文件权限为 `0o666 & ~umask`。普通目标的后置回贴、P20 警告、P28 包装、P40 `in_verify` 均未改。
+- **P34 修后**：target/sibling 均保持 `0444`、字节不变；链接被替换、新文件 `0644`；硬链接 `b` 是新 inode 且继承 `0444`。
+- **P52 先红（POSIX 实测）**：把 `_create_temp_file` 返回的路径换成指向 `victim.bin` 的符号链接后，Pillow 按路径重开并**把 JPEG 写进 victim**，随后 `os.replace` 把该链接移到 destination（输出路径本身也变成链接）。
+- **P52 实现**：`_create_temp_file` 返回 `(path, fd)`，`os.open` 用 `O_RDWR|O_CREAT|O_EXCL|getattr(os,"O_BINARY",0)`；`os.fdopen(fd, "w+b")` 直接写入，`flush` + `fsync` 同一句柄，关闭前 `fstat` 记录 `(st_dev, st_ino)`。`verify()` 之前与之后各做一次 `os.lstat(temp)` 身份核对，不一致抛 `OSError("temporary file changed underneath the write")`，由外层包成 `failed to write`；不一致时 `verify` 不会执行。temp 已被换成链接时，`finally` 的 `unlink` 只删链接，不触碰 victim。
+- **P52 修后**：同一探针下 `failed to write`，victim 与 destination 字节不变、`verify` 未调用、无 temp 残留。`lstat → rename` 的目录写权限窗口仍在（Python 无 `renameat2`），**未宣称 TOCTOU 清零**。
+- **测试**：`test_output_integrity.py` 新增 6 例（符号链接目标、硬链接 sibling、断链、temp 换链、同目录 8 线程不同目标、POSIX 同目标 6 线程）；`test_atomic_write_wraps_stat_failure` 的 patch 目标由 `Path.stat/exists` 改为 `os.lstat`（断言语义不变）。
+- **结果**：collect 517→523；fast 511 passed / 31.5s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 31 passed；`test_output_integrity.py` 56 passed。
+- **残余/边界**：Windows 只读目标若存在硬链接别名（`nlink>1`）不会解锁，`os.replace` 报 WinError 5 → 退 2（已拍板，README 记一句）；Windows 符号链接/权限语义未有真机取证；目录本身被并发替换不在承诺内。
