@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from photo_guard import pipeline
+from photo_guard import config, pipeline
 
 
 def _opts(layers: frozenset[str]) -> pipeline.ProtectOptions:
@@ -82,3 +82,89 @@ def test_unknown_layer_is_rejected(textured_jpg, tmp_path):
     opts = pipeline.ProtectOptions(layers=frozenset({"invisible", "bogus"}))
     with pytest.raises(ValueError, match="unknown layer"):
         pipeline.protect(textured_jpg, out, opts)
+
+
+# --- R5/P56: the SD layer is capped by pixels, not by long edge ----------------------
+
+
+class _FakeSD:
+    name = "sd"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def apply(self, image):
+        self.calls += 1
+        return image
+
+
+def _sd_opts(fake: _FakeSD, *, limit: int) -> pipeline.ProtectOptions:
+    return pipeline.ProtectOptions(
+        payload="budget",
+        perturber="noop",  # an injected instance is preferred over the factory (P30)
+        perturber_instance=fake,
+        long_edge=640,  # 1600x1200 fixture -> 640x480 = 307_200 pixels
+        quality=85,
+        layers=frozenset({pipeline.LAYER_PERTURB}),
+        max_perturb_pixels=limit,
+    )
+
+
+def test_sd_perturb_rejects_an_image_over_the_pixel_cap(textured_jpg, tmp_path) -> None:
+    fake = _FakeSD()
+    out = tmp_path / "wont_exist.jpg"
+
+    with pytest.raises(ValueError, match="pixels") as excinfo:
+        pipeline.protect(textured_jpg, out, _sd_opts(fake, limit=100_000))
+
+    message = str(excinfo.value)
+    assert "100000" in message
+    assert "--long-edge" in message
+    assert fake.calls == 0
+    assert not out.exists()
+
+
+def test_sd_perturb_accepts_an_image_at_the_pixel_cap(textured_jpg, tmp_path) -> None:
+    fake = _FakeSD()
+
+    info = pipeline.protect(textured_jpg, tmp_path / "out.jpg", _sd_opts(fake, limit=307_200))
+
+    assert fake.calls == 1
+    assert info["perturber"] == "sd"
+
+
+def test_the_pixel_cap_does_not_constrain_the_noise_perturber(textured_jpg, tmp_path) -> None:
+    opts = pipeline.ProtectOptions(
+        payload="budget",
+        perturber="noise",
+        perturber_kwargs={"epsilon": 2.0 / 255.0},
+        long_edge=640,
+        quality=85,
+        layers=frozenset({pipeline.LAYER_PERTURB}),
+        max_perturb_pixels=100_000,
+    )
+
+    info = pipeline.protect(textured_jpg, tmp_path / "out.jpg", opts)
+
+    assert info["perturber"] == "noise"
+
+
+def test_max_perturb_pixels_must_be_positive_only_when_the_layer_runs() -> None:
+    with pytest.raises(ValueError, match="max_perturb_pixels"):
+        pipeline.validate_options(
+            pipeline.ProtectOptions(
+                layers=frozenset({pipeline.LAYER_PERTURB}),
+                perturber="noise",
+                max_perturb_pixels=0,
+            )
+        )
+    # The knob is inert without the layer, matching steps/epsilon.
+    pipeline.validate_options(
+        pipeline.ProtectOptions(
+            layers=frozenset({pipeline.LAYER_VISIBLE}), max_perturb_pixels=0
+        )
+    )
+
+
+def test_the_default_perturb_pixel_cap_is_four_megapixels() -> None:
+    assert config.PHOTOGUARD_MAX_PIXELS == 4_000_000

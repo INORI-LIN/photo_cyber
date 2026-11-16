@@ -681,3 +681,86 @@ def test_protect_no_extension_stays_jpeg(tmp_path: Path) -> None:
     with Image.open(destination) as image:
         image.load()
         assert image.format == "JPEG"
+
+
+# --- R5/P56 + P57: the pixel cap and the verbose switch ------------------------------
+
+
+def test_cli_rejects_an_sd_image_over_the_perturb_pixel_cap(tmp_path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main([
+        "protect", str(src), "-o", str(out),
+        "--layers", "perturb", "--perturber", "sd", "--max-perturb-pixels", "1000",
+    ]) == 2
+
+    err = capsys.readouterr().err
+    assert "pixels" in err
+    assert "1000" in err
+    assert "--long-edge" in err
+    assert not out.exists()
+
+
+def test_cli_rejects_a_non_positive_perturb_pixel_cap(tmp_path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    _seed_textured(src)
+
+    assert main([
+        "protect", str(src), "-o", str(tmp_path / "out.jpg"),
+        "--layers", "perturb", "--perturber", "noise", "--max-perturb-pixels", "0",
+    ]) == 2
+
+    assert "max_perturb_pixels must be positive" in capsys.readouterr().err
+
+
+def test_verbose_prints_a_traceback_for_an_unexpected_error(tmp_path, capsys, monkeypatch) -> None:
+    from photo_guard import pipeline
+
+    def boom(*_args, **_kwargs):
+        raise KeyError("boom")
+
+    monkeypatch.setattr(pipeline, "protect", boom)
+
+    assert main(["-v", "protect", str(tmp_path / "in.jpg"), "-o", str(tmp_path / "out.jpg")]) == 2
+
+    err = capsys.readouterr().err
+    assert "Traceback (most recent call last)" in err
+    assert "KeyError" in err
+
+
+def test_without_verbose_an_unexpected_error_stays_one_line(tmp_path, capsys, monkeypatch) -> None:
+    from photo_guard import pipeline
+
+    def boom(*_args, **_kwargs):
+        raise KeyError("boom")
+
+    monkeypatch.setattr(pipeline, "protect", boom)
+
+    assert main(["protect", str(tmp_path / "in.jpg"), "-o", str(tmp_path / "out.jpg")]) == 2
+
+    err = capsys.readouterr().err
+    assert "protect failed: 'boom'" in err
+    assert "Traceback" not in err
+
+
+def test_verbose_emits_pipeline_logs(tmp_path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main(["-v", "protect", str(src), "-o", str(out)]) == 0
+
+    err = capsys.readouterr().err
+    assert "INFO photo_guard.pipeline" in err
+
+
+def test_successful_protect_writes_nothing_to_stderr(tmp_path, capsys) -> None:
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+
+    assert main(["protect", str(src), "-o", str(out)]) == 0
+
+    assert capsys.readouterr().err == ""

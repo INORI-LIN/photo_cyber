@@ -18,6 +18,7 @@ Scope and known deviations, deliberate and recorded for P5:
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ from typing import Callable
 import numpy as np
 
 from . import config, device as device_mod
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -95,6 +98,7 @@ class _SDEncoderAttack:
         self._device, self._dtype, self.device_info = device_mod.resolve_device(
             self.cfg.device, self.cfg.device_index
         )
+        logger.info("PhotoGuard: device=%s dtype=%s", self._device, self._dtype)
         # P15: `use_safetensors=True` refuses a directory whose weights are pickle (`.bin`)
         # instead of silently falling back to `torch.load` — the spike measured diffusers
         # printing "Defaulting to unsafe serialization" and calling torch.load on such a
@@ -108,6 +112,7 @@ class _SDEncoderAttack:
         self._vae.eval()
         for parameter in self._vae.parameters():
             parameter.requires_grad_(False)
+        logger.info("PhotoGuard: loaded VAE from %s", model_path)
 
     def _ensure_loaded(self):
         if self._vae is None:
@@ -162,6 +167,10 @@ class _SDEncoderAttack:
         # cheaply (and the fast-tier bad-input test must not depend on torch being installed).
         self._validate_bgr(image_bgr)
         self._check_cancelled()
+        logger.debug(
+            "PhotoGuard: PGD %d steps, eps=%.6f, image=%dx%d",
+            self.cfg.steps, self.cfg.epsilon, image_bgr.shape[1], image_bgr.shape[0],
+        )
 
         self._ensure_loaded()
         torch = self._torch

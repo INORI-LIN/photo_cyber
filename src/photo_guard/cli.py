@@ -2,15 +2,45 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import sys
+import traceback
 from pathlib import Path
 
 from . import config, device, perturb, pipeline, watermark_invisible
 
 
+def _configure_logging(verbose: bool) -> None:
+    """P57: ``-v`` installs the only stderr handler; the default stays silent.
+
+    Rebuilt on every call because tests invoke ``main()`` repeatedly and ``sys.stderr`` is a
+    different capture object each time — a cached handler would keep writing into a closed
+    stream. Loggers are children of ``photo_guard``, whose null handler keeps the default
+    (no ``-v``) output at exactly zero bytes.
+    """
+    package = logging.getLogger("photo_guard")
+    for handler in list(package.handlers):
+        if getattr(handler, "_photo_guard_cli", False):
+            package.removeHandler(handler)
+    if not verbose:
+        package.setLevel(logging.WARNING)
+        package.propagate = True
+        return
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    handler._photo_guard_cli = True  # type: ignore[attr-defined]
+    package.addHandler(handler)
+    package.setLevel(logging.DEBUG)
+    package.propagate = False
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="photo-guard", description="Three-layer photo protection")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="Print debug logs and full tracebacks to stderr",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     protect = sub.add_parser("protect", help="Protect one image")
@@ -39,6 +69,11 @@ def _build_parser() -> argparse.ArgumentParser:
     group.add_argument("--perturber-eps", type=float, default=config.PHOTOGUARD_EPSILON)
     group.add_argument("--perturber-step-size", type=float, default=config.PHOTOGUARD_STEP_SIZE)
     group.add_argument("--perturber-steps", type=int, default=config.PHOTOGUARD_STEPS)
+    group.add_argument(
+        "--max-perturb-pixels", type=int, default=None,
+        help=("Per-image pixel cap for the SD layer (default 4000000). Raise it only for a "
+              "machine with the memory to hold the VAE's full-resolution activations"),
+    )
     group.add_argument(
         "--perturber-model", default=config.PHOTOGUARD_MODEL_ID,
         help="Local SD VAE directory (safetensors only — a directory without them is refused; "
@@ -100,6 +135,7 @@ def _tolerate_legacy_console() -> None:
 def main(argv: list[str] | None = None) -> int:
     _tolerate_legacy_console()
     args = _build_parser().parse_args(argv)
+    _configure_logging(args.verbose)
     try:
         if args.cmd == "protect":
             layers = _parse_layers(args.layers)
@@ -139,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                     visible_text=args.visible_text, visible_alpha=args.visible_alpha,
                     long_edge=args.long_edge, quality=args.quality, layers=layers,
                     payload_envelope=args.payload_envelope,
+                    max_perturb_pixels=args.max_perturb_pixels,
                 ),
             )
             if output_format == "PNG":
@@ -212,9 +249,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
     except (OSError, ValueError, RuntimeError) as exc:
+        if args.verbose:
+            traceback.print_exc()
         print(f"{args.cmd} failed: {exc}", file=sys.stderr)
         return 2
     except Exception as exc:
+        # P57: the wide catch stays (a CLI must not traceback by default), but ``-v`` now
+        # makes the bug visible instead of hiding it behind one line.
+        if args.verbose:
+            traceback.print_exc()
         print(f"{args.cmd} failed: {exc}", file=sys.stderr)
         return 2
     # Defensive: `subparsers(required=True)` makes this unreachable today, but a future

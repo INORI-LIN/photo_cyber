@@ -79,6 +79,12 @@ PHOTOGUARD_STEPS = 10
 # reproducibility is promised for CPU/float32 only (a CUDA/MPS generator is created on the
 # tensor's device when supported; otherwise the global RNG is used and bytes are not fixed).
 PHOTOGUARD_SEED = 0
+# P56/R5: the VAE encoder's first layer keeps a full-resolution activation (128 channels),
+# so memory grows linearly with pixels: ~0.95 GiB at 4 MP in fp16, ~2.86 GiB at 12 MP and
+# ~5.72 GiB at 24 MP for that layer alone (the rest of the graph adds more). 4 MP keeps the
+# attack inside an 8 GB machine; `--max-perturb-pixels` lifts the cap explicitly for larger
+# rigs. The default long edge (1080) is ~0.87 MP, so ordinary runs are unaffected.
+PHOTOGUARD_MAX_PIXELS = 4_000_000
 
 
 def model_dir_is_complete(path: str | Path) -> bool:

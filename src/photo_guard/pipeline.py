@@ -3,6 +3,8 @@ invisible → perturb → visible → save (container chosen by the output exten
 from __future__ import annotations
 
 import io
+import logging
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +14,8 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from . import compress, config, outputs, perturb, watermark_invisible, watermark_visible
+
+logger = logging.getLogger(__name__)
 
 LAYER_INVISIBLE = "invisible"
 LAYER_PERTURB = "perturb"
@@ -33,6 +37,9 @@ class ProtectOptions:
     layers: frozenset[str] = DEFAULT_LAYERS
     payload_envelope: bool = False
     perturber_instance: Any | None = None
+    # P56: None means ``config.PHOTOGUARD_MAX_PIXELS``. Only the SD layer is capped; the
+    # other perturbers are O(1) in memory.
+    max_perturb_pixels: int | None = None
 
 
 def save_format(output_path: Path) -> str:
@@ -298,6 +305,14 @@ def validate_options(opts: ProtectOptions) -> None:
         raise ValueError("invisible watermark payload must not be empty")
     if LAYER_VISIBLE in opts.layers and not opts.visible_text:
         raise ValueError("visible watermark text must not be empty")
+    # P56: the knob exists only for the SD layer, so a stray 0 without that layer stays a
+    # no-op (same rule as steps/epsilon in the CLI).
+    if (
+        LAYER_PERTURB in opts.layers
+        and opts.max_perturb_pixels is not None
+        and opts.max_perturb_pixels <= 0
+    ):
+        raise ValueError("max_perturb_pixels must be positive")
     # P29: the second gate for programmatic callers — the GUI widget path cannot smuggle an
     # unknown mode through (non-editable combo), but ``ProtectOptions`` can. Conditional on
     # the layer for the same reason as the text check above: an unused mode is not an error.
@@ -317,7 +332,45 @@ def validate_options(opts: ProtectOptions) -> None:
         raise ValueError("perturb layer uses noop; choose noise or sd, or disable the layer")
 
 
+def _is_sd_perturber(opts: ProtectOptions) -> bool:
+    """True when the perturb layer will run the SD encoder attack (P56).
+
+    ``perturber_instance`` wins over the factory (P30), so its ``name`` decides; otherwise
+    the factory key does. ``noise``/``noop`` are not capped — their memory is O(1).
+    """
+    if opts.perturber_instance is not None:
+        return getattr(opts.perturber_instance, "name", None) == "sd"
+    return opts.perturber == "sd"
+
+
+def _require_perturb_budget(width: int, height: int, opts: ProtectOptions) -> None:
+    """Refuse an SD input above the pixel cap before the model loads (P56).
+
+    The VAE encoder allocates full-resolution feature maps, so this has to fail before
+    ``perturb.get``/``build_attack``: a 24 MP image would otherwise OOM after paying for the
+    decode and the invisible embed. The message names both levers and a long edge that fits.
+    """
+    if not _is_sd_perturber(opts):
+        return
+    limit = opts.max_perturb_pixels or config.PHOTOGUARD_MAX_PIXELS
+    pixels = width * height
+    if pixels <= limit:
+        return
+    long_side, short_side = max(width, height), min(width, height)
+    suggested = max(1, int(math.sqrt(limit * long_side / short_side)))
+    raise ValueError(
+        f"image is {width}x{height} ({pixels} pixels); the PhotoGuard SD layer is limited "
+        f"to {limit} pixels because the VAE encoder allocates full-resolution feature maps. "
+        f"Reduce --long-edge (GUI: 输出长边) to <= {suggested}, disable the AI perturb "
+        f"layer, or raise --max-perturb-pixels."
+    )
+
+
 def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
+    logger.info(
+        "protect: %s -> %s layers=%s long_edge=%s",
+        input_path, output_path, sorted(opts.layers), opts.long_edge,
+    )
     validate_options(opts)
     # AGENTS.md §五 wants the original kept for archival; writing the product over it is
     # the one mistake here that cannot be undone, so it is refused rather than warned about.
@@ -337,6 +390,11 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     )
     src = compress.fit_long_edge(src, opts.long_edge)
     bgr = _pil_rgb_to_bgr(src)
+    logger.debug("protect: resized to %sx%s", bgr.shape[1], bgr.shape[0])
+
+    # P56: fail before the invisible embed and before the model load.
+    if LAYER_PERTURB in opts.layers:
+        _require_perturb_budget(bgr.shape[1], bgr.shape[0], opts)
 
     stored_payload = opts.payload
     if LAYER_INVISIBLE in opts.layers:
@@ -394,6 +452,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         icc_profile=icc,
         verify=verify,
     )
+    logger.info("protect: wrote %s (%sx%s)", output_path, final.size[0], final.size[1])
     return {
         "output": str(output_path),
         "size": final.size,
