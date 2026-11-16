@@ -165,7 +165,7 @@ uv run photo-guard protect input.jpg
 
 ### 8.1 流水线次序与 `layers` 语义
 
-- 唯一编排 `pipeline.protect`：`load → fit_long_edge(1080) → ① embed(DWT-DCT-SVD) → ② perturb → ③ visible → save JPEG`。
+- 唯一编排 `pipeline.protect`：`load → fit_long_edge(1080) → ① embed(DWT-DCT-SVD) → ② perturb → ③ visible → save JPEG/PNG`（容器按输出扩展名：`.jpg`/`.jpeg`→JPEG，`.png`→PNG）。
 - `ProtectOptions.layers` 只控**成员**（哪些层跑），不控**顺序**（顺序写死在代码里）；`ALL_LAYERS` 是全集，CLI 暴露为逗号分隔子集。
 - CLI 路径上空集或未知层名由 `cli._parse_layers` 先行拒绝；`validate_options` 是第二道（编程调用方）；两者都映射为 **exit 2**。
 - **resize 先于 embed**：DWT-DCT 对几何重采样敏感，嵌入必须发生在 resize 后的像素上。这是 §二 顺序与 §五「先压长边」表面冲突的解法，勿「修回」字面顺序。
@@ -180,7 +180,7 @@ uv run photo-guard protect input.jpg
 
 | 模块 | 职责 / 边界 | 可整体替换 |
 |---|---|---|
-| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧，HEIC/HEIF/AVIF 给可操作提示] + EXIF 方向转置 + 剔 EXIF 留 ICC + 透明叠白 `ALPHA_MATTE`；guard 全在 `.load()` 前、JPEG `draft` 居中）；三条读侧包装 `verify_legacy`/`discover_payload`/`verify_expected`（P38 长度不符回退盲检）；输出路径守卫：拒绝等于输入（`_same_file`，含硬链接/符号链接同文件）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC）+ P39 超默认盲检上限的 `warnings` | 否 |
+| `pipeline.py` | 唯一编排；**唯一 loader** `_load_oriented_rgb`（解码 + 输入契约守卫[格式/64 MP/单帧/8-bit，HEIC/HEIF/AVIF 给可操作提示] + EXIF 方向转置 + 剔 EXIF 留 ICC（CMYK：有 ICC 经 ImageCms 转 sRGB 并写 sRGB profile；无 ICC 朴素转+丢 profile+警告）+ 透明叠白 `ALPHA_MATTE`；guard 全在 `.load()` 前、JPEG `draft` 居中）；三条读侧包装 `verify_legacy`/`discover_payload`/`verify_expected`（P38 长度不符回退盲检）；输出路径守卫：拒绝等于输入（`_same_file`，含硬链接/符号链接同文件）或**指向已存在的目录**（P28，含跟随符号链接的收紧）；**写侧容量闸**：`validate_capacity`（地板先判 + 结构上界，K 固定 1）+ `_verify_output` 成品自检（P4，raw 走逐字节、envelope 走 CRC）+ P39 超默认盲检上限的 `warnings` | 否 |
 | `outputs.py` | 原子写 + 批量命名；仅 stdlib + Pillow，不得引入 Qt/torch。**输出命名只有一个实现**，由 GUI 消费；CLI 是单图输出，不经手批量命名。支持可选 `verify` 回调：在 temp 上先验后 `os.replace`（P4/M-A）；P40 回调的 `OSError` 原样抛出（`in_verify`），不包成写失败。批量命名细则：`sanitize_suffix`/`_name_key`/`plan_batch`（大小写不敏感去重） | 是 |
 | `cli.py` / `__main__.py` | argparse → `ProtectOptions` → `pipeline.protect` | 加旗标 |
 | `config.py` | 对外可调默认值（CLI/GUI 暴露项）的唯一来源；模块内部函数级默认值可留在各模块 | 是 |

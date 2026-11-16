@@ -10,9 +10,10 @@
 > **本轮远端结果（2026-09-30）**：批 J 的 **G9②③ + G10** 本地实施见 §10.7，已按授权将 `000a504` 推送 `main` 一次：该 SHA 的 `ci` 三系统 + GUI、`docker` 及一次手工 `release-desktop` 构建均 **success**；Windows 安装包和 macOS DMG 已下载，与各自 SHA256 清单一致（§10.8）。旧 #4 的 G9①④/P33 也已补到真机构建成功。**未推 tag、未公开 Release**；批 J 的 G8 与仅在 tag push 执行的 publish 仍未完成。
 > **`v0.1.0` 正式发布已验证（2026-10-09）**：唯一获授权的 annotated tag 指向 G8 后的远端 `9b1ba41`，没有带上本地仅文档 `51187a8`；tag-push `release-desktop` run `37878702620` 的 verify、Windows、macOS 与独立 publish **全部 success**。GitHub Release `407614662` 已公开，四项资产均已下载；两份二进制的 SHA256 分别与各自发布清单一致（§10.10）。G8 技术检查与本次发布成功**不等于**第三方二进制再分发法律审查完成；批 H、G11③ 与 P34–P37/DOC3 仍待各自批次（后续：H 见 §10.11，G11 见 §10.20，P35–P37 见 §10.25/§10.28；P34/DOC3 仍待）。
 > **2026-11-09 批次进展**：F′1+P22（`e534199`）、F′2（`de09f9d`）、O1（`c56e057`）、O2（`b69e9b8`）已推送；ci/docker 全绿，release dispatch `42741197178` 真机绿（publish skipped）；远端 `main=dc16a70`；见 §10.20–§10.23。
-> **2026-11-11/13 批次进展**：P35（`8c0dcda`）、Q1（`a5ab94d`，P38–P40）、Q2（`c21f69b`，P41–P43）、Q3（`e569741`，P36/P37/P44–P46）已推送；ci 四腿 436/2/12、gui 48、docker 20 步全绿；远端 `main=36e9584`；见 §10.25–§10.28。
-> **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31–§10.33。
-> **2026-11-13 全项目分析 R2/R3**：R2（`f985855`）测试基建 + 小图化；R3（`f4d5252`）去重/参数化；collect 501→493、fast 30.14→26.27s、gui 45；watermark `1..66`→边界集（已拍板例外）；DOC6=A、P56=4MP 已拍板；本地 ahead 5 未推送。
+> **2026-11-11/13 批次进展**：P35（`8c0dcda`）、Q1（`a5ab94d`，P38–P40）、Q2（`c21f69b`，P41–P43）、Q3（`e569741`，P36/P37/P44–P46）已推送；ci 四腿 436/2/12、gui 48、docker 20 步全绿；远端 `main=6ff72c6`（Q4）；见 §10.25–§10.29。
+> **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31–§10.34。
+> **2026-11-13 全项目分析 R2/R3**：R2（`f985855`）测试基建 + 小图化；R3（`f4d5252`）去重/参数化；collect 501→493、fast 30.14→26.27s、gui 45；watermark `1..66`→边界集（已拍板例外）；DOC6=A、P56=4MP 已拍板；本地未推送。
+> **2026-11-13 Q5**：P47/P48 已落地（`ba1c607`）+ 本回写；非 8-bit 退 2、CMYK 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告；collect 504、fast 492/27.40s、gui 45；DOC5 见 §10.34；本地未推送。
 
 ---
 
@@ -35,7 +36,7 @@
 | G2 | 仓库与发布物无许可证/署名（含 SD VAE 权重与 LGPL Qt） | P2-medium | M | 4 | 许可/署名从未进入交付清单也无 gate；本 issue 补 LICENSE 与第三方声明并接进发布校验。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；S1–S3 已验（§10.8/§10.10） |
 | G3 | 输出写入无完整性保证（非原子 / 覆盖原图 / 批量撞名 / suffix 穿越） | P0-blocker | M（≈120 行 + 15 条 fast 用例） | 1 | 输出路径的去向与完整性无单一负责人：写盘占用最终路径、CLI 容许 -o 指向输入、GUI 批量只按 exists() 判重且 suffix 未净化。新增 outputs 做原子写与命名，pipeline 加「绝不写输入」守卫。 | [x] 批次 1 已完成；Windows 平台风险已闭环、5 条验收全勾（2026-09-23） |
 | G4 | 输入契约与资源上限缺失（alpha/ICC/多帧/解压炸弹/HEIC） | P2-medium | S-M（~90-120 行；6 例） | 5 → **L** | 读图边界无契约：全尺寸解码、alpha 丢隐藏 RGB、多帧只护第 0 帧、无上限。改为唯一 loader 解码前检查，透明叠白。 | [x] 批次 L 已落地（2026-10-09）：格式表 / 64 MP 上限 / 单帧 / 透明叠白，guard 全在 `.load()` 前且 JPEG `draft` 居中；先红 9 例；HEIC 递延（裁定见 §10.13） |
-| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1–A8 全部已验（§10.5） |
+| G5 | 发布与 CI 缺口（版本四处硬编码 / GUI 无覆盖 / 无 macOS job） | P2（残余 4 项） | 0.5–1 天 | 4 | 版本号 4 处硬编码、release 无测试/tag 闸门、GUI/macOS 无 CI 覆盖；做 tomllib 单源 + verify 闸门 + wheel 冒烟 + macOS leg。 | [x] 批次 D2 已落地（`ecdb59d`，2026-09-29）；A1/A2/A4/A7/A8 已验；A3/A4 部分（正向已证，VersionInfo/负向待验）；A5/A6 未取证（§10.5/§9.10） |
 | P12 | GUI 线程 use-after-free：第二批起不来、关窗 SIGSEGV | high | S（约 40 行 + 1 个新测试文件） | A | 线程对象已析构而 Python 引用未清；新增释放回调与存活判据，关窗/取消不再越界。 | [x] 批次 A 已落地（`def0a80`） |
 | P13 | 批量命名大小写碰撞：跨盘静默覆盖、双报成功 | high | S | A | `taken` 用原始大小写比较，大小写不敏感盘上互相覆盖；改 NFC+casefold 保守去重。 | [x] 批次 A 已落地（`def0a80`） |
 | P24 | 文档纠错七条（README 退出码/符号链接/参数表、AGENTS 白名单/§九.1/§六§七/§8.1） | low | S | A | 七处文档与实现不符，逐条改为如实表述（含已授权的 AGENTS §六/§七直改）。 | [x] 批次 A 已落地（`def0a80`） |
@@ -79,15 +80,15 @@
 | P44 | GUI 启动在主线程 import torch + system_profiler | medium（启动体验） | M | Q3 | 构造窗口时同步探测设备，窗口延迟数秒；探测失败还会阻止 GUI 启动；重新检测会重置选择。 | [x] Q3 已落地（2026-11-11）：专用 QThread + `DeviceDiscoveryWorker`；combo 初始自动项；失败保留旧表/选择；见 §10.28 |
 | P45 | 设置只在开始保护成功后保存 | low | S | Q3 | 改完设置直接关窗或只用验证会丢；拒绝启动反而保存。 | [x] Q3 已落地（2026-11-11）：`closeEvent` 首行 + 验证成功 + 保护成功保存；`sync()`；拒绝不保存；见 §10.28 |
 | P46 | GUI 允许 expected 与 legacy 同时填写 | low | S | Q3 | 后者被 `VerifyWorker` 静默忽略；CLI 侧是互斥组。 | [x] Q3 已落地（2026-11-11）：入口拒绝 + Worker 防御 + UI 联动禁用；`auto+legacy` 仍登记残留；见 §10.28 |
-| P47 | 16-bit/float 灰度输入被裁剪成白色 | med-high（静默毁图） | S | Q5 | 支持 PNG/TIFF，但 `_rgb_on_matte` 只处理 alpha，`I;16`/`I`/`F` 走 `convert("RGB")` 时 >255 直接截到 255（实测 1000/30000/65535 全变白）；无测试。见 §10.30。 | [ ] 未开工（Q5）；待裁定「拒绝 vs 缩放」 |
-| P48 | CMYK JPEG 的朴素转换与 CMYK ICC 错配 | med-low（色彩/元数据） | S | Q5 | CMYK 走 Pillow 朴素 `convert("RGB")`，不读 ICC；随后把源 CMYK ICC 原样写进 RGB 成品，profile 色彩空间与像素不一致。见 §10.30。 | [ ] 未开工（Q5）；待裁定「ImageCms / 丢 ICC / 拒 CMYK」 |
+| P47 | 16-bit/float 灰度输入被裁剪成白色 | med-high（静默毁图） | S | Q5 | 支持 PNG/TIFF，但 `_rgb_on_matte` 只处理 alpha，`I;16`/`I`/`F` 走 `convert("RGB")` 时 >255 直接截到 255（实测 1000/30000/65535 全变白）；无测试。见 §10.30。 | [x] Q5 已落地（2026-11-13，`ba1c607`）：`_validate_input` 在 frames 后拒绝 `I`/`F`/`I;16*`；16-bit/float 退 2；8-bit L/1 保留；16-bit RGB TIFF 残余登记；见 §10.34 |
+| P48 | CMYK JPEG 的朴素转换与 CMYK ICC 错配 | med-low（色彩/元数据） | S | Q5 | CMYK 走 Pillow 朴素 `convert("RGB")`，不读 ICC；随后把源 CMYK ICC 原样写进 RGB 成品，profile 色彩空间与像素不一致。见 §10.30。 | [x] Q5 已落地（2026-11-13，`ba1c607`）：`_cmyk_to_srgb`；有 ICC→sRGB+sRGB profile；无 ICC 朴素+丢 profile+protect warning；坏 ICC 退 2；见 §10.34 |
 | P49 | macOS Cmd+Q 绕过 `closeEvent`，运行中线程无人等待 | med-low | S | Q6 | `closeEvent` 只覆盖窗口关闭；`app.quit()`/Cmd+Q 直接退出事件循环，不触发有界关窗；可能 abort 或残留 `.photoguard-*.tmp`。见 §10.30。 | [ ] 未开工（Q6）；读码推断，待实机复现 |
 | P50 | GUI auto-only 无法发现长信封且无盲检上界输入 | low-med | S | Q6 | `VerifyWorker` auto-only 用默认 256 存储字节上界，GUI 没有 `--max-payload-bytes` 等价输入；protect 只显示警告，用户仍无法在 GUI 内自验。见 §10.30。 | [ ] 未开工（Q6） |
 | P51 | 预览在主线程全分辨率解码 | low | S | Q6 | `_update_preview` 用 `QPixmap(path)` 同步解码原图；64 MP 输入可卡顿/OOM，loader 的 64 MP 门不覆盖预览。见 §10.30。 | [ ] 未开工（Q6） |
 | P52 | 原子写 temp 的 TOCTOU | low（共享目录） | S | Q7 | `_create_temp_file` 先 `O_EXCL` 建文件并关闭，`image.save(temp)` 再按路径重开；世界可写目录中 temp 可被换成符号链接。见 §10.30。 | [ ] 未开工（Q7） |
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
-| DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [ ] 未开工（Q5） |
+| DOC5 | 文档对账：AGENTS §8.1 JPEG-only / 头部 Q4 / G5 勾选 / README ICC | low | S | Q5 | `AGENTS:168` 仍写 `save JPEG`；`fix-plan:11-13` 停在 Q3（实际 Q4）；§1 G5 写 A1–A8 全验而 §6 A3–A6 仍 `[ ]`；README `:403` 的“源色域不变”对 CMYK→RGB 不成立。见 §10.30。 | [x] Q5 已完成（2026-11-13，`ba1c607` + 本回写）：AGENTS §8.1/§8.3、README ICC/退出码/边界、fix-plan 头部/G5/DOC5；G5 A3–A6 保持未勾；见 §10.34 |
 | P53 | 读侧重复评分：GUI auto+expected 6 次、CLI expected-miss 4 次载体扫描 | med（性能/维护） | S（已落地） | R1 | 同一图同一载体的 `_block_scores` 被每条读路径重算；12MP 每载体约 1.5–3s，GUI 未命中最坏约 9–18s。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_ImageReader` 按载体缓存 + `_verify_auto_expected`；2 次扫描，12MP 实测 3.39s |
 | P54 | `embed()` 无容量闸，超容量静默截断 | med-high（静默毁图） | S（已落地） | R1 | 库入口只有 256² 地板；超容量时转录循环复用比特，返回正常图像但永不可读；pipeline 的闸只保护其调用方。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_require_capacity` 接入 `embed` |
 | P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [ ] 已登记 R4 |
@@ -126,7 +127,7 @@
 | **Q2** | P41（N3）→ P42（N4）→ P43（N5） | 镜像字号探针 ≥20px；NaN/Inf 预算退 2 且不落成品；空/半模型目录在 download/build/smoke 均被拒；fast/gui/compliance 全绿。**Q2 已完成（2026-11-11）：N6 移入 Q3；先红 20 例；fast 452 passed、collect 464、gui 33 passed / 0 skip、compliance 18；docker 取证已推送（`c21f69b`，全绿，见 §10.27）。** |
 | **Q3** | P36 + P37 + P44（N6）+ P45（N7）+ P46（N8） | 忙时不清结果/不动按钮/不保存；CSV 危险前缀加 `'`；设备发现离主线程且失败可用；关窗/验证启动保存设置；expected+legacy 互斥；fast/gui/compliance 全绿。**Q3 已完成（2026-11-11）：先红 32 项（17 纯函数 + 10 GUI + 5 lifecycle）；fast 436 passed、collect 496、gui 48 passed / 0 skip、compliance 18；见 §10.28。** |
 | **Q4** | DOC3 + DOC4 + R1–R4 | 头部两 bullet；§1 G1/G2/G5/P36/P37/Q2/批次列；§3 六个已裁定勾选 + 待定表；AGENTS §8.3 四行 + Q1–Q3 新欠；README 信任边界；compliance 18、无代码改动。**Q4 已完成（2026-11-13）：见 §10.29。** |
-| **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 待开工：§3 前两条裁定先答。** |
+| **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 已完成（2026-11-13，`ba1c607` + 本回写）：P47 非 8-bit 退 2；P48 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告、坏 ICC 退 2；collect 504、fast 492/27.40s、gui 45、compliance 18；见 §10.34。** |
 | **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已登记，未排期。** |
 | **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
 | **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
@@ -215,11 +216,12 @@
 | 3 | P49：复现后加 `aboutToQuit` 有界退出，还是接受 Cmd+Q 现状？ | P49、`gui.py`/`gui_main.py`、关窗测试 | 加 `aboutToQuit`（与 `closeEvent` 共用 5s 宽限） |
 | 4 | P50：GUI 增加“盲检上界”输入，还是 auto-only 自动抬到图像容量？ | P50、`gui.py` 验证页、`config.DEFAULT_MAX_PAYLOAD_BYTES` | 加输入并与 CLI 对齐；自动抬容量会把 miss 成本推到秒级 |
 
-**2026-11-13 全项目分析拍板（R5/R7/R3）**：
+**2026-11-13 全项目分析拍板（R5/R7/R3/Q5）**：
 
 1. **DOC6=A（R7）**：README 如实写 Windows 安装包为 CPU 版；不改 `uv.lock`、不加 CUDA 依赖、不做分卷。依据：`uv.lock` 的 CUDA 依赖仅 Linux；Windows torch 2.12.1 CPU wheel 122.9MB；CUDA 13.0 wheel 实测 1,926,393,760 B（1.79GiB），安装包预计 1.9–2.3GB，贴/超 GitHub 2GiB 单资产限制。R7 只做取证 + README 五处 + `desktop_entry --with-photoguard` 导入检查。
 2. **P56=4MP（R5）**：`config.PHOTOGUARD_MAX_PIXELS=4_000_000` + `--max-perturb-pixels` 覆盖；仅 `--perturber sd` 生效。依据：VAE 首层 128 通道全分辨率特征图在 24MP 为 fp32 11.4GiB / fp16 5.7GiB，8GB 机器必 OOM；24/32MP 不作为默认。
 3. **watermark 语料例外（R3）**：`1..66`→`{1,2,3,7,8,9,13,16,17,33,64,65,66}`×2 载体；**语料缩减，不是等价**。全扫不在 CI（docker 慢档只跑 `test_photoguard_slow.py`）；G1 等价锁由边界集 + `test_dwt_dct_svd` 外部夹具承担。如需恢复全扫，另开批次改 CI 命令。
+4. **Q5=P47/P48（Q5）**：P47 取“响亮拒绝非 8-bit”（`I`/`F`/`I;16*` 退 2）；P48 取“有 ICC 用 ImageCms 转 sRGB 并写 sRGB profile；无 ICC 朴素转+丢 profile+protect 警告；不拒 CMYK”。见 §10.34。
 
 ---
 
@@ -2648,3 +2650,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **compliance**：扫描排除 `models`/`release`/`dist`（干净 CI checkout 无这些构建产物），本地扫描约 1.0→0.55s。
 - **结果**：collect 501→493；fast 30.14→26.27s（481 passed）；gui 49→45；compliance 18；四条锁 31 passed；CLI 退码断言 `0/1/2/3 = 16/3/19/3` 不变。
 - **目标修订**：`≤465/≤25s` 在“不删独立契约、不去脆化、不合并静态文件”下不可达；实际 493/26.27s。要更激进需另开「去脆化 + 静态清理」批次。
+
+---
+
+### 10.34 批 Q5：P47/P48 + DOC5（2026-11-13，`ba1c607` + 本回写）
+
+- **P47**：`pipeline._validate_input` 在 `format → pixels → frames` 之后追加 mode 门，拒绝 `I`/`F`/`I;16*`（`I;16B/L/N` 用 `startswith` 覆盖）；16-bit/float 输入从“静默变白/截断”改为 `ValueError → exit 2`；8-bit `L`/`1` 仍走 `convert("RGB")`。测试 6 例（PNG/TIFF 的 I;16、I、F + L/1），`protect`/`verify` 退 2、无成品、消息含 mode/`8-bit`。
+- **P48**：新增 `_cmyk_to_srgb`；`_load_oriented_rgb` 增 keyword-only `notes`，返回仍是 `(image, icc)`。有 ICC：`ImageCms.profileToProfile(..., outputMode="RGB")`，成品写 588B sRGB profile；无 ICC：`convert("RGB")` + `icc=None` + `protect` warnings；坏 ICC：`ValueError → exit 2`；无 lcms：CMYK+ICC 退 2，无 ICC 仍朴素转换。新增 `tests/test_cmyk_icc.py` 5 例（无 ICC 集成、with-ICC 接线、坏 ICC、PNG 无 profile、RGB ICC 透传）。
+- **手工探针（本机）**：系统 `Generic CMYK Profile.icc` 55,280B → 输出 588B sRGB profile、`xcolor_space=RGB`、源/成品 profile 不相等、warnings 空。
+- **DOC5**：`AGENTS.md:168` `save JPEG`→JPEG/PNG；`:183` loader 补非 8-bit/CMYK；`README.md:178/180/403` 拆 RGB 原样 / CMYK 有 ICC 转 sRGB / 无 ICC 丢 profile+警告 / 非 8-bit 退 2 / 16-bit RGB TIFF 残余；fix-plan 头部 `main=6ff72c6`、§1 G5 改为 A1/A2/A4/A7/A8 已验 + A3/A4 部分 + A5/A6 未取证（§6 保持 `[ ]`）、DOC5 `[x]`。
+- **结果**：collect 493→504；fast 492 passed / 27.40s；gui 45/0 skip；compliance 18；`git diff --check` 干净。
+- **残余**：16-bit RGB/RGBA PNG/TIFF 会被 Pillow 报成 `RGB`/`RGBA` 并降位，mode 门抓不到（需读容器头；不在 Q5）；with-ICC 的真实 lcms 转换只由本机手工探针覆盖，CI 用例用 monkeypatch 钉接线；不提交 CMYK ICC fixture（许可/体积）。
