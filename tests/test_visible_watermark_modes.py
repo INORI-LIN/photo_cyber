@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from photo_guard import watermark_visible
+from photo_guard import config, subject, watermark_visible
 
 
 @pytest.fixture
@@ -75,3 +75,60 @@ def test_tile_covers_the_bottom_band_of_a_tall_image() -> None:
     third = arr.shape[0] // 3
     bands = [int(changed[i * third : (i + 1) * third].sum()) for i in range(3)]
     assert min(bands) > 0, f"a band was left unpainted: {bands}"
+
+
+# --- R6/P58: defaults follow config, and long/CJK text must fit its region ----------
+
+LONG_CJK = "版权所有照片水印测试长文本示例二十字符"
+
+
+def _changed_width(out: Image.Image, base: Image.Image) -> int:
+    changed = (np.array(out) != np.array(base)).any(axis=2)
+    xs = np.nonzero(changed)[1]
+    return int(xs.max() - xs.min() + 1) if len(xs) else 0
+
+
+def test_center_and_subject_default_alpha_matches_config() -> None:
+    """P58: the direct-call defaults were 0.35 while config/AGENTS say 10%."""
+    base = Image.new("RGB", (320, 240), (128, 128, 128))
+    for function in (watermark_visible.apply_center, watermark_visible.apply_subject):
+        default = np.array(function(base, "© test"))
+        explicit = np.array(
+            function(base, "© test", alpha=config.DEFAULT_VISIBLE_ALPHA)
+        )
+        assert np.array_equal(default, explicit), function.__name__
+
+
+def test_long_cjk_text_fits_the_centre_region() -> None:
+    """19 CJK characters used to render 291 px wide against a 192 px target."""
+    base = Image.new("RGB", (320, 240), (128, 128, 128))
+
+    out = watermark_visible.apply_center(base, LONG_CJK, alpha=0.30)
+
+    assert _changed_width(out, base) <= int(320 * 0.6) + 4
+
+
+def test_long_cjk_text_fits_the_subject_region() -> None:
+    base = Image.new("RGB", (320, 240), (128, 128, 128))
+    bgr = np.array(base)[:, :, ::-1].copy()
+    box = subject.detect_subject(bgr)
+    region_w = max(64, box.w - 2 * int(box.w * 0.05))
+
+    out = watermark_visible.apply_subject(base, LONG_CJK, alpha=0.30)
+
+    assert _changed_width(out, base) <= int(region_w * 0.95) + 4
+
+
+def test_fit_font_never_enlarges_the_legacy_estimate() -> None:
+    """Only shrink: the legacy Latin rendering must not change (P58)."""
+    legacy = watermark_visible._load_font(24)
+    latin = watermark_visible._fit_font("© photo-guard", 192, 24)
+    assert watermark_visible._rendered_width(latin, "© photo-guard") == (
+        watermark_visible._rendered_width(legacy, "© photo-guard")
+    )
+
+    cjk = watermark_visible._fit_font(LONG_CJK, 192, 24)
+    assert watermark_visible._rendered_width(cjk, LONG_CJK) <= 192
+    assert watermark_visible._rendered_width(cjk, LONG_CJK) < (
+        watermark_visible._rendered_width(legacy, LONG_CJK)
+    )

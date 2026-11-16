@@ -66,6 +66,33 @@ def _alpha(value: float) -> int:
     return max(0, min(255, int(round(value * 255))))
 
 
+def _rendered_width(font: ImageFont.ImageFont, text: str) -> int:
+    bbox = font.getbbox(text)
+    return max(1, bbox[2] - bbox[0])
+
+
+def _fit_font(text: str, target_w: int, base_size: int) -> ImageFont.ImageFont:
+    """Shrink ``base_size`` until ``text`` fits ``target_w`` (P58).
+
+    The legacy ``target_w // len(text)`` estimate is the starting point on purpose: it
+    keeps existing Latin renders byte-identical. That estimate assumes one em per character,
+    so CJK glyphs (or the fallback tofu) and the 24 px floor overflowed the region; the
+    correction is measured from the rendered bbox and only ever shrinks.
+    """
+    font = _load_font(base_size)
+    width = _rendered_width(font, text)
+    if width <= target_w or base_size <= 1:
+        return font
+    size = max(1, base_size * target_w // width)
+    font = _load_font(size)
+    # Hinting/rounding can leave a pixel or two over; correct once more.
+    width = _rendered_width(font, text)
+    if width > target_w:
+        size = max(1, size * target_w // width)
+        font = _load_font(size)
+    return font
+
+
 def apply_tile(
     image_rgb: Image.Image,
     text: str,
@@ -109,7 +136,7 @@ def apply_center(
     image_rgb: Image.Image,
     text: str,
     *,
-    alpha: float = 0.35,
+    alpha: float = config.DEFAULT_VISIBLE_ALPHA,
     font_size: int | None = None,
 ) -> Image.Image:
     """Stamp a single half-transparent watermark over the central 60% region."""
@@ -117,8 +144,13 @@ def apply_center(
     w, h = base.size
     target_w = int(w * 0.6)
 
-    size = font_size or max(24, target_w // max(len(text), 1))
-    font = _load_font(size)
+    # P58: an explicit font_size is the caller's choice (it may overflow); otherwise start
+    # from the legacy estimate and shrink only if the measured width does not fit. A falsy
+    # value keeps the pre-P58 "0 means auto" behaviour.
+    if font_size:
+        font = _load_font(font_size)
+    else:
+        font = _fit_font(text, target_w, max(24, target_w // max(len(text), 1)))
 
     overlay = _text_layer(base.size)
     bbox = font.getbbox(text)
@@ -160,7 +192,7 @@ def apply_subject(
     image_rgb: Image.Image,
     text: str,
     *,
-    alpha: float = 0.35,
+    alpha: float = config.DEFAULT_VISIBLE_ALPHA,
     padding_frac: float = 0.05,
 ) -> Image.Image:
     """Stamp the watermark across the detected subject region.
@@ -181,10 +213,10 @@ def apply_subject(
     region_h = max(40, box.h - 2 * pad_y)
 
     target_w = int(region_w * 0.95)
-    size = max(24, target_w // max(len(text), 1))
-    # cap so a tiny face on a large image doesn't get a 200px font
-    size = min(size, max(28, h // 6))
-    font = _load_font(size)
+    # P58: keep the legacy estimate (and its large-image cap) as the starting point, then
+    # shrink to the measured width so CJK or long text cannot leave the subject box.
+    estimate = min(max(24, target_w // max(len(text), 1)), max(28, h // 6))
+    font = _fit_font(text, target_w, estimate)
 
     bbox = font.getbbox(text)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
