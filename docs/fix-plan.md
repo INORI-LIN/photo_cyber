@@ -11,7 +11,8 @@
 > **`v0.1.0` 正式发布已验证（2026-10-09）**：唯一获授权的 annotated tag 指向 G8 后的远端 `9b1ba41`，没有带上本地仅文档 `51187a8`；tag-push `release-desktop` run `37878702620` 的 verify、Windows、macOS 与独立 publish **全部 success**。GitHub Release `407614662` 已公开，四项资产均已下载；两份二进制的 SHA256 分别与各自发布清单一致（§10.10）。G8 技术检查与本次发布成功**不等于**第三方二进制再分发法律审查完成；批 H、G11③ 与 P34–P37/DOC3 仍待各自批次（后续：H 见 §10.11，G11 见 §10.20，P35–P37 见 §10.25/§10.28；P34/DOC3 仍待）。
 > **2026-11-09 批次进展**：F′1+P22（`e534199`）、F′2（`de09f9d`）、O1（`c56e057`）、O2（`b69e9b8`）已推送；ci/docker 全绿，release dispatch `42741197178` 真机绿（publish skipped）；远端 `main=dc16a70`；见 §10.20–§10.23。
 > **2026-11-11/13 批次进展**：P35（`8c0dcda`）、Q1（`a5ab94d`，P38–P40）、Q2（`c21f69b`，P41–P43）、Q3（`e569741`，P36/P37/P44–P46）已推送；ci 四腿 436/2/12、gui 48、docker 20 步全绿；远端 `main=36e9584`；见 §10.25–§10.28。
-> **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31。
+> **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31–§10.33。
+> **2026-11-13 全项目分析 R2/R3**：R2（`f985855`）测试基建 + 小图化；R3（`f4d5252`）去重/参数化；collect 501→493、fast 30.14→26.27s、gui 45；watermark `1..66`→边界集（已拍板例外）；DOC6=A、P56=4MP 已拍板；本地 ahead 5 未推送。
 
 ---
 
@@ -90,10 +91,10 @@
 | P53 | 读侧重复评分：GUI auto+expected 6 次、CLI expected-miss 4 次载体扫描 | med（性能/维护） | S（已落地） | R1 | 同一图同一载体的 `_block_scores` 被每条读路径重算；12MP 每载体约 1.5–3s，GUI 未命中最坏约 9–18s。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_ImageReader` 按载体缓存 + `_verify_auto_expected`；2 次扫描，12MP 实测 3.39s |
 | P54 | `embed()` 无容量闸，超容量静默截断 | med-high（静默毁图） | S（已落地） | R1 | 库入口只有 256² 地板；超容量时转录循环复用比特，返回正常图像但永不可读；pipeline 的闸只保护其调用方。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_require_capacity` 接入 `embed` |
 | P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [ ] 已登记 R4 |
-| P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [ ] 已登记 R5；24MP 取值待裁定 |
+| P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [ ] 已登记 R5；**4MP + `--max-perturb-pixels` 已拍板（2026-11-13）**；见 §10.33 |
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [ ] 已登记 R5 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [ ] 已登记 R6 |
-| DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；需 Windows 真机 `torch.version.cuda` 取证 |
+| DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；**A（README 改 CPU）已拍板（2026-11-13）**；待 R7 落地 |
 
 ---
 
@@ -129,12 +130,12 @@
 | **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已登记，未排期。** |
 | **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
 | **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
-| **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 未开工（只动测试）。** |
-| **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | collect ≤465、测试行数净减 ≥350、每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤25s。**R3 未开工（只动测试）。** |
+| **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 已完成（2026-11-13，`f985855`）：新增 `tests/support.py` + `tests/_gui_helpers.py`；6 份造图/5 份加载/3 份模型目录/2 套 GUI harness 迁移；input 2400×2160、exif 1600×1200、CLI 640×480、layers `long_edge=640`、tile 540×3000；collect 501 不变，fast 37.84→30.14s，gui 49。见 §10.32。** |
+| **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | 每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤27s、collect ≤493。**R3 已完成（2026-11-13，`f4d5252`）：D1/D2/D3/D4/E1/E2；watermark `1..66`→13 个边界长度×2 载体（用户拍板语料缩减，非等价）；collect 501→493、fast 30.14→26.27s、gui 49→45；见 §10.33。** |
 | **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 未开工。** |
-| **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 未开工；上限取值待裁定。** |
+| **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 未开工；P56 取 4MP + `--max-perturb-pixels` 覆盖（2026-11-13 拍板）。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 未开工。** |
-| **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；先做一条命令取证。** |
+| **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；DOC6=A（README 如实写 Windows CPU）已拍板（2026-11-13）。** |
 
 五条硬定序，实施时不得调换：
 
@@ -214,6 +215,12 @@
 | 3 | P49：复现后加 `aboutToQuit` 有界退出，还是接受 Cmd+Q 现状？ | P49、`gui.py`/`gui_main.py`、关窗测试 | 加 `aboutToQuit`（与 `closeEvent` 共用 5s 宽限） |
 | 4 | P50：GUI 增加“盲检上界”输入，还是 auto-only 自动抬到图像容量？ | P50、`gui.py` 验证页、`config.DEFAULT_MAX_PAYLOAD_BYTES` | 加输入并与 CLI 对齐；自动抬容量会把 miss 成本推到秒级 |
 
+**2026-11-13 全项目分析拍板（R5/R7/R3）**：
+
+1. **DOC6=A（R7）**：README 如实写 Windows 安装包为 CPU 版；不改 `uv.lock`、不加 CUDA 依赖、不做分卷。依据：`uv.lock` 的 CUDA 依赖仅 Linux；Windows torch 2.12.1 CPU wheel 122.9MB；CUDA 13.0 wheel 实测 1,926,393,760 B（1.79GiB），安装包预计 1.9–2.3GB，贴/超 GitHub 2GiB 单资产限制。R7 只做取证 + README 五处 + `desktop_entry --with-photoguard` 导入检查。
+2. **P56=4MP（R5）**：`config.PHOTOGUARD_MAX_PIXELS=4_000_000` + `--max-perturb-pixels` 覆盖；仅 `--perturber sd` 生效。依据：VAE 首层 128 通道全分辨率特征图在 24MP 为 fp32 11.4GiB / fp16 5.7GiB，8GB 机器必 OOM；24/32MP 不作为默认。
+3. **watermark 语料例外（R3）**：`1..66`→`{1,2,3,7,8,9,13,16,17,33,64,65,66}`×2 载体；**语料缩减，不是等价**。全扫不在 CI（docker 慢档只跑 `test_photoguard_slow.py`）；G1 等价锁由边界集 + `test_dwt_dct_svd` 外部夹具承担。如需恢复全扫，另开批次改 CI 命令。
+
 ---
 
 ## 4 全局约定
@@ -223,6 +230,7 @@
 3. **退出码契约**：0 = 成功（含 `verify` 取回**证据**：信封命中或盲检发现）；1 = 未取回任何东西（verify 无 payload）；2 = 参数或运行期错误；**3 = 只取回旧版线索（`--payload-bytes` 路径，无校验和，P19 起）**。所有新增的 `ValueError`/`OSError`/`RuntimeError` 必须经 `cli.py:132-137` 落到 2；新增一类 exit 2（如损坏 EXIF、不支持的输出扩展名）时须有测试钉住，`cli.py:135` 会掩盖。3 只出现在旧版线索路径，不得被其它分支复用。
    - **P27 起的口径（2026-09-29 三次审计裁定）**：`verify --expected-payload` 的「整图找不到信封」归 **1**（与 `--payload-bytes`、盲检两条路径一致，即 1 统一为「三条 verify 路径共同的『未取回』」）；「信封在但 CRC 不符 / payload 不符」保持 **2**（取回了但校验不通过）。`cli.py:132-137`/`cli.py:135` 为 P3 时代的坐标，现对应 `cli.py:180`/`cli.py:183`。
 4. **断言强度纪律**：对既有用例只允许「加强」或「等价」两种改动（等价须逐字节/逐值相等，如半损坏 0→非 0 属加强、`n=1..66` 逐字节相等属等价）；放宽一律不允许。任何「把红改成绿」的诱因都改由 spike 或产品决策处理，不得改断言、不得加容差、不得缩语料。
+   - **例外（2026-11-13，用户拍板）**：批 R3 将原 `test_reconstruction_is_byte_exact_for_every_length`（现 `test_reconstruction_is_byte_exact_at_boundary_lengths`）的 `n=1..66 × 两载体` 缩为 13 个边界长度 ×2 载体。这是**语料缩减**，不属于「加强/等价」；原因是 fast 档固定成本（约 4.0s）且全扫不在 docker 慢档执行。边界集保留 n=1/2/3、7/8/9、13、16/17、33/64/65/66；G1 等价锁仍由 `test_reconstruction_is_byte_exact_at_boundary_lengths` + `test_dwt_dct_svd` 外部夹具承担。后续如需恢复全扫，另开批次改 CI 命令，不在 R3 内暗改。
 
 ---
 
@@ -423,7 +431,7 @@ decode 的长度只能由调用方给定，而它无法从图像推断；旧版 
 
 | 文件 | 用例名 | 档 | 断言 |
 |---|---|---|---|
-| test_watermark_discovery.py 等 4 文件 | `reconstruction_matches_authoritative_decoder` 等 20 例 | fast | `n=1..66` 逐字节等于 `WatermarkDecoder`；盲检 stdout 恰为 payload；未加水印→1；错长度与贴 55%→非 0、真值→0 |
+| test_watermark_discovery.py 等 4 文件 | `reconstruction_matches_authoritative_decoder` 等 20 例 | fast | `n=1..66` 逐字节等于 `WatermarkDecoder`（R3 起 fast 档为边界集，见 §10.33）；盲检 stdout 恰为 payload；未加水印→1；错长度与贴 55%→非 0、真值→0 |
 
 **验收标准**
 - [x] `uv run pytest -m 'not slow' -q` 全绿；collected 数以 `--collect-only -q` 实测回写；`:43`/`:54` 字面零改动（`:25` 仅可加 P7 断言、`:87` 仅可加 P4 断言）；`git diff --stat AGENTS.md` 为空。 —— 2026-09-23 实测：fast 档 **142 passed**（本项落地时 58 → 94，`--collect-only -q` 同为 142）；`git log --oneline -- AGENTS.md` 只有 init 一条，故相对基线无 diff；`:43`/`:54` 的用例内容逐字未改，但该文件顶部 docstring 在本项落地时增行，**行号已漂到 `:46`/`:57`**（`test_verify_no_payload_exits_one` / `test_verify_missing_file_exits_two`）—— 原门槛文字里的 `:43`/`:54` 应读作这两个用例，不是两个行号。
@@ -444,7 +452,7 @@ Spike B（复核一次）：`1..2N` 逐字节相等、320×320 ≤1.0 s；任一
 
 **实施记录（批次 1，2026-09-23）**
 
-- **spike 门槛**：**Spike B 通过** —— 自研 `_block_scores`/`_reconstruct_bytes` 与 `WatermarkDecoder` 在 264/264 例逐字节相等（4 图 × n=1..66，含 643×482 奇数尺寸路径），320×320 单次 12.05 ms（预算 1.0 s），66 候选盲搜 48 ms（逐候选调库需 781 ms，快 16.3×）。**Spike A 未通过**：真实产物 `mean_margin` 仅 0.2567–0.3247（0.40 目标超出该统计量可达范围，其天花板约 0.5020），可打印垃圾达 0.2005–0.5000，两带完全重叠；且存在一个真实产物在**正确长度上解错**（`'laxers-test'`，mm=0.2567、R=154）。结论：**无阈值可分**。
+- **spike 门槛**：**Spike B 通过** —— 自研 `_block_scores`/`_reconstruct_bytes` 与 `WatermarkDecoder` 在 264/264 例逐字节相等（4 图 × n=1..66，含 643×482 奇数尺寸路径；仓外 spike，R3 起 fast 档为边界集，见 §10.33），320×320 单次 12.05 ms（预算 1.0 s），66 候选盲搜 48 ms（逐候选调库需 781 ms，快 16.3×）。**Spike A 未通过**：真实产物 `mean_margin` 仅 0.2567–0.3247（0.40 目标超出该统计量可达范围，其天花板约 0.5020），可打印垃圾达 0.2005–0.5000，两带完全重叠；且存在一个真实产物在**正确长度上解错**（`'laxers-test'`，mm=0.2567、R=154）。结论：**无阈值可分**。
 - **按文档的失败分支落地**：旧版 raw 降为「仅线索」——stdout 输出 `线索（未验证）: <内容>`，stderr 打印 `blocks/bit` 与 `mean_margin`（`LegacyExtraction`），`notes` 恒含 `clue, not proof`；新增结构性**反重复规则**（拒绝 K/m 周期，杀掉 `m·N` 家族）；`LEGACY_MIN_MEAN_MARGIN=0.20` 与 `LEGACY_MIN_BLOCKS_PER_BIT=16` 仅作杀垃圾的辅助门（实测能杀非倍数错长、q50、q70、干净纹理、70% 粘贴）。**K=N/2 的不可分辨性未「解决」而是显式披露**（代码注释与本文档都写明）。
 - **决策落实**：`verify` 不带 flag 由「缺参退 2」改为 0/1 盲检（本项当时的唯一退出码映射变更；**P19 后的语义修正**：本文及 P3 各处的「线索路径退 0」应读作退 3，历史记录不改写，见 §4.3 与 §7 P19）；`max_stored_bytes(h, w)` 由 P3 定义（`(((h//4*4)//8) * ((w//4*4)//8)) // 8`；1080×810 → 1704、1200×1600 → 3750、256×256 → 128），P4 只消费。
 - **C2 落实**：未新建任何 loader；三个新读图点沿用既有 `Image.open → load() → _pil_rgb_to_bgr` 写法，留给 P8 的 `_load_oriented_rgb` 统一。
@@ -951,7 +959,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 **推荐方案**
 
 - 仓内 `EmbedDwtDctSvd` 子类，保持 `(h1, v1, d1)` 原序（AGENTS.md 禁止改依赖，不能动 site-packages）。
-- 等价证明：给出「只差 detail 带、cA 不变」的对照（cA 逐位相同 + 1..66 全扫的解码等价；目前只在锚点测过，应补齐）。
+- 等价证明：给出「只差 detail 带、cA 不变」的对照（cA 逐位相同 + 1..66 全扫的解码等价；目前只在锚点测过，应补齐；R3 起 fast 档为边界集，全扫不在 CI）。
 
 **开放问题**
 
@@ -1020,7 +1028,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - [x] `uv.lock` 中 `photo-guard` core 可达集恰为 `{photo-guard, numpy, opencv-python-headless, pillow, pywavelets}`，`torch`/`opencv-python`/`nvidia-*`/`cuda-*` 不可达。—— 本机实测：`tests/test_dependency_graph.py` 四例全绿（闭包恰等断言按「恰为」原样落地）；锁内 `opencv-python` 与 `invisible-watermark` 两个包整体消失，`nvidia-*`/`cuda-*` 仅作为 photoguard extra 侧 torch 的 linux-only 边存在、不在 core 闭包内。
 - [x] 全新 core-only 环境：`import torch` 抛 `ModuleNotFoundError`、`import photo_guard` 成功、`photo-guard --help` 退 0、纹理图 protect+verify 退 0。—— 本机实测（core+dev+desktop 档，无 torch/imwatermark）：`import torch` → `ModuleNotFoundError: No module named 'torch'`；`import photo_guard` 成功且 `sys.modules` 无 torch/imwatermark；`--help` 退 0；`protect textured.jpg -o out.jpg --payload owner:alice#001 --visible-mode tile --payload-envelope` 退 0，盲检 stdout 恰为 `owner:alice#001`，`--expected-payload` 退 0。**「全新」以 CI 为准**（本机是既有 venv 被 sync 剪过一遍）。
 - [x] 删依赖**前**由旧库生成的 fixture 解出精确 payload；commit body 含 spike A/B/C 结果、SHA-256、三版本串、`cv2.__file__` 与 owning distribution。—— 本机实测：`tests/fixtures/dwtDctSvd_legacy_512.png`（旧库产出，payload `owner:alice#001`）由 `wi.extract` 精确解出；commit `22ce170` body 含 A/A′/B/C/D/E/F 全绿结论、三个 sha256、三行版本串、`cv2.__file__` 与 `['opencv-python-headless','opencv-python']`。
-- [x] `decode_bits` 与 P3 的 `_reconstruct_bytes(_block_scores(img), n)` 在 `1..2N` 逐字节相等、`max_stored_bytes` 未删、`test_rotating_a_protected_image_breaks_extraction` 仍绿；`pytest -m 'not slow'` 全绿且既有断言逐字未变。—— 本机实测：`test_watermark_discovery.py::test_reconstruction_is_byte_exact_for_every_length` 已把右臂换成 `decode_bits + np.packbits`，`n=1..66 × {(1,36),(0,72)}` 范围未缩、逐字节相等；`max_stored_bytes` 仍在（3750/1704/128 断言绿）；fast 202 passed（`--collect-only -q` 实测 202；基线 193，+9 = 依赖图谱 4 例 + 转录 5 例）。
+- [x] `decode_bits` 与 P3 的 `_reconstruct_bytes(_block_scores(img), n)` 在 `1..2N` 逐字节相等、`max_stored_bytes` 未删、`test_rotating_a_protected_image_breaks_extraction` 仍绿；`pytest -m 'not slow'` 全绿且既有断言逐字未变。—— 本机实测：`test_watermark_discovery.py::test_reconstruction_is_byte_exact_at_boundary_lengths` 已把右臂换成 `decode_bits + np.packbits`，`n=1..66 × {(1,36),(0,72)}` 范围当时未缩、逐字节相等（R3 起为 13 个边界长度，见 §10.33）；`max_stored_bytes` 仍在（3750/1704/128 断言绿）；fast 202 passed（`--collect-only -q` 实测 202；基线 193，+9 = 依赖图谱 4 例 + 转录 5 例）。
 - [x] 相对 P3 后 `pyproject.toml`/`uv.lock` 仅两类差异；`grep -c tool.uv`=0；`uv sync --frozen` 通过；`git diff --stat AGENTS.md` 空；无 `requirements.txt`；CI 新步改动前红、后绿；`docker.yml` 两 smoke 免改通过且不声称体积收益。—— **改口径**（见落地记录缺口④）：语义上恰两类差异（实测包集合 diff：移除 `['invisible-watermark','opencv-python']`、新增 `[]`、版本变化 `[]`，74 → 72 包），外加**格式回写一类**（`revision = 1` → `3`，工具链项，约 1500 行）。`grep -c tool.uv` = 0/0；`uv sync --frozen` 通过；AGENTS.md 空 diff；无 `requirements.txt`；CI 新步与测试改动前 4/4 红（实测，非预估的 3/4）、改动后退 0；`docker.yml` 未改且本机以等价命令复跑两段断言通过（noise 段 stdout 恰为 `线索（未验证）: ci-test`）；未声称体积收益。
 
 **落地记录（2026-09-29，批次 D1）**
@@ -1029,7 +1037,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **E 搬运后复跑**：`shipped == oracle == candidate`，类区仍 3192 字符（oracle 取自 `.venv` 内 imwatermark 0.2.0，趁删依赖前跑）；D 子进程探针 `__all__=embed_bits,decode_bits`、torch/imwatermark 均不在 `sys.modules`。
 - **工具链（本项「批次 1 新增发现」的落地）**：用缓存里的 uv 0.9.28（离线二进制）完成 `remove` / `add --optional`；`--offline` 因缓存缺件失败，去 flag 联网成功（已记 commit body）。锁 `revision` 由 `1` 回到 `3`。本机 brew 因未同意 Xcode 许可不可用，未做 `brew upgrade uv`。CI 侧「锁格式与 uv 版本一致」检查归 D2 的 verify job（`uv lock --offline && git diff --exit-code -- uv.lock`）。
 - **环境实测坑**：`uv sync --frozen --group dev --extra desktop` 卸掉 13 个包（torch 2.12.1 / invisible-watermark 0.2.0 / opencv-python 4.13.0.92 及 torch 传递依赖，desktop extra 的 PySide6 保留）；**卸 `opencv-python` 会连坐删掉与 headless 共享的 `cv2/` 目录**，需 `--reinstall-package opencv-python-headless` 修复——仅在「venv 曾同时装两份 cv2」的存量环境出现，全新环境不复现。
-- **断言强度逐条标注**：`test_carrier.py` 的 `_library_embed`/`WatermarkDecoder` 两处、`test_watermark_discovery.py` 的 `_embed` 与用例右臂 —— **等价（oracle 由外部库换成已证逐位相同的仓内转录稿；编码器替换，`cA` 不变）**，用例名与 `n=1..66 × 两载体` 范围未缩；`test_output_integrity.py` 的 torch 探针 —— **等价（仅 docstring 文案）**，断言一行未动；其余既有用例零改动。本项**无放宽**，也无断言被删。
+- **断言强度逐条标注**：`test_carrier.py` 的 `_library_embed`/`WatermarkDecoder` 两处、`test_watermark_discovery.py` 的 `_embed` 与用例右臂 —— **等价（oracle 由外部库换成已证逐位相同的仓内转录稿；编码器替换，`cA` 不变）**，R3 前用例名与 `n=1..66 × 两载体` 范围未缩；R3 起为用户拍板的边界集例外（§10.33），非等价；`test_output_integrity.py` 的 torch 探针 —— **等价（仅 docstring 文案）**，断言一行未动；其余既有用例零改动。本项**无放宽**，也无断言被删。
 - **文档缺口补记（四条）**：① 本节「触及文件」原表**缺** `tests/test_carrier.py` 与 `tests/test_watermark_discovery.py`——它们是「以库为 oracle」的两处（全仓 grep 仅此两文件 + `watermark_invisible.py` 导入 imwatermark），删依赖后会整体 collection error，本次一并迁移；② `test_tiny_image_verify_exits_two` 的 CLI 分支按实测修正：doc 写「照 `test_cli_exits.py:54-58` `cli.main([...])==2`」，但 `verify --payload-bytes` 走 `extract_legacy`（有 P14 容量检查、无 256 守卫）会退 1，故改由 `protect` 钉「过小图 → 2 且不落文件」，属修正而非放宽；③ doc 中 `CLAUDE.md:NN` 的引用**无落点**（该文件已并入 AGENTS.md/README.md），本节第 8 步实际只改了 `config.py` 注释、`download.py` 文案、`README.md` 结构树与参考行；④ 验收第 1 条「仅两类差异」与「回 revision 3」在锁文件上不可同时字面成立，已按上文改口径（语义两类 + 格式一类）并点名。
 - **跨批提示（批 E 落地前必读）**：`_require_method` 落地后「把 `WATERMARK_METHOD` 改成 `dwtDct`」不再是可用的自证失败法（会抛 `ValueError` 而不是产出低分）——P6 的 `manual | dwtDct 校准` 与 `bench/README.md` 的「自证失败法」（§6 P6 内）须换一个手法（例如改载体参数或注入损坏 fixture），落地批 E 时同步改本节与那里。
 - **AGENTS.md 未改**（D1 结束时 `git diff --stat AGENTS.md` 为空；**D2 按用户裁定同步了 §十一 一句**——合规门不再排除 `.github/`，见 §6 G5 落地记录）。因 G1 而失真的 AGENTS.md 行（仍未自行改，上报用户）：§8.6 末「torch 目前不在 extra 隔离之内」、§10「torch 仍会随 `imwatermark` 链被导入」、§10 回归锁 #4 括注、§8.2/§8.3 的 `_CarrierEmbed` 措辞与模块表缺 `_dwt_dct_svd.py`。
@@ -1134,7 +1142,7 @@ S1 = `tests/conftest.py::textured_jpg`（1600×1200 → 1080×810）；S2 = `tes
 - **一处对方案的偏离（已裁定）**：Dockerfile 的许可材料用**独立 `COPY` 层**（放在 `download-models` 之后），而非追加到两阶段 sync 的第一层——避免改许可文本打爆 torch/diffusers 大层。`COPY` 不触 §九 规则 1（联网三类不变）。
 - **依赖面零变化**：生成器只用 stdlib（`argparse`/`importlib.metadata`/`pathlib`/`platform`），`pyproject.toml` 只多了 `license`/`license-files` 两个字段，`uv.lock` 无 diff（`uv lock --offline` 后 `git diff --exit-code -- uv.lock` 为空）。
 - **既有用例改动一处，判「加强」**：`tests/test_desktop_entry.py::test_smoke_test_passes_with_an_existing_model_directory` 增加「许可材料就位」前置（monkeypatch `PHOTO_GUARD_RESOURCE_DIR`），`== 0` 与输出断言逐字未变；另新增两例（缺 LICENSE / 缺 notices → 4）。
-- **破坏自检明细**（12 项，全部变红）：LICENSE 缺版权行 → `test_license_file_is_complete_mit_text`；GPL 正文改一字节 → `test_copyleft_texts_are_canonical_and_hashes_match`；pyproject 去 `licenses/*.txt` → `test_pyproject_declares_license_and_files`；安装态元数据去 `licenses/*.txt`（重装后）→ `test_installed_distribution_carries_license_metadata`；notices 里 numpy 版本错 / SD VAE 来源换 → 对应用例；build_desktop 漏 `licenses` / 混回版本字面量 → 对应用例；`.iss` 守卫拿掉 → `test_iss_has_no_version_literal_and_still_uses_the_define`；desktop_entry 不再拒绝缺材料 → 新用例；转录稿块判定阈值微调 → **由 G1 的 `test_reconstruction_is_byte_exact_for_every_length` 捕获**（fixture 解码用例对阈值微调不敏感，只因干净图的块票远离判定边界，它的职责是粗粒度解码回归）；`extract` 的字节组装截断 → `test_legacy_fixture_decodes_exact_payload`。
+- **破坏自检明细**（12 项，全部变红）：LICENSE 缺版权行 → `test_license_file_is_complete_mit_text`；GPL 正文改一字节 → `test_copyleft_texts_are_canonical_and_hashes_match`；pyproject 去 `licenses/*.txt` → `test_pyproject_declares_license_and_files`；安装态元数据去 `licenses/*.txt`（重装后）→ `test_installed_distribution_carries_license_metadata`；notices 里 numpy 版本错 / SD VAE 来源换 → 对应用例；build_desktop 漏 `licenses` / 混回版本字面量 → 对应用例；`.iss` 守卫拿掉 → `test_iss_has_no_version_literal_and_still_uses_the_define`；desktop_entry 不再拒绝缺材料 → 新用例；转录稿块判定阈值微调 → **由 G1 的 `test_reconstruction_is_byte_exact_at_boundary_lengths`（边界集）捕获**（fixture 解码用例对阈值微调不敏感，只因干净图的块票远离判定边界，它的职责是粗粒度解码回归）；`extract` 的字节组装截断 → `test_legacy_fixture_decodes_exact_payload`。
 
 **风险与未知**
 - LGPL 残余不确定性：Qt 独立共享库且未签名，「可替换义务」属法律判断。
@@ -2611,6 +2619,32 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - 验证：fast 489 passed / 12 deselected；gui 49 passed；12MP（4000×3000）未命中 2 次扫描 3.39s（改前 4 次）。
 - 未改：`find_envelope` 对 malformed/CRC 仍返回 `None`（不改变 exit 1/2 语义）；两套解码实现保留（`_dwt_dct_svd` 是逐字转录 oracle）。
 
-**R2–R7**：见 §2 行；R2/R3 只动测试；R4/R5 的“先红→实现”按每项独立提交；R6/R7 低风险。R1 先于 Q6（同改 GUI 验证路径），信封单源先于/并入 Q5（同改 `pipeline.py` 的 envelope 上限）。
+**R2–R7**：见 §2 行；**批 R2/R3 已完成，见 §10.32/§10.33；R4–R7 未开工。** R1 先于 Q6（同改 GUI 验证路径），信封单源先于/并入 Q5（同改 `pipeline.py` 的 envelope 上限）。
 
-**测试精简口径**：本轮只做零语义变化的提速与去重，目标约 −390~450 行、collect ≤472、fast ≤25s；不做 F1–F10 去脆化（源码文本锁、私有成员、AST、精确中文串、静态逐行 pin），留待后续独立批次。
+**测试精简口径（2026-11-13 修订）**：R2/R3 只动 `tests/`，不做 F1–F10 去脆化。R2 保持 collect 501、fast 37.84→30.14s；R3 按用户拍板 501→493、fast 30.14→26.27s。`≤465/≤25s` 在「不去脆化/不合并静态文件/不删独立契约」下不可达；watermark 边界集是显式语料缩减例外（见 §4 与 §10.33）。
+
+---
+
+### 10.32 批 R2 测试基建 + 小图化（2026-11-13，`f985855`）
+
+> 本节 `R2` 指全项目分析批次，不是 DOC4 的 `R1–R4` 文档项。
+
+- **新增 helper**：`tests/support.py`（`textured_rgb`/`write_textured`/`load_script`/`complete_model`）；`tests/_gui_helpers.py`（`ensure_app`/`settle`/`pump_until`/`ini_settings_factory`/`redirect_settings`/`envelope_product`）。`load_script` 每次新建、不缓存，避免 monkeypatch 跨例泄漏。
+- **迁移**：5 个 `_load*`、3 处模型目录、6 份造图 helper；`conftest.textured_jpg:18-28` 按 §7 的“不得改”裁定保持原样；两个 GUI `window` fixture 与子进程脚本保留。
+- **小图化**：input 4000×3000→2400×2160（post-draft `(1200,1080)`）；exif 3200×2400→1600×1200（draft 未被调用 spy）；CLI 默认 640×480（1705 容量边界保留 1600×1200）；layers `long_edge=640`；tile 1080×6000→540×3000（旧循环探针 bands `[9969, 1234, 0]`，固定后三段均 >0）。
+- **结果**：collect 501 不变；fast 37.84→30.14s；gui 49/0 skip；compliance 18；四条 fail-loud 锁绿。
+- **口径更正**：登记稿里的 496 是 R1 前基线；R1 新增 5 例后实际 501。
+
+### 10.33 批 R3 去重 + 参数化（2026-11-13，`f4d5252`）
+
+> 本节 `R3` 指全项目分析批次，不是 DOC4 的 `R1–R4` 文档项。
+
+- **D1**：GUI 勾选组合 7→3（全开 / sd-only / invisible-only）；默认态与 `test_gui_logic` 的 8 组合真值表保留。
+- **D2**：容量字面量表收敛到 `test_invisible_watermark_capacity.py`；删除 discovery 的重复几何断言。
+- **D3**：删除 carrier 的重复 `embed` 地板；保留 `test_dwt_dct_svd` 的 embed+extract 地板。
+- **D4**：CLI CRC 用例改为直接注入 `IntegrityUncertainError`，不再构造假信封；exit 2 与 `"CRC32 failed"` 保留。
+- **E1/E2**：通道越界参数 `[2,3,99]`→`[2,-1]`；legacy 不可达长度参数 2→1（legacy 的“先拒后扫”由 spy 用例覆盖）。
+- **watermark**：`1..66`→13 个边界长度×2 载体（用户拍板，**语料缩减，非等价**）；`test_watermark_discovery.py` 文件约 4s→2.7s。
+- **compliance**：扫描排除 `models`/`release`/`dist`（干净 CI checkout 无这些构建产物），本地扫描约 1.0→0.55s。
+- **结果**：collect 501→493；fast 30.14→26.27s（481 passed）；gui 49→45；compliance 18；四条锁 31 passed；CLI 退码断言 `0/1/2/3 = 16/3/19/3` 不变。
+- **目标修订**：`≤465/≤25s` 在“不删独立契约、不去脆化、不合并静态文件”下不可达；实际 493/26.27s。要更激进需另开「去脆化 + 静态清理」批次。
