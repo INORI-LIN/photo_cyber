@@ -17,6 +17,8 @@ import importlib.util
 import os
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -136,27 +138,22 @@ def test_atomic_write_wraps_mkdir_failure_itself(tmp_path, monkeypatch) -> None:
 
 
 def test_atomic_write_wraps_stat_failure(tmp_path, monkeypatch) -> None:
-    """P28: the ``stat`` probe for the previous mode is inside the wrap now.
+    """P28: the ``lstat`` probe for the previous mode is inside the wrap now.
 
-    The patches target only the destination path on purpose: a blanket ``Path.stat`` patch
-    would make ``parent.mkdir``'s own ``FileExistsError``/``is_dir`` bookkeeping raise first
-    (pathlib internals) and the test would pass even with the probe still outside the
-    ``try``. This shape fails if *just the probe* moves back out.
+    The patch targets only the destination path on purpose: a blanket ``os.lstat`` patch
+    would also break internal bookkeeping and the test would pass even with the probe still
+    outside the ``try``. This shape fails if *just the probe* moves back out.
+    Q7/P34: the probe is ``os.lstat`` — a symlink target must not lend its mode.
     """
     destination = tmp_path / "out.jpg"
-    original_exists = Path.exists
-    original_stat = Path.stat
+    original_lstat = os.lstat
 
-    monkeypatch.setattr(
-        Path, "exists", lambda self: True if self == destination else original_exists(self)
-    )
-
-    def stat_boom(self, *args, **kwargs):
-        if self == destination:
+    def lstat_boom(path, *args, **kwargs):
+        if Path(path) == destination:
             raise OSError(13, "Permission denied")
-        return original_stat(self, *args, **kwargs)
+        return original_lstat(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "stat", stat_boom)
+    monkeypatch.setattr(os, "lstat", lstat_boom)
 
     with pytest.raises(OSError, match="failed to write") as excinfo:
         outputs.save_image_atomic(Image.new("RGB", (8, 8)), destination)
@@ -501,3 +498,156 @@ def test_cli_protect_succeeds_with_a_chmod_warning(tmp_path, monkeypatch) -> Non
     with Image.open(destination) as image:
         image.load()
         assert image.format == "JPEG"
+
+
+# --- Q7/P34: permissions belong to the destination, never to a link target -----------
+
+
+def _umask() -> int:
+    current = os.umask(0)
+    os.umask(current)
+    return current
+
+
+def test_atomic_write_does_not_unlock_a_symlink_target(tmp_path) -> None:
+    """P34: the pre-replace unlock chmod'ed through the link, leaving the target writable.
+
+    The link itself is still replaced (that contract is pinned elsewhere); what changes is
+    that the target keeps both its bytes and its mode.
+    """
+    target = tmp_path / "target.jpg"
+    target.write_bytes(b"untouched-target")
+    os.chmod(target, 0o444)
+    link = tmp_path / "out.jpg"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable on this platform")
+
+    outputs.save_image_atomic(Image.new("RGB", (8, 8)), link)
+
+    assert target.stat().st_mode & 0o777 == 0o444
+    assert target.read_bytes() == b"untouched-target"
+    assert not link.is_symlink()
+    assert link.stat().st_mode & 0o777 == 0o666 & ~_umask()
+    with Image.open(link) as image:
+        image.load()
+
+
+def test_atomic_write_does_not_unlock_a_hard_link_sibling(tmp_path) -> None:
+    """P34 (hard links): the unlock chmod'ed the shared inode, so ``a`` became writable."""
+    if sys.platform == "win32":
+        pytest.skip("a read-only file with a hard link is refused on Windows by design")
+    original = tmp_path / "a.jpg"
+    original.write_bytes(b"old-hard-link")
+    os.chmod(original, 0o444)
+    sibling = tmp_path / "b.jpg"
+    try:
+        os.link(original, sibling)
+    except OSError:
+        pytest.skip("hard links are unavailable here")
+
+    outputs.save_image_atomic(Image.new("RGB", (8, 8)), sibling)
+
+    assert original.stat().st_mode & 0o777 == 0o444
+    assert original.read_bytes() == b"old-hard-link"
+    assert os.stat(sibling).st_ino != os.stat(original).st_ino
+    assert sibling.stat().st_mode & 0o777 == 0o444
+    with Image.open(sibling) as image:
+        image.load()
+
+
+def test_atomic_write_replaces_a_dangling_symlink(tmp_path) -> None:
+    link = tmp_path / "out.jpg"
+    try:
+        link.symlink_to(tmp_path / "missing.jpg")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are unavailable on this platform")
+
+    outputs.save_image_atomic(Image.new("RGB", (8, 8)), link)
+
+    assert not link.is_symlink()
+    with Image.open(link) as image:
+        image.load()
+
+
+# --- Q7/P52: the temp name must still be the file we wrote ---------------------------
+
+
+def test_atomic_write_rejects_a_temp_swapped_for_a_symlink(tmp_path, monkeypatch) -> None:
+    """P52: writing through a reserved fd must not follow a swapped-in symlink."""
+    destination = tmp_path / "out.jpg"
+    destination.write_bytes(b"previous-good-bytes")
+    victim = tmp_path / "victim.bin"
+    victim.write_bytes(b"victim-bytes")
+    verified: list[Path] = []
+    original_create = outputs._create_temp_file
+
+    def create_then_swap(directory):
+        created = original_create(directory)
+        # Pre-fix the helper returned a bare Path; return that same shape so the red run
+        # fails on the real defect (bytes landing in the victim), not on a harness TypeError.
+        temp = created[0] if isinstance(created, tuple) else created
+        temp.unlink()
+        temp.symlink_to(victim)
+        return created
+
+    monkeypatch.setattr(outputs, "_create_temp_file", create_then_swap)
+
+    with pytest.raises(OSError, match="failed to write"):
+        outputs.save_image_atomic(
+            Image.new("RGB", (8, 8)), destination, verify=lambda path: verified.append(path)
+        )
+
+    assert verified == []
+    assert victim.read_bytes() == b"victim-bytes"
+    assert destination.read_bytes() == b"previous-good-bytes"
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
+def test_atomic_write_concurrent_distinct_destinations(tmp_path) -> None:
+    """Temp names must never collide, even when many writes share one directory."""
+    count = 8
+    barrier = threading.Barrier(count)
+    destinations = [tmp_path / f"out-{index}.jpg" for index in range(count)]
+
+    def write(index: int) -> None:
+        barrier.wait()
+        outputs.save_image_atomic(
+            Image.new("RGB", (64, 48), (index * 20, 30, 40)), destinations[index]
+        )
+
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        list(pool.map(write, range(count)))
+
+    inodes = set()
+    for path in destinations:
+        with Image.open(path) as image:
+            image.load()
+        inodes.add(path.stat().st_ino)
+    assert len(inodes) == count
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
+
+
+def test_atomic_write_concurrent_same_destination(tmp_path) -> None:
+    """Last writer wins with a complete file; POSIX rename cannot leave a partial one."""
+    if sys.platform == "win32":
+        pytest.skip("concurrent os.replace on one destination can hit WinError 5")
+    destination = tmp_path / "out.jpg"
+    count = 6
+    barrier = threading.Barrier(count)
+
+    def write(index: int) -> None:
+        barrier.wait()
+        outputs.save_image_atomic(
+            Image.new("RGB", (64, 48), (index * 10, 60, 90)), destination
+        )
+
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        list(pool.map(write, range(count)))
+
+    with Image.open(destination) as image:
+        image.load()
+        assert image.size == (64, 48)
+    assert destination.stat().st_mode & 0o777 == 0o666 & ~_umask()
+    assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))

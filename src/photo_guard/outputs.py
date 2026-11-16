@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import stat
 import unicodedata
 import warnings
 from pathlib import Path
@@ -36,18 +37,40 @@ _TEMP_ATTEMPTS = 16
 _ILLEGAL_SUFFIX_CHARS = frozenset('/\\:*?"<>|')
 
 
-def _create_temp_file(directory: Path) -> Path:
-    """Reserve a uniquely-named temp file in ``directory`` (same filesystem, so the
-    later ``os.replace`` is atomic rather than a cross-device copy)."""
+def _create_temp_file(directory: Path) -> tuple[Path, int]:
+    """Reserve a uniquely-named temp file and keep its descriptor open (P52).
+
+    ``O_EXCL`` proves we created a fresh inode; the descriptor is what the caller writes
+    through, so swapping the *name* for a symlink cannot redirect the bytes. The caller
+    owns the descriptor.
+
+    Same directory as the destination, so the later ``os.replace`` is atomic rather than a
+    cross-device copy.
+    """
     for _ in range(_TEMP_ATTEMPTS):
         candidate = directory / f"{_TEMP_PREFIX}{secrets.token_hex(8)}{_TEMP_SUFFIX}"
         try:
-            handle = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+            descriptor = os.open(
+                candidate,
+                os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                0o666,
+            )
         except FileExistsError:
             continue
-        os.close(handle)
-        return candidate
+        return candidate, descriptor
     raise OSError(f"could not create a temporary file in {directory}")
+
+
+def _require_temp_identity(path: Path, identity: os.stat_result) -> None:
+    """Refuse to rename a temp path that is no longer the file we wrote (P52).
+
+    This narrows, but cannot close, the ``lstat → rename`` window: Python exposes no
+    ``renameat2``-style handle-relative rename, so a directory writer can still swap the
+    entry between this probe and ``os.replace``. The failure is loud instead of silent.
+    """
+    current = os.lstat(path)
+    if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+        raise OSError(f"temporary file changed underneath the write: {path}")
 
 
 def save_image_atomic(
@@ -69,9 +92,13 @@ def save_image_atomic(
     the swap: an exception from it aborts the write, cleans the temp file and leaves the
     destination untouched. Its exception is deliberately **not** wrapped as a write error
     — a failed check is not an I/O failure.
+
+    Permissions travel only from a **regular** destination: a symlink is replaced without
+    touching its target's mode, and a hard-link sibling is never chmod'ed (P34).
     """
     destination = Path(path)
     previous_mode: int | None = None
+    previous_nlink = 0
     unprotected = False  # True while the swap has lifted the destination's write protection
     in_verify = False  # True only while the caller's check runs; its OSError is not I/O
     temp: Path | None = None
@@ -79,23 +106,42 @@ def save_image_atomic(
         # P28: creating the parent directory and probing the previous mode are part of the
         # write, so their failures carry the same `failed to write` wrap as everything below.
         destination.parent.mkdir(parents=True, exist_ok=True)
-        previous_mode = destination.stat().st_mode & 0o7777 if destination.exists() else None
-        temp = _create_temp_file(destination.parent)
+        # P34: lstat, not stat/exists. Both follow a symlink, so a read-only *target* used to
+        # lend its mode to this write and then be unlocked by the pre-replace chmod below;
+        # a hard-link sibling shares the inode and was unlocked the same way. Only a regular
+        # destination owns the mode this path is allowed to preserve.
+        try:
+            existing = os.lstat(destination)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None and stat.S_ISREG(existing.st_mode):
+            previous_mode = existing.st_mode & 0o7777
+            previous_nlink = existing.st_nlink
+        temp, descriptor = _create_temp_file(destination.parent)
         save_kwargs: dict[str, object] = {"format": image_format, "optimize": True}
         if quality is not None:
             save_kwargs["quality"] = quality
         if icc_profile is not None:
             save_kwargs["icc_profile"] = icc_profile
-        image.save(temp, **save_kwargs)
-        # Read-write, not read-only: on Windows `os.fsync` reaches FlushFileBuffers, whose
-        # contract requires the handle to carry GENERIC_WRITE — a read-only handle raises
-        # OSError(EBADF) and would fail every save. On POSIX the two are equivalent for
-        # flushing, so this costs nothing and removes the platform split entirely.
-        handle = os.open(temp, os.O_RDWR)
         try:
-            os.fsync(handle)
-        finally:
-            os.close(handle)
+            handle = os.fdopen(descriptor, "w+b")
+        except Exception:
+            os.close(descriptor)
+            raise
+        with handle:
+            image.save(handle, **save_kwargs)
+            handle.flush()
+            identity = os.fstat(handle.fileno())
+            # Read-write, not read-only: on Windows `os.fsync` reaches FlushFileBuffers,
+            # whose contract requires the handle to carry GENERIC_WRITE — a read-only
+            # handle raises OSError(EBADF). The descriptor that wrote the bytes serves the
+            # flush too (P52).
+            os.fsync(handle.fileno())
+        # P52: the name is not the file. A shared directory could swap the temp path for a
+        # symlink between create and here; the reserved fd bounds the *write*, and these
+        # probes bound what is about to be renamed. The check before ``verify`` also stops
+        # the check from reading attacker-chosen bytes.
+        _require_temp_identity(temp, identity)
         if verify is not None:
             # P4/M-A: check the temp bytes before the swap. A raise here (typically a
             # ValueError from the product self-check) skips the replace, and the finally
@@ -105,13 +151,24 @@ def save_image_atomic(
             in_verify = True
             verify(temp)
             in_verify = False
+            # The check may have taken seconds; confirm the name still points at the bytes
+            # it just approved before the rename (P52).
+            _require_temp_identity(temp, identity)
         # Windows refuses to replace a read-only destination (measured on windows-latest:
         # WinError 5 "Access is denied" out of `os.replace`), and a read-only output is
         # precisely the mode this function promises to carry over — so lift the protection for
-        # the swap and re-apply it below. Best-effort: POSIX replaces regardless of the file's
-        # mode, and a destination we have no right to chmod (foreign owner) must still be
-        # allowed to proceed, leaving `os.replace` as the final authority on permissions.
-        if previous_mode is not None and not previous_mode & 0o200:
+        # the swap and re-apply it below. POSIX rename ignores the file mode, so no lift is
+        # needed there; doing it anyway chmod'ed through symlinks and across hard links
+        # (P34). The `nlink == 1` term keeps the same promise on Windows: a chmod there
+        # would change every alias of the file, so a shared read-only target fails loudly
+        # instead. Best-effort: a destination we have no right to chmod (foreign owner) must
+        # still be allowed to proceed, leaving `os.replace` as the final authority.
+        if (
+            os.name == "nt"
+            and previous_mode is not None
+            and not previous_mode & 0o200
+            and previous_nlink == 1
+        ):
             try:
                 os.chmod(destination, previous_mode | 0o200)
                 unprotected = True
