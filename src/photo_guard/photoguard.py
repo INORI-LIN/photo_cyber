@@ -45,6 +45,10 @@ class PGDConfig:
     cancel_check: Callable[[], bool] | None = None
 
     def __post_init__(self) -> None:
+        # P55: steps=0 ran zero iterations and returned the initial noise as a success.
+        # This is the library-level owner; the CLI keeps its earlier, torch-free gate.
+        if not isinstance(self.steps, int) or self.steps < 1:
+            raise ValueError("steps must be a positive integer")
         # Q2/N4: the last gate before torch loads. NaN/inf would propagate through PGD and
         # quantise to 0/255; zero stays legal for programmatic control groups (the CLI
         # rejects <=0 whenever the perturb layer actually runs).

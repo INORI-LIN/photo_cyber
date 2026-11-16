@@ -108,3 +108,14 @@ def test_sd_apply_without_diffusers_gives_clean_error(monkeypatch) -> None:
     p = perturb.get("sd", steps=1)
     with pytest.raises(RuntimeError, match="uv sync --extra photoguard"):
         p.apply(np.zeros((32, 32, 3), dtype=np.uint8))
+
+
+@pytest.mark.parametrize(
+    ("name", "kwargs"),
+    [("noise", {"cancel_check": lambda: False}), ("sd", {"stpes": 1})],
+    ids=["noise-unsupported-hook", "sd-typo"],
+)
+def test_unknown_perturber_kwargs_are_rejected(name: str, kwargs: dict) -> None:
+    """P55: ``**_: Any`` swallowed typos, so a misspelled knob silently did nothing."""
+    with pytest.raises(TypeError):
+        perturb.get(name, **kwargs)

@@ -14,10 +14,13 @@ from photo_guard import config, pipeline
 
 
 def _opts(layers: frozenset[str]) -> pipeline.ProtectOptions:
+    noisy = "perturb" in layers
     return pipeline.ProtectOptions(
         payload="layers-test",
-        perturber="noise",  # cheap non-trivial perturber for a "did it run" check
-        perturber_kwargs={"epsilon": 2.0 / 255.0},
+        # A configured perturber now requires its layer (P55), so the helper follows the
+        # subset instead of using noise everywhere.
+        perturber="noise" if noisy else "noop",
+        perturber_kwargs={"epsilon": 2.0 / 255.0} if noisy else {},
         visible_mode="tile",
         visible_text="© layers",
         long_edge=640,
@@ -168,3 +171,20 @@ def test_max_perturb_pixels_must_be_positive_only_when_the_layer_runs() -> None:
 
 def test_the_default_perturb_pixel_cap_is_four_megapixels() -> None:
     assert config.PHOTOGUARD_MAX_PIXELS == 4_000_000
+
+
+def test_a_configured_perturber_requires_the_perturb_layer() -> None:
+    """P55: a perturber that cannot run is a caller bug, not a silent no-op."""
+    with pytest.raises(ValueError, match="perturb layer"):
+        pipeline.validate_options(
+            pipeline.ProtectOptions(
+                layers=frozenset({pipeline.LAYER_VISIBLE}), perturber="noise"
+            )
+        )
+    with pytest.raises(ValueError, match="perturber instance"):
+        pipeline.validate_options(
+            pipeline.ProtectOptions(
+                layers=frozenset({pipeline.LAYER_INVISIBLE}),
+                perturber_instance=object(),
+            )
+        )

@@ -138,7 +138,10 @@ class ProtectWorker(QObject):
         position = 0
         try:
             if pipeline.LAYER_PERTURB in self.options.layers:
-                self.options.perturber_kwargs["cancel_check"] = lambda: self.cancelled
+                # P55: only the SD attack has cancellable steps. Noise is one vectorised
+                # operation, and its constructor no longer swallows unknown kwargs.
+                if self.options.perturber == "sd":
+                    self.options.perturber_kwargs["cancel_check"] = lambda: self.cancelled
                 self.options.perturber_instance = perturb.get(
                     self.options.perturber, **self.options.perturber_kwargs
                 )

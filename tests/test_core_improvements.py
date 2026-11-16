@@ -126,3 +126,12 @@ def test_enveloped_pipeline_verify_expected(textured_jpg, tmp_path) -> None:
     )
     assert info["payload_envelope"] is True
     assert pipeline.verify_expected(output, payload)["verified"] is True
+
+
+def test_alpha_is_only_validated_when_the_visible_layer_runs() -> None:
+    """P55: alpha is a visible-layer knob; an unused value must not block invisible-only."""
+    pipeline.validate_options(
+        pipeline.ProtectOptions(
+            layers=frozenset({pipeline.LAYER_INVISIBLE}), visible_alpha=2.0
+        )
+    )

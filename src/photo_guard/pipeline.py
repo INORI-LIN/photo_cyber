@@ -299,7 +299,9 @@ def validate_options(opts: ProtectOptions) -> None:
         raise ValueError("long_edge must be zero or positive")
     if not 1 <= opts.quality <= 100:
         raise ValueError("JPEG quality must be between 1 and 100")
-    if not 0.0 <= opts.visible_alpha <= 1.0:
+    # P55: alpha is a visible-layer knob, so an unused value is not an error (same rule as
+    # text/mode below).
+    if LAYER_VISIBLE in opts.layers and not 0.0 <= opts.visible_alpha <= 1.0:
         raise ValueError("visible watermark alpha must be between 0 and 1")
     if LAYER_INVISIBLE in opts.layers and not opts.payload:
         raise ValueError("invisible watermark payload must not be empty")
@@ -330,6 +332,19 @@ def validate_options(opts: ProtectOptions) -> None:
         and opts.perturber == "noop"
     ):
         raise ValueError("perturb layer uses noop; choose noise or sd, or disable the layer")
+    # P55: the reverse direction — a configured perturber that will not run is a caller
+    # bug, not a silent no-op. The CLI auto-adds the layer, so users never hit this; the
+    # library contract is that `layers` is authoritative.
+    if LAYER_PERTURB not in opts.layers:
+        if opts.perturber_instance is not None:
+            raise ValueError(
+                "a perturber instance was supplied but the perturb layer is disabled"
+            )
+        if opts.perturber != "noop":
+            raise ValueError(
+                f"perturber {opts.perturber!r} is configured but the perturb layer is "
+                f"disabled; add it to layers or use noop"
+            )
 
 
 def _is_sd_perturber(opts: ProtectOptions) -> bool:

@@ -111,3 +111,11 @@ def test_attack_validates_before_cancel_check() -> None:
     with pytest.raises(ValueError, match="three-channel"):
         attack.attack(np.zeros((16, 16), dtype=np.uint8))
     assert calls == []
+
+
+@pytest.mark.parametrize("steps", [0, -1])
+def test_pgd_config_rejects_zero_or_negative_steps(steps: int) -> None:
+    """P55: steps=0 ran zero iterations and returned the initial noise as a success."""
+    with pytest.raises(ValueError, match="positive integer"):
+        photoguard.PGDConfig(steps=steps)
+    assert photoguard.PGDConfig(steps=1).steps == 1

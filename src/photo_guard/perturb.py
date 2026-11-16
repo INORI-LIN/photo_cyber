@@ -44,9 +44,7 @@ class GaussianNoisePerturber(Perturber):
 
     name = "noise"
 
-    def __init__(
-        self, *, epsilon: float = config.NOISE_EPSILON, seed: int = 0, **_: Any
-    ) -> None:
+    def __init__(self, *, epsilon: float = config.NOISE_EPSILON, seed: int = 0) -> None:
         # Q2/N4: NaN and ±inf pass a naive `<= 0` check; numpy then turns the whole image
         # into 0/255 and the product still exits 0. Zero stays legal for P5's control group.
         if not math.isfinite(epsilon) or epsilon < 0:
@@ -84,7 +82,6 @@ class SDEncoderPerturber(Perturber):
         device_index: int | None = None,
         progress_callback=None,
         cancel_check=None,
-        **_: Any,
     ) -> None:
         self.epsilon = epsilon
         self.steps = steps
