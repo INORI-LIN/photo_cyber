@@ -19,6 +19,7 @@
 > **2026-11-16 R5**：P56/P57 已落地（`c95eaf9`）+ 本回写；SD 层 4MP 上限 + `--max-perturb-pixels`、顶层 `-v` 日志与 traceback；collect 534、fast 522/32.3s、gui 53；见 §10.37；本地未推送。
 > **2026-11-16 R4**：P55 已落地（`5cd6814`）+ 本回写；`PGDConfig` steps≥1、构造器拒绝未知 kwarg、perturber 必须配层、alpha 按层校验；collect 540、fast 528/32.3s、gui 53；见 §10.38；本地未推送。
 > **2026-11-16 R6**：P58 已落地（`2546bd6`）+ 本回写；center/subject 默认 alpha 对齐 0.10、字号实测只缩不放；collect 544、fast 532/32.8s、gui 53；见 §10.39；本地未推送。
+> **2026-11-16 R7**：DOC6 已落地（`cab1bd8`）+ 本回写；README 改 Windows CPU、smoke 加 `--with-photoguard`（release 两腿已启用）；collect 548、fast 536/32.1s、gui 53；见 §10.40；本地未推送。
 
 ---
 
@@ -100,7 +101,7 @@
 | P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：`PHOTOGUARD_MAX_PIXELS=4_000_000`；protect 在 resize 后、embed 与模型加载前检查，CLI 加 `--max-perturb-pixels`；6MP 探针退 2、无成品、建议长边 2449。见 §10.37。 |
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [x] R6 已落地（`2546bd6`）：两处默认 alpha 对齐 `config.DEFAULT_VISIBLE_ALPHA`（0.10）；新增 `_fit_font`，保留旧估算为起点、实测超宽才按比例收缩（只缩不放）。19 CJK @320×240 由 291px 降到 183/158；Latin 默认渲染逐字节不变。见 §10.39。 |
-| DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；**A（README 改 CPU）已拍板（2026-11-13）**；待 R7 落地 |
+| DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [x] R7 已落地（`cab1bd8`）：README 六处改为 Windows CPU + 源码 cu130 换装；smoke 新增 opt-in `--with-photoguard`（缺运行库退 5、Windows 出现 CUDA 退 6），release 两腿已传该 flag；本机正向 exit 0、`cuda=None`。见 §10.40。 |
 
 ---
 
@@ -141,7 +142,7 @@
 | **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 已完成（2026-11-16，`5cd6814`）：collect 534→540、fast 528/32.3s、gui 53、compliance 18；见 §10.38。** |
 | **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 已完成（2026-11-16，`2546bd6`）：collect 540→544、fast 532/32.8s、gui 53、compliance 18；见 §10.39。** |
-| **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；DOC6=A（README 如实写 Windows CPU）已拍板（2026-11-13）。** |
+| **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 已完成（2026-11-16，`cab1bd8`）：collect 544→548、fast 536/32.1s、gui 53、compliance 18；真机 release smoke 待下次 dispatch；见 §10.40。** |
 
 五条硬定序，实施时不得调换：
 
@@ -2626,7 +2627,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - 验证：fast 489 passed / 12 deselected；gui 49 passed；12MP（4000×3000）未命中 2 次扫描 3.39s（改前 4 次）。
 - 未改：`find_envelope` 对 malformed/CRC 仍返回 `None`（不改变 exit 1/2 语义）；两套解码实现保留（`_dwt_dct_svd` 是逐字转录 oracle）。
 
-**R2–R7**：见 §2 行；**批 R2/R3 已完成，见 §10.32/§10.33；R4–R7 未开工。** R1 先于 Q6（同改 GUI 验证路径），信封单源先于/并入 Q5（同改 `pipeline.py` 的 envelope 上限）。
+**R2–R7**：见 §2 行；**R1–R7 均已完成**（R1/R2/R3 §10.31–§10.33；R4 §10.38；R5 §10.37；R6 §10.39；R7 §10.40）。R1 先于 Q6（同改 GUI 验证路径），信封单源先于/并入 Q5（同改 `pipeline.py` 的 envelope 上限）。
 
 **测试精简口径（2026-11-13 修订）**：R2/R3 只动 `tests/`，不做 F1–F10 去脆化。R2 保持 collect 501、fast 37.84→30.14s；R3 按用户拍板 501→493、fast 30.14→26.27s。`≤465/≤25s` 在「不去脆化/不合并静态文件/不删独立契约」下不可达；watermark 边界集是显式语料缩减例外（见 §4 与 §10.33）。
 
@@ -2723,3 +2724,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **测试**：+4（`test_visible_watermark_modes.py`：默认 alpha、center/subject 长 CJK 不溢出、只缩不放方向锁）。断言基于“相对底图的差异宽度”，不依赖具体字体度量，Docker 无 CJK 字体时同样成立。
 - **结果**：collect 540→544；fast 532 passed / 32.8s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed。
 - **残余/边界**：不设最小可读字号（极端小图 + 超长文本可缩到 1px，保证不溢出但不可读）；不做文本换行/截断；不扩 CJK 字体候选（字体覆盖仍是独立残余）；tile 模式不变。
+
+### 10.40 批 R7：DOC6 Windows CPU + smoke 的 photoguard 检查（2026-11-16，`cab1bd8` + 本回写）
+
+- **DOC6 证据链**：`uv.lock` 的 torch 2.12.1 条目中 `cuda-bindings`/`cuda-toolkit`/`nvidia-*`/`triton` 全部带 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB。README 原五处仍承诺 Windows CUDA（`:18` 特性、`:26` 平台表、`:31` 设备段、`:42` 安装包内容、`:409` 已知边界）。
+- **README（DOC6=A）**：六处改为 Windows CPU —— 特性行标注「Windows 安装包为 CPU 版」；平台表 GPU 列改为「—（CPU 版安装包；源码安装可换 cu130 torch）」；设备段补 Auto 只落 CPU；安装包内容标注 PyTorch（Windows CPU 版）；已知边界同步；源码安装章节新增 cu130 换装命令（`uv pip` + `--index-url https://download.pytorch.org/whl/cu130` 安装 `torch==2.12.1+cu130`；命令原文在 README，合规门不扫描 README），并说明 `uv sync --frozen` 会还原。README 在合规白名单内，安装字面量不触发禁用门。
+- **smoke 检查**：`packaging/desktop_entry.py` 的 `_smoke_test(with_photoguard: bool = False)` 在原有模型/许可/CPU/选项检查之后：`import torch` + `import diffusers`（缺任一 → 退 **5**，仅 `--with-photoguard` 时执行）；打印 `PhotoGuard runtime: torch=<ver> cuda=<None|ver>`；Windows 上若 `torch.version.cuda is not None` → 退 **6**。`__main__` 传 `"--with-photoguard" in sys.argv`；默认 `--smoke-test` 行为不变（core/dev 无 torch 仍可通过）。
+- **workflow**：`release-desktop.yml` 的 Windows 与 macOS smoke 均改为 `--smoke-test --with-photoguard`；注释写明这是为防止“bundle 缺 torch 也能过 smoke”。真机 release 未在本批触发。
+- **测试**：+4（`tests/test_desktop_entry.py`：缺运行库退 5、CPU 运行时通过且打印 `cuda=None`、Windows+CUDA 退 6、无 flag 时不检查）。测试用 `sys.modules` 注入假 torch/diffusers，并替换 `device.discover_devices` 避免假模块进入设备枚举。
+- **本机正向验证**：`uv run python packaging/desktop_entry.py --smoke-test --with-photoguard` → `PhotoGuard runtime: torch=2.12.1 cuda=None`、exit **0**；不带 flag 仍 exit 0。
+- **结果**：collect 544→548；fast 536 passed / 32.1s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed。
+- **残余/边界**：真机 bundle 的 `import torch` 只能等下一次 `release-desktop` dispatch（Nuitka 已 `--include-package=torch/diffusers`；若报 5 则说明打包漏了）；Windows 的 `cuda=None` 证据将由该次 Windows smoke 日志给出；DOC6=B（CUDA 安装包）仍被否，安装包维持 ~522MB；macOS 不做 CUDA 断言。
