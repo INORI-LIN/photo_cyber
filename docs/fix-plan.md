@@ -14,6 +14,7 @@
 > **2026-11-13 全项目分析 R1**：P53/P54 已落地并提交（`0df3d4f`，本地；未推送）；fast 489/12、gui 49；R2–R7 与 Q5–Q7 见 §2/§10.31–§10.34。
 > **2026-11-13 全项目分析 R2/R3**：R2（`f985855`）测试基建 + 小图化；R3（`f4d5252`）去重/参数化；collect 501→493、fast 30.14→26.27s、gui 45；watermark `1..66`→边界集（已拍板例外）；DOC6=A、P56=4MP 已拍板；本地未推送。
 > **2026-11-13 Q5**：P47/P48 已落地（`ba1c607`）+ 本回写；非 8-bit 退 2、CMYK 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告；collect 504、fast 492/27.40s、gui 45；DOC5 见 §10.34；本地未推送。
+> **2026-11-16 Q6**：P49/P50/P51 已落地（`e5a1262`）+ 本回写；Quit 事件有界收尾、验证页盲检上界、预览缩放解码；collect 517、fast 505/31.3s、gui 53；见 §10.35；本地未推送。
 
 ---
 
@@ -82,9 +83,9 @@
 | P46 | GUI 允许 expected 与 legacy 同时填写 | low | S | Q3 | 后者被 `VerifyWorker` 静默忽略；CLI 侧是互斥组。 | [x] Q3 已落地（2026-11-11）：入口拒绝 + Worker 防御 + UI 联动禁用；`auto+legacy` 仍登记残留；见 §10.28 |
 | P47 | 16-bit/float 灰度输入被裁剪成白色 | med-high（静默毁图） | S | Q5 | 支持 PNG/TIFF，但 `_rgb_on_matte` 只处理 alpha，`I;16`/`I`/`F` 走 `convert("RGB")` 时 >255 直接截到 255（实测 1000/30000/65535 全变白）；无测试。见 §10.30。 | [x] Q5 已落地（2026-11-13，`ba1c607`）：`_validate_input` 在 frames 后拒绝 `I`/`F`/`I;16*`；16-bit/float 退 2；8-bit L/1 保留；16-bit RGB TIFF 残余登记；见 §10.34 |
 | P48 | CMYK JPEG 的朴素转换与 CMYK ICC 错配 | med-low（色彩/元数据） | S | Q5 | CMYK 走 Pillow 朴素 `convert("RGB")`，不读 ICC；随后把源 CMYK ICC 原样写进 RGB 成品，profile 色彩空间与像素不一致。见 §10.30。 | [x] Q5 已落地（2026-11-13，`ba1c607`）：`_cmyk_to_srgb`；有 ICC→sRGB+sRGB profile；无 ICC 朴素+丢 profile+protect warning；坏 ICC 退 2；见 §10.34 |
-| P49 | macOS Cmd+Q 绕过 `closeEvent`，运行中线程无人等待 | med-low | S | Q6 | `closeEvent` 只覆盖窗口关闭；`app.quit()`/Cmd+Q 直接退出事件循环，不触发有界关窗；可能 abort 或残留 `.photoguard-*.tmp`。见 §10.30。 | [ ] 未开工（Q6）；读码推断，待实机复现 |
-| P50 | GUI auto-only 无法发现长信封且无盲检上界输入 | low-med | S | Q6 | `VerifyWorker` auto-only 用默认 256 存储字节上界，GUI 没有 `--max-payload-bytes` 等价输入；protect 只显示警告，用户仍无法在 GUI 内自验。见 §10.30。 | [ ] 未开工（Q6） |
-| P51 | 预览在主线程全分辨率解码 | low | S | Q6 | `_update_preview` 用 `QPixmap(path)` 同步解码原图；64 MP 输入可卡顿/OOM，loader 的 64 MP 门不覆盖预览。见 §10.30。 | [ ] 未开工（Q6） |
+| P49 | macOS Cmd+Q 绕过 `closeEvent`，运行中线程无人等待 | med-low | S | Q6 | `closeEvent` 只覆盖窗口关闭；`app.quit()`/Cmd+Q 不触发有界关窗，实测工作线程存活时 `exec` 10s 内不返回（不是"直接退出"）；可能残留 `.photoguard-*.tmp`。见 §10.30/§10.35。 | [x] Q6 已落地（`e5a1262`）：`_QuitGuard` 拦截 `QEvent.Quit`，`prepare_to_quit` 取消并 5s 有界等待，超时消费事件。offscreen 实测先红（exec 10s 不返回、`aboutToQuit` 不触发），修后 0.97s 退出 0 且无 QThread 警告。真机 Cmd+Q 未手测。见 §10.35。 |
+| P50 | GUI auto-only 无法发现长信封且无盲检上界输入 | low-med | S | Q6 | `VerifyWorker` auto-only 用默认 256 存储字节上界，GUI 没有 `--max-payload-bytes` 等价输入；protect 只显示警告，用户仍无法在 GUI 内自验。见 §10.30。 | [x] Q6 已落地（`e5a1262`）：验证页「盲检上界」0=默认 256，透传 `discover_payload`/`_verify_auto_expected`/`verify_expected` 并持久化；549 存储字节在 0/800 下分别未通过/通过。见 §10.35。 |
+| P51 | 预览在主线程全分辨率解码 | low | S | Q6 | `_update_preview` 用 `QPixmap(path)` 同步解码原图；64 MP 输入可卡顿/OOM，loader 的 64 MP 门不覆盖预览。见 §10.30。 | [x] Q6 已落地（`e5a1262`）：`QImageReader.setScaledSize` + `setAutoTransform`，尺寸由 `gui_logic.fit_within` 计算且不放大；3000×2000 预览解码为 400×267。见 §10.35。 |
 | P52 | 原子写 temp 的 TOCTOU | low（共享目录） | S | Q7 | `_create_temp_file` 先 `O_EXCL` 建文件并关闭，`image.save(temp)` 再按路径重开；世界可写目录中 temp 可被换成符号链接。见 §10.30。 | [ ] 未开工（Q7） |
 | DOC3 | CRC 完整性与来源确权措辞混用 | medium（信任边界） | 待裁定 | Q4 | CRC32 可重算且不绑定图片，不能单独证明作者/图片归属；认证方案须另定。见 §10.6。 | [x] Q4 已定稿（2026-11-13）：逐处限定为「完整性/线索，非来源认证」+ README 信任边界段；认证方案未实装（边界声明）；见 §10.29 |
 | DOC4 | 文档对账：头部活进展块 / §1 G1 行尾 / AGENTS §8.3 回填 | low | S | Q4 | 2026-10-10 分析报告三发现：头部块停在 10-09（批 H 仍列「待」、K/L/M1/M2/N 未入）；§1 G1 行尾与 [x] 行矛盾；AGENTS §8.3 三行未回填；并入 §10.11 的 R1–R4。见 §10.19。 | [x] Q4 已完成（2026-11-13）：头部两 bullet、§1 矛盾清零、§3 六个勾选、AGENTS §8.3 四行、R1–R4；见 §10.29 |
@@ -128,7 +129,7 @@
 | **Q3** | P36 + P37 + P44（N6）+ P45（N7）+ P46（N8） | 忙时不清结果/不动按钮/不保存；CSV 危险前缀加 `'`；设备发现离主线程且失败可用；关窗/验证启动保存设置；expected+legacy 互斥；fast/gui/compliance 全绿。**Q3 已完成（2026-11-11）：先红 32 项（17 纯函数 + 10 GUI + 5 lifecycle）；fast 436 passed、collect 496、gui 48 passed / 0 skip、compliance 18；见 §10.28。** |
 | **Q4** | DOC3 + DOC4 + R1–R4 | 头部两 bullet；§1 G1/G2/G5/P36/P37/Q2/批次列；§3 六个已裁定勾选 + 待定表；AGENTS §8.3 四行 + Q1–Q3 新欠；README 信任边界；compliance 18、无代码改动。**Q4 已完成（2026-11-13）：见 §10.29。** |
 | **Q5** | P47 + P48 + DOC5 | 16-bit PNG/TIFF 与 CMYK fixture 先红后绿；非 8-bit 输入的行为（拒绝或缩放）与 README 一致；CMYK 的 ICC/转换策略落定且成品 profile 与像素匹配；DOC5 四处对账（AGENTS §8.1 的 PNG、头部 Q4、G5 A3–A6、README ICC）；fast/gui/compliance 全绿。**Q5 已完成（2026-11-13，`ba1c607` + 本回写）：P47 非 8-bit 退 2；P48 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告、坏 ICC 退 2；collect 504、fast 492/27.40s、gui 45、compliance 18；见 §10.34。** |
-| **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已登记，未排期。** |
+| **Q6** | P49 + P50 + P51 | macOS Cmd+Q/关窗生命周期用例（offscreen 可复现部分先红后绿，真机留证）；预览缩略图不阻塞主线程；GUI auto-only 的盲检上界有入口或有明确警告；gui 0 skip、fast/compliance 全绿。**Q6 已完成（2026-11-16，`e5a1262`）：P49/P50/P51 全部落地；collect 504→517、fast 505 passed/31.3s、gui 53 passed；见 §10.35。** |
 | **Q7** | P34 + P52 | P34 在 POSIX（必要时 Windows）复现并留证：旧目标 mode/字节前后一致；若证实，只对普通目标执行临时解锁与权限继承。P52 保留 temp fd 写入，补并发/符号链接用例；fast/compliance 全绿。**Q7 已登记，未排期。** |
 | **R1** | P53 + P54（读侧评分复用 + 信封头单源 + `embed` 容量闸） | 同图 `_block_scores` ≤2 次（2 载体）；信封 golden 不变；超容量 `embed` 抛 `ValueError`；CLI 退码矩阵不变；fast/gui 全绿。**R1 已完成（2026-11-13，`0df3d4f`）：fast 489 passed / 12 deselected、gui 49 passed；12MP 未命中 2 次扫描实测 3.39s；见 §10.31。** |
 | **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 已完成（2026-11-13，`f985855`）：新增 `tests/support.py` + `tests/_gui_helpers.py`；6 份造图/5 份加载/3 份模型目录/2 套 GUI harness 迁移；input 2400×2160、exif 1600×1200、CLI 640×480、layers `long_edge=640`、tile 540×3000；collect 501 不变，fast 37.84→30.14s，gui 49。见 §10.32。** |
@@ -213,8 +214,8 @@
 |---|---|---|---|
 | 1 | P47：非 8-bit 输入（`I;16`/`I`/`F`）是响亮拒绝，还是按位深缩放到 8-bit？ | P47、`_validate_input`/`_rgb_on_matte`、README 输入契约 | 先拒绝（fail-loud、改动最小）；缩放作为后续增强 |
 | 2 | P48：CMYK 有 ICC 时走 `ImageCms` 转 sRGB、无 ICC 时朴素转换但丢弃源 ICC，还是直接拒 CMYK？ | P48、`pipeline._load_oriented_rgb`、README ICC 段 | 有 ICC 用 `ImageCms`；无 ICC 丢弃 profile 并警告；不拒 CMYK（Pillow 自带转换） |
-| 3 | P49：复现后加 `aboutToQuit` 有界退出，还是接受 Cmd+Q 现状？ | P49、`gui.py`/`gui_main.py`、关窗测试 | 加 `aboutToQuit`（与 `closeEvent` 共用 5s 宽限） |
-| 4 | P50：GUI 增加“盲检上界”输入，还是 auto-only 自动抬到图像容量？ | P50、`gui.py` 验证页、`config.DEFAULT_MAX_PAYLOAD_BYTES` | 加输入并与 CLI 对齐；自动抬容量会把 miss 成本推到秒级 |
+| 3 | P49：复现后加 `aboutToQuit` 有界退出，还是接受 Cmd+Q 现状？ | P49、`gui.py`/`gui_main.py`、关窗测试 | 加 Quit 事件拦截，与 `closeEvent` 共用 5s 宽限。**2026-11-16 已裁定并落地（`e5a1262`）**：实测 `aboutToQuit` 不触发，改为拦截 `QEvent.Quit` |
+| 4 | P50：GUI 增加“盲检上界”输入，还是 auto-only 自动抬到图像容量？ | P50、`gui.py` 验证页、`config.DEFAULT_MAX_PAYLOAD_BYTES` | 加输入并与 CLI 对齐；自动抬容量会把 miss 成本推到秒级。**2026-11-16 已裁定：加输入框，0=默认 256** |
 
 **2026-11-13 全项目分析拍板（R5/R7/R3/Q5）**：
 
@@ -2661,3 +2662,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **DOC5**：`AGENTS.md:168` `save JPEG`→JPEG/PNG；`:183` loader 补非 8-bit/CMYK；`README.md:178/180/403` 拆 RGB 原样 / CMYK 有 ICC 转 sRGB / 无 ICC 丢 profile+警告 / 非 8-bit 退 2 / 16-bit RGB TIFF 残余；fix-plan 头部 `main=6ff72c6`、§1 G5 改为 A1/A2/A4/A7/A8 已验 + A3/A4 部分 + A5/A6 未取证（§6 保持 `[ ]`）、DOC5 `[x]`。
 - **结果**：collect 493→504；fast 492 passed / 27.40s；gui 45/0 skip；compliance 18；`git diff --check` 干净。
 - **残余**：16-bit RGB/RGBA PNG/TIFF 会被 Pillow 报成 `RGB`/`RGBA` 并降位，mode 门抓不到（需读容器头；不在 Q5）；with-ICC 的真实 lcms 转换只由本机手工探针覆盖，CI 用例用 monkeypatch 钉接线；不提交 CMYK ICC fixture（许可/体积）。
+
+### 10.35 批 Q6：P49/P50/P51（2026-11-16，`e5a1262` + 本回写）
+
+- **P49 先红（offscreen 实测）**：工作线程运行中投递 `QEvent::Quit`（macOS Cmd+Q 的同一路径），`app.exec()` **10s 内不返回**，`aboutToQuit` **完全不触发**；改 `QCoreApplication.exit(0)` 会立刻返回但随后报 `QThread: Destroyed while thread is still running`。结论：`aboutToQuit` 方案不可行，必须在 Quit 事件到达时拦截。
+- **P49 实现**：`gui._QuitGuard(QObject)` 作为应用级事件过滤器，命中 `QEvent.Type.Quit` 且 `obj is QApplication.instance()` 时调用 `MainWindow.prepare_to_quit()`；后者 `_save_settings()` → `cancel_task()` → 以 `_CLOSE_GRACE_SECONDS`（5s）为界循环 `processEvents(AllEvents, 50)`，到期仍忙则**消费事件**并显示 `_QUIT_TIMEOUT_MESSAGE`（"任务仍在收尾，已取消退出；完成后可再次退出"）。`_quit_waiting` 挡住 `processEvents` 期间第二个 Quit 的嵌套等待。过滤器在 `MainWindow.__init__` 安装（以窗口为父对象），不依赖 `main()`，测试直接构造窗口也生效。
+- **P49 修后**：同一探针下等待 0.97s 到 worker 结束，`exec()` 返回 0、无 QThread 警告。两个子进程用例：`within`（0.6s 工作、3s 宽限）与 `timeout`（Event 阻塞 worker、0.2s 宽限；断言窗口仍可见、状态栏为超时文案，释放后第二次 Quit 干净退出）。
+- **P50**：验证页新增「盲检上界」`QSpinBox`（0 = 默认 256，`setSpecialValueText`），tooltip 指明可直接填 protect 警告里的 `--max-payload-bytes` 数值；`VerifyWorker` 增 `max_payload_bytes`，透传到 `discover_payload`、`_verify_auto_expected` 与 expected-only 的 `verify_expected`；`gui_logic.SETTINGS_KEYS` 增键并持久化。e2e：400 字符 payload（stored 549）在 800×800 下，默认 0 时「未通过」，设 800 时「通过（自动发现）」。
+- **P51**：`gui_logic.fit_within(source, box)` 等比缩放、不放大、宽高至少 1；`gui._preview_image` 用 `QImageReader.setScaledSize` + `setAutoTransform(True)` 按预览控件尺寸解码，`size()` 无效时退回解码后缩放；`_update_preview` 不再 `QPixmap(path)` 全分辨率加载。3000×2000 源在 400×300 框内解码为 400×267。
+- **结果**：collect 504→517；fast 505 passed / 31.3s（基线 492 / 27.4s，**+3.9s 全部来自新增的 GUI 生命周期/端到端用例**，其中 P49 两个子进程约 2.2s、P50 e2e 约 1.1s）；gui 45→53 passed / 0 skip；compliance 18；四条 fail-loud 锁 31 passed。
+- **口径更正**：`pytest -m 'not slow'` **包含** `gui` marker（Q6 计划里"fast 不受影响"的预估是错的）；fast 与 gui 的时间差只在 `-m gui` 单独运行时才成立。
+- **残余/边界**：真机 Cmd+Q 未手测（offscreen 覆盖同一 Quit 事件路径）；程序化 `QApplication.quit()` 不走事件、不被接管（入口从不调用）；系统注销/关机时若宽限未过会消费 Quit，可能延迟系统终止（与 `closeEvent` 的"不强杀线程"同一立场）；`QSpinBox` 上限 1e6，超出由控件夹取，CLI 仍是权威入口。
