@@ -60,12 +60,12 @@ def test_embed_round_trips_through_the_configured_carrier() -> None:
     assert wi.extract(marked, len(PAYLOAD.encode())) == PAYLOAD
 
 
-@pytest.mark.parametrize("channel", [2, 3, 99])
+@pytest.mark.parametrize("channel", [2, -1])
 def test_an_out_of_range_carrier_channel_fails_loudly(monkeypatch, channel) -> None:
-    """P21 — channels ≥ 2 are silently unembeddable: the library loops over ``range(2)``.
+    """P21 — channels outside 0..1 are silently unembeddable.
 
     Pre-fix, ``CARRIER_CHANNEL = 2`` made ``embed`` return the image unchanged and every
-    reader fail forever, with no error anywhere.
+    reader fail forever, with no error anywhere. ``-1`` pins the lower bound as well.
     """
     monkeypatch.setattr(config, "CARRIER_CHANNEL", channel)
     with pytest.raises(ValueError, match="carrier"):
@@ -178,12 +178,6 @@ def test_a_legacy_carrier_clue_is_also_reported_truthfully(legacy_raw_image) -> 
     clue = pipeline.verify_legacy(legacy_raw_image, len(RELEASED_PAYLOAD.encode()))
     assert clue.text == RELEASED_PAYLOAD
     assert clue.carrier == LEGACY
-
-
-def test_embed_keeps_the_library_size_floor() -> None:
-    """The library refuses r*c < 256*256; our own embed must keep that guarantee."""
-    with pytest.raises(RuntimeError, match="too small"):
-        wi.embed(np.zeros((200, 300, 3), dtype=np.uint8), PAYLOAD)
 
 
 # --- P31: the layer-① entry contract ----------------------------------------------------

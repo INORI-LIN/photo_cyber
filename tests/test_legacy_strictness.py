@@ -132,12 +132,12 @@ def test_the_capacity_boundary_itself_is_not_a_parameter_error() -> None:
         wi.extract_legacy(flat, capacity)
 
 
-@pytest.mark.parametrize("decode", [wi.extract, wi.extract_legacy])
-def test_both_raw_entry_points_reject_an_impossible_length(decode) -> None:
+def test_extract_rejects_an_impossible_length() -> None:
+    """``extract`` shares the capacity guard; ``extract_legacy`` is covered by the spy above."""
     flat = np.full((256, 256, 3), 128, dtype=np.uint8)
     capacity = wi.max_stored_bytes(256, 256)
     with pytest.raises(ValueError, match="capacity"):
-        decode(flat, capacity + 1)
+        wi.extract(flat, capacity + 1)
 
 
 def test_advisory_gate_is_decided_by_blocks_per_bit_at_the_floor(tmp_path) -> None:

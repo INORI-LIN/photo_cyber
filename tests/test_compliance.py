@@ -23,8 +23,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _FORBIDDEN = re.compile(r"pip\s+install")  # 与 CI 一样识别一行内的连续空白
 # .github/ is deliberately NOT excluded (G5): excluding it left a blind spot in the gate,
-# and AGENTS.md §11 now records the whitelist as AGENTS.md + README.md only.
-_EXCLUDE_DIRS = {".venv", ".git", "__pycache__", ".pytest_cache"}
+# and AGENTS.md §11 now records the whitelist as AGENTS.md + README.md only. Build artifacts
+# and the downloaded model are absent from a clean CI checkout, so skipping them keeps this
+# local scan equivalent to CI instead of spending ~0.5 s walking a 638 MB model directory.
+_EXCLUDE_DIRS = {".venv", ".git", "__pycache__", ".pytest_cache", "models", "release", "dist"}
 _EXCLUDE_FILES = {"uv.lock", "AGENTS.md", "README.md"}
 
 

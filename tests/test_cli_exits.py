@@ -14,7 +14,6 @@ output as a clue, which is why the payload only has to appear in stdout there.
 """
 from __future__ import annotations
 
-import base64
 import sys
 from pathlib import Path
 
@@ -459,14 +458,20 @@ def test_verify_expected_with_a_crc_mismatch_stays_exit_two(
 ) -> None:
     """The negative control for P27: an envelope *is* found but its CRC32 fails, so the
     branch must keep exiting 2 (uncertain, not "nothing recovered"). Without this pin a
-    careless fix could sweep every ``ValueError`` into exit 1."""
+    careless fix could sweep every ``ValueError`` into exit 1.
+
+    The CRC construction itself belongs to the watermark layer; here only the CLI mapping
+    is under test, so the exception is injected directly.
+    """
     from photo_guard import watermark_invisible as wi
 
     src = tmp_path / "clean.jpg"
     Image.new("RGB", (800, 600), (200, 220, 240)).save(src, quality=92)
 
-    stored = "PG1:deadbeef:" + base64.urlsafe_b64encode(b"owner:alice").decode("ascii")
-    monkeypatch.setattr(wi, "_reconstruct_bytes", lambda scores, nbytes: stored.encode("ascii"))
+    def _crc_failure(*_args, **_kwargs):
+        raise wi.IntegrityUncertainError("envelope decoded but its CRC32 failed")
+
+    monkeypatch.setattr(wi, "extract_envelope", _crc_failure)
 
     assert main(["verify", str(src), "--expected-payload", "owner:alice"]) == 2
     assert "CRC32 failed" in capsys.readouterr().err

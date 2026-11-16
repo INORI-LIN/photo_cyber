@@ -15,8 +15,9 @@ from photo_guard import pipeline, watermark_invisible
 
 
 def test_max_stored_bytes_matches_block_arithmetic() -> None:
-    # Equivalence pin for the P3 function the write side now consumes (values also pinned by
-    # tests/test_watermark_discovery.py): one byte per 8 blocks, 8x8 blocks.
+    # The single literal table for the P3 function; every call site derives from it.
+    assert watermark_invisible.total_blocks(1200, 1600) == 30000
+    assert watermark_invisible.max_stored_bytes(1200, 1600) == 3750
     assert watermark_invisible.max_stored_bytes(320, 320) == 200
     assert watermark_invisible.max_stored_bytes(1080, 810) == 1704
     assert watermark_invisible.max_stored_bytes(256, 256) == 128

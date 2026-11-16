@@ -55,14 +55,20 @@ def _transcribed_decode(marked: np.ndarray, nbytes: int, carrier: tuple[int, int
     return np.packbits(np.asarray(bits, dtype=np.uint8)).tobytes()[:nbytes]
 
 
+# Boundary lengths, not every length: byte packing, the 13-byte header, the first envelope
+# rung, and the tail. These are the points that catch a mapping slip; the full 1..66 sweep
+# is an out-of-CI probe and would cost 132 block scans on every fast run.
+BOUNDARY_LENGTHS = (1, 2, 3, 7, 8, 9, 13, 16, 17, 33, 64, 65, 66)
+
+
 @pytest.mark.parametrize("carrier", CARRIERS)
-def test_reconstruction_is_byte_exact_for_every_length(
+def test_reconstruction_is_byte_exact_at_boundary_lengths(
     probe_bgr: np.ndarray, carrier: tuple[int, int]
 ) -> None:
-    """n = 1..66: the block scan and the transcription's decoder must agree byte for byte."""
+    """Boundary n: the block scan and the transcription's decoder must agree byte for byte."""
     channel, scale = carrier
     mismatches = []
-    for nbytes in range(1, 67):
+    for nbytes in BOUNDARY_LENGTHS:
         payload = bytes(((i * 37 + 16) % 256) for i in range(nbytes))
         marked = _embed(probe_bgr, payload, carrier=carrier)
         transcribed = _transcribed_decode(marked, nbytes, carrier)
@@ -76,14 +82,6 @@ def test_reconstruction_is_byte_exact_for_every_length(
     assert not mismatches, (
         f"reconstruction diverged from the transcription on carrier {carrier}: {mismatches}"
     )
-
-
-def test_block_geometry_and_capacity() -> None:
-    assert wi.total_blocks(1200, 1600) == 30000
-    assert wi.max_stored_bytes(1200, 1600) == 3750
-    # The pipeline's default long edge, and the smallest image the upstream floor accepts.
-    assert wi.max_stored_bytes(1080, 810) == 1704
-    assert wi.max_stored_bytes(256, 256) == 128
 
 
 def test_envelope_lengths_are_the_13_plus_4k_ladder() -> None:

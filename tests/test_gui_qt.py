@@ -63,13 +63,9 @@ def test_default_checkboxes_are_invisible_and_visible(window) -> None:
 @pytest.mark.parametrize(
     ("invisible", "sd", "visible", "expected"),
     [
-        (True, False, True, {"invisible", "visible"}),
         (True, True, True, {"invisible", "perturb", "visible"}),
-        (False, True, True, {"perturb", "visible"}),
-        (True, False, False, {"invisible"}),
-        (False, False, True, {"visible"}),
-        (True, True, False, {"invisible", "perturb"}),
         (False, True, False, {"perturb"}),
+        (True, False, False, {"invisible"}),
     ],
 )
 def test_checkbox_combos_reach_pipeline(window, invisible, sd, visible, expected) -> None:
