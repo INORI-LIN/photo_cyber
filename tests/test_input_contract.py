@@ -223,3 +223,57 @@ def test_verify_side_shares_the_input_contract(tmp_path, capsys) -> None:
     _png_header_only(over, 8001, 8001)
     assert main(["verify", str(over), "--payload-bytes", "7"]) == 2
     assert "pixels" in capsys.readouterr().err
+
+
+def _non_8bit_image(mode: str, size: tuple[int, int] = (64, 48)) -> Image.Image:
+    """A tiny 16-bit/32-bit-int/float grayscale image in the requested Pillow mode."""
+    width, height = size
+    if mode == "F":
+        arr = np.linspace(0.0, 1.0, width * height, dtype=np.float32)
+    elif mode == "I":
+        arr = np.linspace(1000, 60000, width * height, dtype=np.int32)
+    else:  # I;16
+        arr = np.linspace(1000, 60000, width * height, dtype=np.uint16)
+    return Image.fromarray(arr.reshape(height, width))
+
+
+@pytest.mark.parametrize(
+    ("fmt", "mode", "suffix"),
+    [
+        ("PNG", "I;16", ".png"),
+        ("TIFF", "I;16", ".tiff"),
+        ("TIFF", "I", ".tiff"),
+        ("TIFF", "F", ".tiff"),
+    ],
+)
+def test_non_8bit_inputs_are_refused(tmp_path, capsys, fmt, mode, suffix) -> None:
+    """P47: 16-bit/float used to be clipped to white by ``convert("RGB")`` and exit 0."""
+    src = tmp_path / f"non8{suffix}"
+    out = tmp_path / "out.jpg"
+    _non_8bit_image(mode).save(src, format=fmt)
+
+    with pytest.raises(ValueError, match="8-bit") as excinfo:
+        _protect(src, out)
+    assert mode in str(excinfo.value)
+    assert not out.exists()
+
+    assert main(["protect", str(src), "-o", str(out), "--layers", "visible"]) == 2
+    err = capsys.readouterr().err
+    assert "8-bit" in err and mode in err
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("mode", ["L", "1"])
+def test_8bit_and_1bit_inputs_still_work(tmp_path, mode) -> None:
+    """The bit-depth gate must not reject the 8-bit grayscale / bilevel modes we support."""
+    src = tmp_path / f"{mode}.png"
+    out = tmp_path / "out.jpg"
+    if mode == "L":
+        pixels = np.random.default_rng(3).integers(0, 256, (320, 320), dtype=np.uint8)
+        Image.fromarray(pixels, "L").save(src)
+    else:
+        Image.new("1", (320, 320), 1).save(src)
+
+    _protect(src, out)
+
+    assert out.exists()

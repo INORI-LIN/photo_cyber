@@ -2,6 +2,7 @@
 invisible → perturb → visible → save (container chosen by the output extension)."""
 from __future__ import annotations
 
+import io
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,10 +67,12 @@ _HEIC_SUFFIXES = (".heic", ".heif", ".avif")
 
 
 def _validate_input(image: Image.Image, path: Path) -> None:
-    """Refuse contract-breaking inputs — every check runs before ``.load()`` (G4).
+    """Refuse contract-breaking inputs — every check runs before ``.load()`` (G4/P47).
 
-    Order inside the loader: format → pixel ceiling → frame count. The ceiling uses the
-    pre-draft ``image.size``, so a JPEG cannot be silently downsampled past the check.
+    Order inside the loader: format → pixel ceiling → frame count → bit depth. The ceiling
+    uses the pre-draft ``image.size``, so a JPEG cannot be silently downsampled past the
+    check. The bit-depth gate sits last so the historic format/pixels/frames precedence is
+    unchanged; 16-bit/float used to be clipped to white by ``convert("RGB")`` and still exit 0.
     """
     if image.format not in config.SUPPORTED_INPUT_FORMATS:
         raise ValueError(
@@ -87,6 +90,11 @@ def _validate_input(image: Image.Image, path: Path) -> None:
         raise ValueError(
             f"input has {frames} frames; only single-frame images are supported: {path}"
         )
+    if image.mode in {"I", "F"} or image.mode.startswith("I;16"):
+        raise ValueError(
+            f"unsupported input mode {image.mode!r}: only 8-bit images are supported "
+            f"(16-bit/float must be converted first): {path}"
+        )
 
 
 def _rgb_on_matte(image: Image.Image) -> Image.Image:
@@ -102,16 +110,60 @@ def _rgb_on_matte(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
+def _cmyk_to_srgb(
+    image: Image.Image,
+    icc: bytes | None,
+    path: Path,
+    notes: list[str] | None,
+) -> tuple[Image.Image, bytes | None]:
+    """P48: CMYK pixels and their ICC profile must describe the same color space.
+
+    A naive ``convert("RGB")`` plus the source CMYK profile produced an RGB JPEG carrying a
+    CMYK profile. With an ICC profile the transform is delegated to littlecms and the
+    product gets an sRGB profile; without one the conversion is necessarily naive, so the
+    profile is dropped and ``protect`` gets an actionable note.
+    """
+    if not icc:
+        if notes is not None:
+            notes.append(
+                "CMYK input has no ICC profile; converted naively to RGB and dropped the "
+                "profile (colors may shift)"
+            )
+        return image.convert("RGB"), None
+    try:
+        from PIL import ImageCms
+    except ImportError as exc:
+        raise ValueError(
+            f"CMYK ICC conversion requires Pillow littlecms support: {path}"
+        ) from exc
+    try:
+        source = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+        target = ImageCms.createProfile("sRGB")
+        converted = ImageCms.profileToProfile(image, source, target, outputMode="RGB")
+        return converted, ImageCms.ImageCmsProfile(target).tobytes()
+    except (OSError, ValueError, ImageCms.PyCMSError) as exc:
+        raise ValueError(f"CMYK ICC profile is unreadable ({exc}): {path}") from exc
+
+
 def _load_oriented_rgb(
-    path: Path, *, draft_long_edge: int | None = None
+    path: Path,
+    *,
+    draft_long_edge: int | None = None,
+    notes: list[str] | None = None,
 ) -> tuple[Image.Image, bytes | None]:
     """The single image loader: decode, contract guards, orientation, EXIF strip, ICC.
 
-    Body order is load-bearing (P8/G4 binding, do not reorder):
+    Body order is load-bearing (P8/G4/P47/P48 binding, do not reorder):
     ``Image.open`` → :func:`_validate_input` → fresh EXIF re-parse → JPEG ``draft`` →
-    ``.load()`` → ICC → orient+matte. The guards must run before ``.load()`` so the full
-    pixel budget is never spent on a refused input; ``draft`` must sit after the guards
-    (its size comes from the pre-draft dimensions) and before ``.load()``.
+    ``.load()`` → ICC → orient → CMYK transform or alpha matte. The guards must run before
+    ``.load()`` so the full pixel budget is never spent on a refused input; ``draft`` must
+    sit after the guards (its size comes from the pre-draft dimensions) and before
+    ``.load()``.
+
+    ``notes`` is an optional sink for non-fatal product notes (today: CMYK without an ICC
+    profile). The return stays ``(image, icc)`` so every read path keeps its existing
+    unpacking; ``icc`` means "the profile that matches the returned RGB pixels", not
+    necessarily the source bytes (CMYK with ICC becomes sRGB).
 
     The EXIF re-parse is deliberate: while opening a JPEG, Pillow swallows a corrupt
     EXIF ``SyntaxError`` and caches an empty Exif, so ``image.getexif()`` can no longer
@@ -144,7 +196,11 @@ def _load_oriented_rgb(
             opened.draft("RGB", (draft_long_edge, draft_long_edge))
         opened.load()
         icc = opened.info.get("icc_profile")
-        rgb = _rgb_on_matte(ImageOps.exif_transpose(opened))
+        oriented = ImageOps.exif_transpose(opened)
+        if oriented.mode == "CMYK":
+            rgb, icc = _cmyk_to_srgb(oriented, icc, path, notes)
+        else:
+            rgb = _rgb_on_matte(oriented)
     # convert()/transpose() copy ``info``; strip the metadata the product must not carry
     # (GPS/XMP) instead of relying on the later numpy round trip to drop it by accident.
     for key in ("exif", "xmp"):
@@ -275,12 +331,14 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     if output_path.is_dir():
         raise ValueError(f"output path is a directory: {output_path}")
     output_format = save_format(output_path)
-    src, icc = _load_oriented_rgb(input_path, draft_long_edge=opts.long_edge)
+    warnings_list: list[str] = []
+    src, icc = _load_oriented_rgb(
+        input_path, draft_long_edge=opts.long_edge, notes=warnings_list
+    )
     src = compress.fit_long_edge(src, opts.long_edge)
     bgr = _pil_rgb_to_bgr(src)
 
     stored_payload = opts.payload
-    payload_warnings: list[str] = []
     if LAYER_INVISIBLE in opts.layers:
         if opts.payload_envelope:
             stored_payload = watermark_invisible.pack_payload(opts.payload)
@@ -293,7 +351,7 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
             raw_ceiling = watermark_invisible.raw_payload_ceiling(
                 config.DEFAULT_MAX_PAYLOAD_BYTES
             )
-            payload_warnings.append(
+            warnings_list.append(
                 f"envelope payload is {stored_size} stored bytes; the default blind search "
                 f"stops at {config.DEFAULT_MAX_PAYLOAD_BYTES}. Verify with "
                 f"--max-payload-bytes {stored_size} "
@@ -343,9 +401,9 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         "payload_bytes": len(stored_payload.encode("utf-8")) if LAYER_INVISIBLE in opts.layers else 0,
         "payload_envelope": bool(opts.payload_envelope and LAYER_INVISIBLE in opts.layers),
         "layers": sorted(opts.layers),
-        # Q1/N2: non-fatal product notes (today: envelope over the default blind ceiling).
-        # The CLI prints them to stderr and the GUI appends them to the item detail.
-        "warnings": payload_warnings,
+        # Q1/N2: non-fatal product notes (envelope over the blind ceiling, CMYK without
+        # an ICC profile). The CLI prints them to stderr; the GUI appends them to the item.
+        "warnings": warnings_list,
     }
 
 
