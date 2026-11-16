@@ -171,9 +171,12 @@ uv run photo-guard devices
 | `--perturber-step-size` | `2/255` | PGD 单步大小 |
 | `--perturber-steps` | `10` | PGD 迭代次数 |
 | `--perturber-model` | 本地模型目录 | 不接受运行时远程加载 |
+| `--max-perturb-pixels` | `4000000` | SD 层的每图像素上限；超限退 2、不落成品（默认长边 1080 约 0.87 MP，不受影响） |
 | `--max-payload-bytes` | `256` | 盲检信封搜索上界（**存储字节**；原始载荷约 ≤ 180 B） |
 
 `--layers` 仍决定基础层集合；为了避免“选择了扰动器但实际未执行”的误用，`--perturber noise` 和 `--perturber sd` 会自动将 `perturb` 加入最终层集合。
+
+所有子命令支持顶层 `-v`（写在子命令之前，如 `photo-guard -v protect ...`）：把 DEBUG 日志与异常 traceback 打到 stderr；不加时默认完全静默（成功路径 stderr 为空，失败仍是单行 `failed:`）。
 
 **输入契约**（唯一 loader，`protect` 与 `verify` 共用）：支持 `JPEG / PNG / WEBP / BMP / TIFF`，其他格式（含 HEIC/HEIF/AVIF 与 GIF）退 2 并提示先转 JPEG/PNG；像素上限 `64 000 000`（8000×8000），超限在解码前拒绝；只接受单帧图像，多帧输入退 2；按 EXIF Orientation 转置到显示方向后剥除全部 EXIF（含 GPS）；RGB/灰度输入的源 ICC 配置文件**原样写入成品、不做色彩空间转换**；CMYK 输入有 ICC 时经 ImageCms 转 sRGB 并写入 sRGB profile，无 ICC 时朴素转 RGB、丢弃源 profile 并在 `protect` 警告；16-bit/float（`I;16`/`I`/`F`）输入退 2；透明像素先叠白（`#FFFFFF`）再处理，`alpha=0` 下的隐藏 RGB 不会进入成品。损坏到无法解析的 EXIF 退 2（缺失 EXIF 不受影响）。
 
@@ -402,6 +405,7 @@ uv run python packaging/build_desktop.py
 - Haar 人脸检测对侧脸、遮挡和多人场景能力有限；
 - 输入契约（见上文）之外的边界：HEIC/HEIF/AVIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）；RGB/灰度输入的 ICC 原样保留、不做色彩管理；CMYK 是有管理的例外（有 ICC 转 sRGB 并写 sRGB profile，无 ICC 朴素转+丢 profile+警告）；16-bit/float 输入拒绝；16-bit RGB TIFF 仍可能被 Pillow 降位（已知残余）；
 - **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零）；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
+- **SD 层有 4 MP 的每图像素上限**（`PHOTOGUARD_MAX_PIXELS`）：VAE 编码器的全分辨率激活内存随像素线性增长（4 MP fp16 约 0.95 GiB，12 MP 约 2.86 GiB）；`--long-edge 0` 或长边 >约 2000 的图配 `--perturber sd` 会退 2 并给出建议长边，确有大内存时可 `--max-perturb-pixels` 显式放开；
 - 当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
 - 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。首轮实测（2026-10-09，`138022c`，本机 noise 档）：36 格中 **30 格通过**，其中指定格 textured_detail 的 identity 与 jpeg_q85 均 100%（37 B 信封 / 296 bit）；`downscale_720` 与 `combo_repost` 全数失败——与「缩小后无法验真」的已知边界一致。
 

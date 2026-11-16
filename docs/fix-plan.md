@@ -16,6 +16,7 @@
 > **2026-11-13 Q5**：P47/P48 已落地（`ba1c607`）+ 本回写；非 8-bit 退 2、CMYK 有 ICC→sRGB+sRGB profile、无 ICC 朴素+丢 profile+警告；collect 504、fast 492/27.40s、gui 45；DOC5 见 §10.34；本地未推送。
 > **2026-11-16 Q6**：P49/P50/P51 已落地（`e5a1262`）+ 本回写；Quit 事件有界收尾、验证页盲检上界、预览缩放解码；collect 517、fast 505/31.3s、gui 53；见 §10.35；本地未推送。
 > **2026-11-16 Q7**：P34/P52 已落地（`fb371eb`）+ 本回写；符号链接目标与硬链接别名不再被 chmod、temp 用保留 fd 写入并核对 dev/ino；collect 523、fast 511/31.5s、gui 53；见 §10.36；本地未推送。
+> **2026-11-16 R5**：P56/P57 已落地（`c95eaf9`）+ 本回写；SD 层 4MP 上限 + `--max-perturb-pixels`、顶层 `-v` 日志与 traceback；collect 534、fast 522/32.3s、gui 53；见 §10.37；本地未推送。
 
 ---
 
@@ -94,8 +95,8 @@
 | P53 | 读侧重复评分：GUI auto+expected 6 次、CLI expected-miss 4 次载体扫描 | med（性能/维护） | S（已落地） | R1 | 同一图同一载体的 `_block_scores` 被每条读路径重算；12MP 每载体约 1.5–3s，GUI 未命中最坏约 9–18s。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_ImageReader` 按载体缓存 + `_verify_auto_expected`；2 次扫描，12MP 实测 3.39s |
 | P54 | `embed()` 无容量闸，超容量静默截断 | med-high（静默毁图） | S（已落地） | R1 | 库入口只有 256² 地板；超容量时转录循环复用比特，返回正常图像但永不可读；pipeline 的闸只保护其调用方。见 §10.31。 | [x] R1 已落地（2026-11-13，`0df3d4f`）：`_require_capacity` 接入 `embed` |
 | P55 | 校验无单一 owner：steps≤0 / 未知 kwarg / perturber-layers 不一致 | med | S | R4 | CLI 拦 steps；`PGDConfig` 零循环返回噪声；`**_: Any` 吞拼错参数；layers 不含 perturb 时静默不跑。见 §10.31。 | [ ] 已登记 R4 |
-| P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [ ] 已登记 R5；**4MP + `--max-perturb-pixels` 已拍板（2026-11-13）**；见 §10.33 |
-| P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [ ] 已登记 R5 |
+| P56 | PGD 无输入像素上限，64MP + `--long-edge 0` 可能 OOM | med-high | S | R5 | `_to_tensor` 整图送 VAE；无 slicing/tiling；64 MP 输入上限与 sd 组合未设防。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：`PHOTOGUARD_MAX_PIXELS=4_000_000`；protect 在 resize 后、embed 与模型加载前检查，CLI 加 `--max-perturb-pixels`；6MP 探针退 2、无成品、建议长边 2449。见 §10.37。 |
+| P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [ ] 已登记 R6 |
 | DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [ ] 已登记 R7；**A（README 改 CPU）已拍板（2026-11-13）**；待 R7 落地 |
 
@@ -136,7 +137,7 @@
 | **R2** | 测试基建 + 小图化（共享 fixture、6 份造图/5 份加载/3 份模型目录 helper、两套 GUI harness） | collect 数不变、断言语义零变化、fast ≤27s、gui 0 skip。**R2 已完成（2026-11-13，`f985855`）：新增 `tests/support.py` + `tests/_gui_helpers.py`；6 份造图/5 份加载/3 份模型目录/2 套 GUI harness 迁移；input 2400×2160、exif 1600×1200、CLI 640×480、layers `long_edge=640`、tile 540×3000；collect 501 不变，fast 37.84→30.14s，gui 49。见 §10.32。** |
 | **R3** | 测试去重/参数化（D1/D5/D6/D7/D8/D11；容量数字改推导；watermark 长度抽样） | 每种 exit-code 映射仍至少 1 例、四条 fail-loud 锁全绿、fast ≤27s、collect ≤493。**R3 已完成（2026-11-13，`f4d5252`）：D1/D2/D3/D4/E1/E2；watermark `1..66`→13 个边界长度×2 载体（用户拍板语料缩减，非等价）；collect 501→493、fast 30.14→26.27s、gui 49→45；见 §10.33。** |
 | **R4** | P55（`PGDConfig` steps≥1；去掉 `**_: Any`；perturber-layers 一致性；`visible_alpha` 按层校验） | 四条先红后绿；CLI/core-only/slow 三档回归；CLI 二次门保留。**R4 未开工。** |
-| **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 未开工；P56 取 4MP + `--max-perturb-pixels` 覆盖（2026-11-13 拍板）。** |
+| **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 未开工。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 未开工；DOC6=A（README 如实写 Windows CPU）已拍板（2026-11-13）。** |
 
@@ -2686,3 +2687,15 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **测试**：`test_output_integrity.py` 新增 6 例（符号链接目标、硬链接 sibling、断链、temp 换链、同目录 8 线程不同目标、POSIX 同目标 6 线程）；`test_atomic_write_wraps_stat_failure` 的 patch 目标由 `Path.stat/exists` 改为 `os.lstat`（断言语义不变）。
 - **结果**：collect 517→523；fast 511 passed / 31.5s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 31 passed；`test_output_integrity.py` 56 passed。
 - **残余/边界**：Windows 只读目标若存在硬链接别名（`nlink>1`）不会解锁，`os.replace` 报 WinError 5 → 退 2（已拍板，README 记一句）；Windows 符号链接/权限语义未有真机取证；目录本身被并发替换不在承诺内。
+
+### 10.37 批 R5：P56 SD 像素上限 + P57 logging（2026-11-16，`c95eaf9` + 本回写）
+
+- **P56 根因与影响面**：`photoguard._to_tensor` 把整图送 VAE，编码器首层保留全分辨率激活（128 通道），内存随像素线性增长：4 MP fp16 约 0.95 GiB、12 MP 约 2.86 GiB、24 MP 约 5.72 GiB（仅该层）。`--long-edge 0` 配 `--perturber sd` 在 24/64 MP 上会先付解码与隐水印嵌入，再在模型里 OOM。核实 bench 最大 1080 长边（≤1.17 MP）、slow 64×64、docker SD 冒烟 384×288、desktop smoke 无图，**4 MP 默认不影响任何现有链路**。
+- **P56 实现**：`config.PHOTOGUARD_MAX_PIXELS = 4_000_000`；`ProtectOptions.max_perturb_pixels`（None=默认）；`validate_options` 仅在 perturb 层启用时要求其 > 0；`protect` 在 `fit_long_edge` 之后、隐水印嵌入与 `perturb.get` 之前调用 `_require_perturb_budget`。判定只看 SD（注入实例用 `name == "sd"`，否则看工厂键），noise/noop 不受限。错误文案给出像素数、上限、建议长边（`sqrt(limit·长边/短边)`）与两个杠杆；不落成品。
+- **P56 实测**：3000×2000（6 MP）+ `--long-edge 0 --layers perturb --perturber sd` → exit 2、无成品：
+  `protect failed: image is 3000x2000 (6000000 pixels); … limited to 4000000 pixels … Reduce --long-edge (GUI: 输出长边) to <= 2449, … or raise --max-perturb-pixels.`
+- **P57 实现**：`photo_guard/__init__.py` 加包级 `NullHandler`；`pipeline`/`photoguard` 各加模块 logger（protect 起止、resize 尺寸、设备/dtype、模型加载、PGD 参数；**不记录 payload 内容**）；CLI 顶层 `-v/--verbose`，`_configure_logging` 每次调用先移除带标记的旧 handler 再按当前 `sys.stderr` 新建（避免测试捕获流失效），verbose 时包 logger 设 DEBUG/`propagate=False`，否则 WARNING/`propagate=True`；两个 except 分支在 verbose 时先 `traceback.print_exc()`。
+- **P57 实测**：默认 `protect` 成功路径 stderr **0 字节**；`-v` 下 stderr 为 `INFO photo_guard.pipeline: protect: …` / `DEBUG … resized …` / `INFO … wrote …`，stdout 的 `protected: …` 逐字未变。
+- **测试**：+11（`test_pipeline_layers.py` 5：常量、超限、边界、noise 不受限、正数校验按层生效；`test_cli_exits.py` 6：CLI 超限/非正、`-v` traceback、默认单行、`-v` 日志、默认 stderr 空）。前 9 条在现码上先红。
+- **结果**：collect 523→534；fast 522 passed / 32.3s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 36 passed；`test_output_integrity` 等受影响文件 138 passed。
+- **残余/边界**：检查只在 `pipeline`（`build_attack` 是内部 API，直接调用不受保护）；GUI 不暴露该旋钮（用「输出长边」或按错误文案降尺寸）；`-v` 只接受顶层（`protect -v` 仍报 unrecognized）；Windows 无控制台，GUI 日志仍不可见（另属 DOC/发布面）。
