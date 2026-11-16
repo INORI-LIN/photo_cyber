@@ -385,6 +385,160 @@ def test_close_after_grace_keeps_window_and_stops_retrying(tmp_path) -> None:
     _run_close_child(tmp_path, mode="timeout", work=1.2, grace=0.15, retry_ms=20)
 
 
+_QUIT_ROUNDS = """
+import os
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings, QTimer
+from PySide6.QtWidgets import QApplication
+
+from photo_guard import config, gui, outputs
+
+work = Path(os.environ["PG_WORK"])
+mode = os.environ["PG_QUIT_MODE"]
+work_seconds = float(os.environ["PG_WORK_SECONDS"])
+gui._CLOSE_GRACE_SECONDS = float(os.environ["PG_QUIT_GRACE"])
+
+# The timeout branch must observe a worker that is genuinely still running, but it must not
+# spend seconds waiting for it: the fake blocks until the check releases it.
+release = threading.Event()
+
+
+def watchdog():
+    # Pre-fix, a Quit event with a live worker never unwinds exec(); fail fast instead of
+    # waiting for the parent's 60 s subprocess timeout.
+    time.sleep(float(os.environ["PG_QUIT_BUDGET"]))
+    print("QUIT_NOT_TERMINATED", flush=True)
+    os._exit(7)
+
+
+threading.Thread(target=watchdog, daemon=True).start()
+
+source = work / "in.jpg"
+Image.fromarray(
+    np.random.default_rng(2).integers(40, 210, (240, 320, 3), dtype=np.uint8), "RGB"
+).save(source, quality=90)
+
+
+def fake_protect(source_path, output_path, options):
+    if mode == "timeout":
+        release.wait(10)
+        return {}
+    time.sleep(work_seconds)
+    return {}
+
+
+gui.pipeline.protect = fake_protect
+
+app = QApplication.instance() or QApplication([])
+app.setQuitOnLastWindowClosed(False)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(work))
+gui.QSettings = lambda *_args, **_kwargs: QSettings(
+    QSettings.Format.IniFormat, QSettings.Scope.UserScope, "PhotoGuard", "PhotoGuardDesktop"
+)
+gui.device.discover_devices = lambda **_kwargs: []
+
+window = gui.MainWindow()
+window._save_settings = lambda: None
+window.payload.setText(config.DEFAULT_PAYLOAD)
+window.visible_text.setText(config.DEFAULT_VISIBLE_TEXT)
+window.suffix.setText(outputs.DEFAULT_SUFFIX)
+window.layer_invisible.setChecked(False)
+window.layer_sd.setChecked(False)
+window.layer_visible.setChecked(True)
+window.long_edge.setValue(320)
+window.output_dir.setText(str(work))
+window.protect_files.add_paths([source])
+window.show()
+window.start_protect()
+
+
+def post_quit():
+    QCoreApplication.postEvent(app, QEvent(QEvent.Type.Quit))
+
+
+def wait_until_released():
+    if window._threads:
+        QTimer.singleShot(50, wait_until_released)
+        return
+    post_quit()
+
+
+def check_timeout_branch():
+    print(
+        "STILL_RUNNING",
+        int(window.isVisible()),
+        window.statusBar().currentMessage(),
+        len(window._threads),
+        flush=True,
+    )
+    assert window.isVisible(), "a consumed Quit must keep the window open"
+    assert window.statusBar().currentMessage() == gui._QUIT_TIMEOUT_MESSAGE, (
+        window.statusBar().currentMessage()
+    )
+    release.set()
+    wait_until_released()
+
+
+started = time.perf_counter()
+QTimer.singleShot(100, post_quit)
+if mode == "timeout":
+    QTimer.singleShot(600, check_timeout_branch)
+
+code = app.exec()
+print(
+    "QUIT_OK",
+    mode,
+    code,
+    round(time.perf_counter() - started, 2),
+    len(window._threads),
+    flush=True,
+)
+"""
+
+
+def _run_quit_child(tmp_path, *, mode: str, work: float, grace: float, budget: float) -> None:
+    env = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "PG_WORK": str(tmp_path),
+        "PG_QUIT_MODE": mode,
+        "PG_WORK_SECONDS": str(work),
+        "PG_QUIT_GRACE": str(grace),
+        "PG_QUIT_BUDGET": str(budget),
+    }
+    result = subprocess.run(
+        [sys.executable, "-c", _QUIT_ROUNDS],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, (
+        f"child exited {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+    assert "QUIT_OK" in result.stdout, result.stdout
+    assert "QUIT_NOT_TERMINATED" not in result.stdout
+    assert "QThread: Destroyed" not in result.stderr, result.stderr
+    if mode == "timeout":
+        assert "STILL_RUNNING 1" in result.stdout, result.stdout
+
+
+def test_quit_event_waits_for_the_worker_and_exits_cleanly(tmp_path) -> None:
+    """P49: Cmd+Q is a Quit event, not ``closeEvent``; it must still be bounded."""
+    _run_quit_child(tmp_path, mode="within", work=0.6, grace=3.0, budget=8.0)
+
+
+def test_quit_event_after_grace_is_consumed_and_a_second_one_exits(tmp_path) -> None:
+    """P49: when the grace expires the app stays alive instead of aborting the thread."""
+    _run_quit_child(tmp_path, mode="timeout", work=0.0, grace=0.2, budget=6.0)
+
+
 def _p35_product(tmp_path, payload: str, *, size: int = 320) -> Path:
     return envelope_product(tmp_path, payload, size=size, prefix="p35")
 

@@ -24,6 +24,7 @@ DEFAULTS = {
     "alpha": config.DEFAULT_VISIBLE_ALPHA,
     "long_edge": config.DEFAULT_LONG_EDGE,
     "quality": config.DEFAULT_JPEG_QUALITY,
+    "max_payload_bytes": 0,
 }
 
 
@@ -62,6 +63,7 @@ def test_load_settings_coerces_saved_values() -> None:
             "alpha": "0.25",
             "long_edge": "640",
             "quality": 70.9,
+            "max_payload_bytes": "800",
         },
         DEFAULTS,
     )
@@ -73,6 +75,7 @@ def test_load_settings_coerces_saved_values() -> None:
         "alpha": 0.25,
         "long_edge": 640,
         "quality": 70,
+        "max_payload_bytes": 800,
     }
 
 
@@ -87,6 +90,7 @@ def test_load_settings_junk_falls_back_per_key() -> None:
             "alpha": "not-a-number",
             "long_edge": None,
             "quality": None,
+            "max_payload_bytes": "nope",
         },
         DEFAULTS,
     )
@@ -218,3 +222,18 @@ def test_verify_argument_conflict_matches_the_cli_mutual_exclusion(
 ) -> None:
     """Q3/N8: only "both really set" conflicts; empty/zero are the off states."""
     assert gui_logic.verify_argument_conflict(expected, legacy) is conflict
+
+
+@pytest.mark.parametrize(
+    ("source", "box", "expected"),
+    [
+        ((3000, 2000), (400, 300), (400, 267)),
+        ((2000, 3000), (400, 300), (200, 300)),
+        ((500, 500), (400, 300), (300, 300)),
+        ((100, 80), (400, 300), (100, 80)),
+        ((1000, 10), (1, 1), (1, 1)),
+    ],
+)
+def test_fit_within_scales_into_the_box_without_enlarging(source, box, expected) -> None:
+    """P51: the preview target is computed here, not by decoding the full image."""
+    assert gui_logic.fit_within(source, box) == expected

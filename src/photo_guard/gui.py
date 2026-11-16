@@ -9,8 +9,11 @@ from functools import partial
 from pathlib import Path
 from typing import Iterable
 
-from PySide6.QtCore import QObject, QSettings, Qt, QThread, Signal, Slot, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtCore import (
+    QCoreApplication, QEvent, QEventLoop, QObject, QSettings, QSize, Qt, QThread, Signal,
+    Slot, QTimer,
+)
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QImage, QImageReader, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -47,6 +50,30 @@ _IMAGE_FILTER = _image_filter()
 _CLOSE_GRACE_SECONDS = 5.0
 _CLOSE_RETRY_MS = 100
 _CLOSE_TIMEOUT_MESSAGE = "任务仍在收尾，窗口保持打开；完成后可再次关闭"
+_QUIT_TIMEOUT_MESSAGE = "任务仍在收尾，已取消退出；完成后可再次退出"
+
+
+def _preview_image(path: str, box: tuple[int, int]) -> QImage:
+    """Decode ``path`` at (at most) ``box`` instead of full resolution (P51).
+
+    ``QPixmap(path)`` decoded a 64 MP input on the GUI thread just to shrink it. The
+    reader's scaled decode bounds the work by the label size; ``setAutoTransform`` keeps
+    the preview in the same orientation the loader writes, so EXIF-rotated photos do not
+    preview sideways.
+    """
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    size = reader.size()
+    if size.isValid():
+        target = gui_logic.fit_within((size.width(), size.height()), box)
+        reader.setScaledSize(QSize(*target))
+        return reader.read()
+    # Some formats cannot report their size before decoding; fall back to a decode+scale.
+    image = reader.read()
+    if image.isNull():
+        return image
+    target = gui_logic.fit_within((image.width(), image.height()), box)
+    return image.scaled(target[0], target[1], Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
 
 class FileListWidget(QListWidget):
@@ -153,13 +180,15 @@ class VerifyWorker(QObject):
     finished = Signal(bool)
 
     def __init__(self, paths: list[Path], expected: str, legacy_bytes: int | None,
-                 auto_discover: bool = False) -> None:
+                 auto_discover: bool = False, max_payload_bytes: int | None = None) -> None:
         super().__init__()
         # Q3/N8: defense in depth for programmatic callers; the GUI entry rejects first.
         if gui_logic.verify_argument_conflict(expected, legacy_bytes):
             raise ValueError("期望 payload 与旧版字节数只能二选一")
         self.paths, self.expected, self.legacy_bytes = paths, expected, legacy_bytes
         self.auto_discover = auto_discover
+        # P50: the GUI's equivalent of ``--max-payload-bytes``; None keeps the default.
+        self.max_payload_bytes = max_payload_bytes
         self.cancelled = False
 
     @Slot()
@@ -178,14 +207,16 @@ class VerifyWorker(QObject):
                             # serves both reads; the mismatch message still names both
                             # values (the pipeline helper owns that contract).
                             value, discovered = pipeline._verify_auto_expected(
-                                path, self.expected
+                                path, self.expected, max_payload_bytes=self.max_payload_bytes
                             )
                             status = "通过（自动发现）" if discovered else "通过"
                         else:
-                            value = pipeline.discover_payload(path)
+                            value = pipeline.discover_payload(path, self.max_payload_bytes)
                             status = "通过（自动发现）"
                     elif self.expected:
-                        value = pipeline.verify_expected(path, self.expected)["payload"]
+                        value = pipeline.verify_expected(
+                            path, self.expected, max_payload_bytes=self.max_payload_bytes
+                        )["payload"]
                         status = "通过"
                     else:
                         # No checksum on this path: report a clue and label the row as such.
@@ -230,6 +261,29 @@ class DeviceDiscoveryWorker(QObject):
             self.found.emit(items)
 
 
+class _QuitGuard(QObject):
+    """P49: macOS Cmd+Q arrives as ``QEvent.Quit`` and never calls ``closeEvent``.
+
+    Measured on PySide6 6.11 (offscreen): posting that event with a live worker left
+    ``app.exec()`` blocked for >10 s and ``aboutToQuit`` never fired, so the remedy cannot
+    be a quit-time slot. Intercepting the event, waiting bounded for the worker, and then
+    letting the default handler run exits cleanly (0.97 s wait, exit code 0, no QThread
+    warning). When the grace expires the event is consumed, mirroring ``closeEvent``: the
+    window stays open and the thread is never killed.
+    """
+
+    def __init__(self, window: "MainWindow") -> None:
+        super().__init__(window)
+        self._window = window
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.Quit and obj is QApplication.instance():
+            if not self._window.prepare_to_quit():
+                self._window.statusBar().showMessage(_QUIT_TIMEOUT_MESSAGE)
+                return True
+        return False
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -245,6 +299,13 @@ class MainWindow(QMainWindow):
         self.protect_results: list[tuple[str, str, str]] = []
         self.verify_results: list[tuple[str, str, str]] = []
         self._close_deadline: float | None = None
+        self._quit_waiting = False
+        # P49: install here rather than in main() so every host of MainWindow (including
+        # tests that construct it directly) gets the bounded quit path.
+        application = QApplication.instance()
+        if application is not None:
+            self._quit_guard = _QuitGuard(self)
+            application.installEventFilter(self._quit_guard)
         tabs = QTabWidget()
         tabs.addTab(self._build_protect_tab(), "照片保护")
         tabs.addTab(self._build_verify_tab(), "水印验证")
@@ -338,8 +399,18 @@ class MainWindow(QMainWindow):
         self.expected_payload = QLineEdit(); self.expected_payload.setPlaceholderText("新版本推荐：输入期望 payload")
         self.legacy_bytes = QSpinBox(); self.legacy_bytes.setRange(0, 10000); self.legacy_bytes.setSpecialValueText("不使用旧版模式")
         self.verify_auto = QCheckBox("自动发现 payload（推荐：无需填写，按 CRC 信封盲检）")
+        # P50: the GUI's ``--max-payload-bytes``. 0 keeps the default 256 stored bytes,
+        # which is what the blind search has always used; the protect warning names the
+        # exact value to type here for a longer envelope.
+        self.max_payload_bytes = QSpinBox()
+        self.max_payload_bytes.setRange(0, 1_000_000)
+        self.max_payload_bytes.setValue(0)
+        self.max_payload_bytes.setSpecialValueText("默认（256 字节）")
+        self.max_payload_bytes.setToolTip(
+            "盲检上界，按存储字节计；protect 警告里的 --max-payload-bytes 数值可直接填入"
+        )
         form.addRow("期望 payload", self.expected_payload); form.addRow("旧版 payload 字节数", self.legacy_bytes)
-        form.addRow("自动发现", self.verify_auto)
+        form.addRow("自动发现", self.verify_auto); form.addRow("盲检上界", self.max_payload_bytes)
         # Q3/N8: the CLI is mutually exclusive; keep the GUI from silently ignoring one.
         self.expected_payload.textChanged.connect(self._on_expected_changed)
         self.legacy_bytes.valueChanged.connect(self._on_legacy_changed)
@@ -387,9 +458,10 @@ class MainWindow(QMainWindow):
 
     def _update_preview(self, current, _previous) -> None:
         if not current: return
-        pixmap = QPixmap(current.data(Qt.UserRole))
-        if pixmap.isNull(): self.preview.setText("无法预览"); return
-        self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        box = (max(1, self.preview.width()), max(1, self.preview.height()))
+        image = _preview_image(current.data(Qt.UserRole), box)
+        if image.isNull(): self.preview.setText("无法预览"); return
+        self.preview.setPixmap(QPixmap.fromImage(image))
 
     def refresh_devices(self) -> None:
         """Start a background device enumeration (Q3/N6).
@@ -532,7 +604,9 @@ class MainWindow(QMainWindow):
             return self._error("期望 payload 与旧版字节数只能二选一")
         if not auto and not expected and legacy is None:
             return self._error("请勾选自动发现，或输入期望 payload / 旧版字节数")
-        worker = VerifyWorker(paths, expected, legacy, auto)
+        worker = VerifyWorker(
+            paths, expected, legacy, auto, max_payload_bytes=self.max_payload_bytes.value() or None
+        )
         worker.item_done.connect(self._verify_item_done)
         worker.progress.connect(self._on_verify_progress)  # P26: see start_protect
         if not self._start_worker(worker, self._on_verify_finished, "verify"):
@@ -697,6 +771,7 @@ class MainWindow(QMainWindow):
             "output_dir": self.output_dir.text(), "suffix": self.suffix.text(),
             "visible_text": self.visible_text.text(), "mode": self.visible_mode.currentText(),
             "alpha": self.alpha.value(), "long_edge": self.long_edge.value(), "quality": self.quality.value(),
+            "max_payload_bytes": self.max_payload_bytes.value(),
         }.items(): self.settings.setValue(key, value)
         # Q3/N7: make the values visible to a second QSettings instance (and durable) even
         # when the first one is still alive, which is exactly the test/restart case.
@@ -708,6 +783,7 @@ class MainWindow(QMainWindow):
             "visible_text": self.visible_text.text(), "mode": self.visible_mode.currentText(),
             "alpha": self.alpha.value(), "long_edge": self.long_edge.value(),
             "quality": self.quality.value(),
+            "max_payload_bytes": self.max_payload_bytes.value(),
         }
         stored = {key: self.settings.value(key, None) for key in gui_logic.SETTINGS_KEYS}
         values = gui_logic.load_settings(stored, defaults)
@@ -718,6 +794,35 @@ class MainWindow(QMainWindow):
         self.alpha.setValue(float(values["alpha"]))
         self.long_edge.setValue(int(values["long_edge"]))
         self.quality.setValue(int(values["quality"]))
+        self.max_payload_bytes.setValue(int(values["max_payload_bytes"]))
+
+    def prepare_to_quit(self) -> bool:
+        """P49: bounded wait before a Quit event is allowed to end the event loop.
+
+        Returns ``True`` when it is safe to leave. ``False`` means the grace expired while a
+        worker was still finishing; the caller consumes the event so the process does not
+        tear down a live QThread (measured: ``QThread: Destroyed while thread is still
+        running`` and an abort once the thread is gone).
+        """
+        if self._quit_waiting:
+            # processEvents below can deliver another Quit; never nest the wait.
+            return False
+        self._save_settings()
+        if not (self._thread_running() or self._device_discovery_running()):
+            return True
+        self._quit_waiting = True
+        try:
+            if self._thread_running():
+                self.cancel_task()
+            deadline = time.monotonic() + _CLOSE_GRACE_SECONDS
+            while time.monotonic() < deadline:
+                if not (self._thread_running() or self._device_discovery_running()):
+                    return True
+                QCoreApplication.processEvents(QEventLoop.AllEvents, 50)
+                time.sleep(0.01)
+            return not (self._thread_running() or self._device_discovery_running())
+        finally:
+            self._quit_waiting = False
 
     def closeEvent(self, event) -> None:
         # Q3/N7: save even when the close is deferred, so a settings-only session is not lost.

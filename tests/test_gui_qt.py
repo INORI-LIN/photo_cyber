@@ -22,6 +22,7 @@ from PIL import Image
 
 from photo_guard import config, gui, outputs, pipeline, watermark_invisible
 from tests._gui_helpers import ensure_app, envelope_product, pump_until, redirect_settings
+from tests.support import write_textured
 
 pytestmark = pytest.mark.gui
 
@@ -245,7 +246,7 @@ def test_verify_worker_stops_after_current_item_when_cancelled(monkeypatch) -> N
     seen: list[str] = []
     finished: list[bool] = []
 
-    def fake_verify(path, expected):
+    def fake_verify(path, expected, *, max_payload_bytes=None):
         calls.append(path)
         return {"payload": expected}
 
@@ -547,3 +548,106 @@ def test_export_csv_unicode_error_goes_through_the_error_channel(window, monkeyp
     window.export_csv()
 
     assert errors and "导出失败" in errors[0]
+
+
+# --- Q6: GUI equivalents of the CLI's technical knobs --------------------------------
+
+
+def test_verify_worker_passes_the_blind_search_ceiling(monkeypatch, tmp_path) -> None:
+    """P50: the GUI must expose what ``--max-payload-bytes`` exposes on the CLI."""
+    seen: list[int | None] = []
+    monkeypatch.setattr(
+        pipeline,
+        "discover_payload",
+        lambda path, max_bytes=None: seen.append(max_bytes) or "owner:alice",
+    )
+    worker = gui.VerifyWorker(
+        [tmp_path / "a.jpg"], "", None, True, max_payload_bytes=800
+    )
+    rows: list[tuple[str, str, str]] = []
+    worker.item_done.connect(lambda source, status, detail: rows.append((source, status, detail)))
+
+    worker.run()
+
+    assert seen == [800]
+    assert rows == [(str(tmp_path / "a.jpg"), "通过（自动发现）", "owner:alice")]
+
+
+def test_verify_worker_passes_the_ceiling_to_the_combined_read(monkeypatch, tmp_path) -> None:
+    seen: list[tuple[Path, str, int | None]] = []
+
+    def fake(path, expected, *, max_payload_bytes=None):
+        seen.append((path, expected, max_payload_bytes))
+        return expected, True
+
+    monkeypatch.setattr(pipeline, "_verify_auto_expected", fake)
+    worker = gui.VerifyWorker(
+        [tmp_path / "a.jpg"], "owner:alice", None, True, max_payload_bytes=800
+    )
+    rows: list[tuple[str, str, str]] = []
+    worker.item_done.connect(lambda source, status, detail: rows.append((source, status, detail)))
+
+    worker.run()
+
+    assert seen == [(tmp_path / "a.jpg", "owner:alice", 800)]
+    assert rows[0][1] == "通过（自动发现）"
+
+
+def test_auto_discovery_ceiling_zero_keeps_the_default_and_800_finds_a_long_envelope(
+    window, tmp_path
+) -> None:
+    """P50 end to end: 549 stored bytes are invisible at the default 256-byte ceiling."""
+    payload = "A" * 400
+    assert watermark_invisible.packed_size(payload) == 549
+    product = envelope_product(tmp_path, payload, size=800, prefix="p50")
+    window.verify_files.add_paths([product])
+    window.verify_auto.setChecked(True)
+
+    window.start_verify()
+    pump_until(lambda: window.worker is None and not window._threads)
+    assert window.verify_results[0][1] == "未通过", window.verify_results
+
+    window.max_payload_bytes.setValue(800)
+    window.start_verify()
+    pump_until(lambda: window.worker is None and not window._threads)
+    assert window.verify_results[0] == (str(product), "通过（自动发现）", payload)
+
+
+def test_preview_image_decodes_at_the_target_size(tmp_path) -> None:
+    """P51: a 3000x2000 source must not be decoded at full resolution for a 400px label."""
+    source = write_textured(tmp_path / "big.jpg", (3000, 2000), seed=5, low=40, high=210)
+
+    image = gui._preview_image(str(source), (400, 300))
+
+    assert image.width() == 400
+    assert abs(image.height() - 267) <= 1
+
+
+def test_selecting_a_large_file_keeps_the_preview_within_the_label(window, tmp_path) -> None:
+    source = write_textured(tmp_path / "big.jpg", (3000, 2000), seed=6, low=40, high=210)
+
+    window.protect_files.add_paths([source])
+    # ``add_paths`` does not select the first row, so currentItemChanged would not fire.
+    window.protect_files.setCurrentRow(0)
+    _APP.processEvents()
+
+    pixmap = window.preview.pixmap()
+    assert pixmap is not None and not pixmap.isNull()
+    assert pixmap.width() < 3000
+    assert pixmap.width() <= window.preview.width() + 2
+
+
+def test_verify_worker_passes_the_ceiling_to_expected_only_verification(monkeypatch, tmp_path) -> None:
+    seen: list[tuple[Path, str, int | None]] = []
+
+    def fake(path, expected, *, max_payload_bytes=None):
+        seen.append((path, expected, max_payload_bytes))
+        return {"payload": expected, "verified": True}
+
+    monkeypatch.setattr(pipeline, "verify_expected", fake)
+    worker = gui.VerifyWorker(
+        [tmp_path / "a.jpg"], "owner:alice", None, False, max_payload_bytes=512
+    )
+    worker.run()
+
+    assert seen == [(tmp_path / "a.jpg", "owner:alice", 512)]

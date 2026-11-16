@@ -20,10 +20,16 @@ SETTINGS_KEYS = (
     "alpha",
     "long_edge",
     "quality",
+    "max_payload_bytes",
 )
 
 # QSettings hands numerics back as strings from INI/registry stores, so they are coerced.
-_NUMERIC_COERCERS = {"alpha": float, "long_edge": int, "quality": int}
+_NUMERIC_COERCERS = {
+    "alpha": float,
+    "long_edge": int,
+    "quality": int,
+    "max_payload_bytes": int,
+}
 
 
 def validate_output_dir(raw: str) -> str:
@@ -40,6 +46,18 @@ def validate_output_dir(raw: str) -> str:
     if not expanded or not os.path.isabs(expanded):
         raise ValueError(f"output directory must be a non-empty absolute path: {raw!r}")
     return expanded
+
+
+def fit_within(source: tuple[int, int], box: tuple[int, int]) -> tuple[int, int]:
+    """Scale ``source`` into ``box`` keeping the aspect ratio; never enlarge (P51).
+
+    Qt-free so the core tier can pin it. ``round`` is safe against overflowing the box:
+    ``scale`` is already capped by both ratios, so each product is ≤ its box dimension.
+    """
+    width, height = max(1, int(source[0])), max(1, int(source[1]))
+    box_width, box_height = max(1, int(box[0])), max(1, int(box[1]))
+    scale = min(box_width / width, box_height / height, 1.0)
+    return max(1, round(width * scale)), max(1, round(height * scale))
 
 
 def layers_from_checks(invisible: bool, sd: bool, visible: bool) -> frozenset[str]:
