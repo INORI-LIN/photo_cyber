@@ -119,13 +119,30 @@ def test_long_cjk_text_fits_the_subject_region() -> None:
     assert _changed_width(out, base) <= int(region_w * 0.95) + 4
 
 
-def test_fit_font_never_enlarges_the_legacy_estimate() -> None:
-    """Only shrink: the legacy Latin rendering must not change (P58)."""
+def test_fit_font_only_shrinks_and_never_enlarges() -> None:
+    """P58: the legacy estimate is the ceiling; fit narrows it only when it overflows.
+
+    The targets are derived from the measured legacy width on purpose: glyph metrics
+    differ per platform (Linux/Windows fall back to a wider font), so a hard-coded 192
+    would assert "this font happens to fit", not the shrink-only rule.
+    """
     legacy = watermark_visible._load_font(24)
-    latin = watermark_visible._fit_font("© photo-guard", 192, 24)
-    assert watermark_visible._rendered_width(latin, "© photo-guard") == (
-        watermark_visible._rendered_width(legacy, "© photo-guard")
+    latin = "© photo-guard"
+    legacy_width = watermark_visible._rendered_width(legacy, latin)
+
+    # A target as wide as the legacy render must leave the size untouched (no enlargement).
+    assert (
+        watermark_visible._rendered_width(
+            watermark_visible._fit_font(latin, legacy_width, 24), latin
+        )
+        == legacy_width
     )
+
+    # A narrower target must shrink to fit, never grow.
+    target = max(1, legacy_width // 2)
+    assert watermark_visible._rendered_width(
+        watermark_visible._fit_font(latin, target, 24), latin
+    ) <= target
 
     cjk = watermark_visible._fit_font(LONG_CJK, 192, 24)
     assert watermark_visible._rendered_width(cjk, LONG_CJK) <= 192

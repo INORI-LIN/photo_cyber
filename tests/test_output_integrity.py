@@ -575,26 +575,36 @@ def test_atomic_write_replaces_a_dangling_symlink(tmp_path) -> None:
 
 
 def test_atomic_write_rejects_a_temp_swapped_for_a_symlink(tmp_path, monkeypatch) -> None:
-    """P52: writing through a reserved fd must not follow a swapped-in symlink."""
+    """P52: the name under the reserved descriptor is never trusted by itself.
+
+    The swap is emulated by handing the writer a *different* name than the fd it reserved:
+    unlinking the reserved temp while its descriptor is open is refused on Windows, and a
+    harness that fails there would still satisfy a loose ``failed to write`` match. The
+    error text is part of the assertion so the test cannot pass for the wrong reason.
+    """
     destination = tmp_path / "out.jpg"
     destination.write_bytes(b"previous-good-bytes")
     victim = tmp_path / "victim.bin"
     victim.write_bytes(b"victim-bytes")
     verified: list[Path] = []
+    reserved: list[Path] = []
     original_create = outputs._create_temp_file
 
-    def create_then_swap(directory):
-        created = original_create(directory)
-        # Pre-fix the helper returned a bare Path; return that same shape so the red run
-        # fails on the real defect (bytes landing in the victim), not on a harness TypeError.
-        temp = created[0] if isinstance(created, tuple) else created
-        temp.unlink()
-        temp.symlink_to(victim)
-        return created
+    def create_with_a_link_name(directory):
+        temp, descriptor = original_create(directory)
+        reserved.append(temp)
+        decoy = directory / "swapped-name.jpg"
+        try:
+            decoy.symlink_to(victim)
+        except (OSError, NotImplementedError):
+            os.close(descriptor)
+            temp.unlink(missing_ok=True)
+            pytest.skip("symlinks are unavailable on this platform")
+        return decoy, descriptor
 
-    monkeypatch.setattr(outputs, "_create_temp_file", create_then_swap)
+    monkeypatch.setattr(outputs, "_create_temp_file", create_with_a_link_name)
 
-    with pytest.raises(OSError, match="failed to write"):
+    with pytest.raises(OSError, match="temporary file changed underneath the write"):
         outputs.save_image_atomic(
             Image.new("RGB", (8, 8)), destination, verify=lambda path: verified.append(path)
         )
@@ -602,6 +612,10 @@ def test_atomic_write_rejects_a_temp_swapped_for_a_symlink(tmp_path, monkeypatch
     assert verified == []
     assert victim.read_bytes() == b"victim-bytes"
     assert destination.read_bytes() == b"previous-good-bytes"
+    assert not (tmp_path / "swapped-name.jpg").exists()
+    # The reserved temp was never handed back as the output name; the test owns it.
+    for path in reserved:
+        path.unlink(missing_ok=True)
     assert not list(tmp_path.glob(f"{outputs._TEMP_PREFIX}*"))
 
 
