@@ -2719,7 +2719,7 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 
 - **P58 先红（本机实测）**：`apply_center(base, "© test")` 与显式 `alpha=0.10` 的最大像素差为 **32**（默认仍是 0.35，超出 AGENTS 三③ 的 5–15%）；320×240 上 19 个 CJK 字符渲染宽 **291 px**，center 目标 192（0.6w），subject 目标约 173（0.95×主体框）；200×150 与 160×120 同文本分别渲染 **200 / 160 px**。
 - **根因**：`target_w // max(len(text), 1)` 假设每字符 1 em，且 `max(24, ...)` 地板在长文本/小图上压过宽度约束；CJK（或 fallback tofu）实测更宽。
-- **实现**：`apply_center`/`apply_subject` 的 alpha 默认改为 `config.DEFAULT_VISIBLE_ALPHA`。新增 `_rendered_width` 与 `_fit_font(text, target_w, base_size)`：保留旧估算作为起点（Latin 默认渲染逐字节不变），仅当实测 bbox 宽 > 目标时按比例缩小并二次校正；显式 `font_size` 仍由调用方负责（可溢出，`0` 保持旧的“自动”语义）。
+- **实现**：`apply_center`/`apply_subject` 的 alpha 默认改为 `config.DEFAULT_VISIBLE_ALPHA`。新增 `_rendered_width` 与 `_fit_font(text, target_w, base_size)`：保留旧估算作为起点，仅当实测 bbox 宽 > 目标时按比例缩小并二次校正；显式 `font_size` 仍由调用方负责（可溢出，`0` 保持旧的“自动”语义）。**口径更正（2026-11-17，CI 实测）**：旧描述“Latin 默认渲染逐字节不变”只在字体足够窄时成立——macOS 的 `© photo-guard` @24px 为 184px（≤192，不缩），Linux/Windows 的 fallback 字体同一文本为 201px，会被收缩到 184px。行为符合 P58（放不下就缩），但跨平台外观不同；相关测试的目标宽度已改为由实测 legacy 宽度推导，不再写死 192。
 - **修后实测**：320×240 同文本 center 291→**183**、subject 291→**158**；200×150 center 200→**111**；默认调用与显式 0.10 **逐字节相等**。
 - **测试**：+4（`test_visible_watermark_modes.py`：默认 alpha、center/subject 长 CJK 不溢出、只缩不放方向锁）。断言基于“相对底图的差异宽度”，不依赖具体字体度量，Docker 无 CJK 字体时同样成立。
 - **结果**：collect 540→544；fast 532 passed / 32.8s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed。
@@ -2735,3 +2735,12 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **本机正向验证**：`uv run python packaging/desktop_entry.py --smoke-test --with-photoguard` → `PhotoGuard runtime: torch=2.12.1 cuda=None`、exit **0**；不带 flag 仍 exit 0。
 - **结果**：collect 544→548；fast 536 passed / 32.1s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39 passed。
 - **残余/边界**：真机 bundle 的 `import torch` 只能等下一次 `release-desktop` dispatch（Nuitka 已 `--include-package=torch/diffusers`；若报 5 则说明打包漏了）；Windows 的 `cuda=None` 证据将由该次 Windows smoke 日志给出；DOC6=B（CUDA 安装包）仍被否，安装包维持 ~522MB；macOS 不做 CUDA 断言。
+
+### 10.41 推送后 CI 取证与两处测试修正（2026-11-17，`83e576d` + 本回写）
+
+- **首轮结果**：推送 `945a307` 触发 `ci` 44005741694 与 `docker` 44005741764。`docker` **全绿**（17 个实质步骤：镜像构建、非 root、notices、字号探针、noise/SD 冒烟、SD 线索回环、test 镜像、slow preflight、slow 真跑、无 safetensors 拒绝）。`ci` 的 `gui` 与 `macos-15` 绿，`ubuntu-latest`/`ubuntu-26.04`/`windows-latest` 各红 **1 例**（ubuntu 1 failed / 482 passed；windows 1 failed / 480 passed / 4 skipped）。
+- **红 1：`test_fit_font_never_enlarges_the_legacy_estimate`（Linux/Windows）**。断言把目标宽度写死 192，并假设 `© photo-guard` @24px 一定 ≤192。实测 macOS 字体 184px（不缩，故本机绿），Linux/Windows fallback 字体 **201px**，`_fit_font` 收缩到 184px——**产品行为正确**（P58 就是“放不下就缩”），错的是断言把平台字体度量当常量。修法：目标改为由 `_rendered_width(_load_font(24), text)` 推导（等于则必须不缩、减半则必须收缩），用例更名 `test_fit_font_only_shrinks_and_never_enlarges`。
+- **红 2：`test_atomic_write_rejects_a_temp_swapped_for_a_symlink`（Windows）**。用例在保留 fd 未关闭时 `unlink` temp 再建链接；Windows 拒绝删除打开中的文件，`PermissionError` 被 `save_image_atomic` 包成 `failed to write`，恰好满足宽松的 `match="failed to write"`——**用例因错误原因通过**，并留下 `.photoguard-*.tmp`。修法：真实 temp 仍由 fd 持有，另把“指向 victim 的符号链接名”交给写盘方；断言错误文案改为 `temporary file changed underneath the write`；无符号链接能力时关闭 fd 并 skip；未被交回的 temp 由用例清理。
+- **负控**：把 `_require_temp_identity` 替换为空操作后，`destination` 变成指向 victim 的符号链接、`read_bytes()` 为 `victim-bytes`，新断言必红——用例不再空转。
+- **口径更正**：§10.39 原写“Latin 默认渲染逐字节不变”，只在字体足够窄（macOS）时成立；Linux/Windows 的 fallback 字体下默认文本也会被收缩。已在该节补更正，AGENTS §8.3 的“只缩不放”表述不受影响。
+- **修复后回归**：collect 548 不变；fast 536 passed / 32.98s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39。
