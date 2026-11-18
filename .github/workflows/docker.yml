@@ -80,6 +80,20 @@ jobs:
           test "$(docker inspect --format '{{.Config.User}}' photo-guard:ci)" = "app"
           docker inspect --format '{{json .Config.Healthcheck}}' photo-guard:ci | grep -F 'photo-guard'
 
+      - name: Image size and no build cache in the release layer (P69)
+        # P69: the image used to keep uv's multi-GB wheel cache in the dependency layer.
+        # The Dockerfile prints each cache's size right before deleting it (the "before"
+        # half of the comparison); this records the final size and proves the caches are
+        # gone. /root is 0700, so the probe must override the image's non-root user.
+        run: |
+          docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' photo-guard:ci
+          docker run --rm --user 0 --entrypoint /bin/sh photo-guard:ci -c '
+            du -sb /app/.venv /app/models
+            test ! -e /root/.cache/uv
+            test ! -e /root/.cache/huggingface
+            echo "no uv/HF build cache in the image"
+          '
+
       # G8：使用刚构建的实际镜像离线核对 Linux 段；缺行或多行直接阻断冒烟。
       - name: Linux third-party notices must match the image
         run: |

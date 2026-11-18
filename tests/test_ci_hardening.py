@@ -121,3 +121,53 @@ def test_dockerfile_test_stage_switches_to_root_before_sync() -> None:
     test_stage = text.split("FROM runtime AS test", 1)[1].split("FROM runtime AS release", 1)[0]
     assert "USER root" in test_stage
     assert test_stage.index("USER root") < test_stage.index("RUN uv sync")
+
+
+# P69：构建缓存必须与创建它的步骤同层删除，否则它们永久留在发布层里。
+def _dockerfile_runtime_run_blocks() -> list[str]:
+    """RUN blocks of the runtime stage, with backslash continuations joined."""
+    text = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    runtime = text.split("\nFROM runtime AS test", 1)[0]
+    lines = runtime.splitlines()
+    blocks: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index].startswith("RUN "):
+            block = [lines[index]]
+            while block[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+                index += 1
+                block.append(lines[index])
+            blocks.append("\n".join(block))
+        index += 1
+    return blocks
+
+
+def test_dockerfile_removes_build_caches_in_the_creating_layer() -> None:
+    blocks = _dockerfile_runtime_run_blocks()
+    syncs = [block for block in blocks if "uv sync" in block]
+    assert len(syncs) >= 2, "runtime stage should keep its two-stage sync"
+    for block in syncs:
+        # The printed size is the "before" half of the size comparison; the rm must be in
+        # the same RUN so the layer never records the cache at all.
+        assert "du -sb /root/.cache/uv" in block
+        assert "rm -rf /root/.cache/uv" in block
+
+    download = [block for block in blocks if "download-models" in block]
+    assert len(download) == 1
+    block = download[0]
+    # Symlinks into the HF cache would make the following rm break the model, so the guard
+    # must run before the cleanup, not after.
+    assert block.index("find /app/models -type l") < block.index("rm -rf /root/.cache")
+    assert "rm -rf /root/.cache/uv /root/.cache/huggingface" in block
+    assert "test ! -e /root/.cache/uv" in block
+    assert "test ! -e /root/.cache/huggingface" in block
+
+
+# P69：镜像体积必须进日志，且发布镜像里不能留着构建缓存。
+def test_docker_workflow_measures_size_and_rejects_leftover_caches() -> None:
+    code = _executable_lines(_workflow_texts()["docker.yml"])
+    assert "docker image ls" in code and "{{.Size}}" in code
+    # /root is 0700, so the probe must override the non-root user it is asserting elsewhere.
+    assert "--user 0" in code and "--entrypoint /bin/sh" in code
+    assert "test ! -e /root/.cache/uv" in code
+    assert "test ! -e /root/.cache/huggingface" in code

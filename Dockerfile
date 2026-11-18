@@ -71,7 +71,14 @@ WORKDIR /app
 #      layer is small and rebuilds on every code change.
 COPY pyproject.toml uv.lock .python-version README.md /app/
 
-RUN uv sync --frozen --extra photoguard --no-dev --no-install-project
+# P69: uv's wheel cache for this dependency set is multi-GB and would otherwise live in
+# this layer forever. The size is printed before the deletion so the docker job's log
+# carries the "before" half of the image-size comparison.
+RUN uv sync --frozen --extra photoguard --no-dev --no-install-project \
+ && if [ -d /root/.cache/uv ]; then \
+        echo "uv cache before cleanup (dependency layer): $(du -sb /root/.cache/uv | cut -f1) bytes"; \
+    fi \
+ && rm -rf /root/.cache/uv
 
 COPY src /app/src
 
@@ -86,7 +93,11 @@ COPY src /app/src
 COPY LICENSE THIRD_PARTY_NOTICES.md /app/
 COPY licenses/ /app/licenses/
 
-RUN uv sync --frozen --extra photoguard --no-dev
+RUN uv sync --frozen --extra photoguard --no-dev \
+ && if [ -d /root/.cache/uv ]; then \
+        echo "uv cache before cleanup (project layer): $(du -sb /root/.cache/uv | cut -f1) bytes"; \
+    fi \
+ && rm -rf /root/.cache/uv
 
 # Sanity check: import every native-extension dep we rely on. If a future
 # cv2 / torch wheel adds a new shared-library dependency, this fails right
@@ -97,7 +108,21 @@ RUN uv run --no-sync python -c "import cv2, numpy, PIL, pywt, torch, diffusers, 
 # Bake the SD VAE into the image. This is the only build step that
 # reaches the network; the result is a fully self-contained model dir at
 # /app/models/sd-vae-ft-mse, matching config.PHOTOGUARD_MODEL_ID.
-RUN uv run --no-sync photo-guard download-models
+# P69: `snapshot_download(local_dir=…)` writes real files, so the guard below refuses to
+# delete any cache the model still points into. The release layer must carry neither uv's
+# cache nor HuggingFace's download cache.
+RUN uv run --no-sync photo-guard download-models \
+ && test -z "$(find /app/models -type l -print -quit)" \
+ && if [ -d /root/.cache/huggingface ]; then \
+        echo "HF cache before cleanup: $(du -sb /root/.cache/huggingface | cut -f1) bytes"; \
+    fi \
+ && if [ -d /root/.cache/uv ]; then \
+        echo "uv cache before cleanup (download layer): $(du -sb /root/.cache/uv | cut -f1) bytes"; \
+    fi \
+ && rm -rf /root/.cache/uv /root/.cache/huggingface \
+ && test ! -e /root/.cache/uv \
+ && test ! -e /root/.cache/huggingface \
+ && echo "build caches removed from the release layer"
 
 # G8：模型下载层之后才拷入公告生成器，避免改动触发重装依赖或重新下载模型。
 COPY packaging/generate_notices.py /app/packaging/
