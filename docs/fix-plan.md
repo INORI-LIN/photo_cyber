@@ -21,7 +21,7 @@
 > **2026-11-16 R6**：P58 已落地（`2546bd6`）+ 本回写；center/subject 默认 alpha 对齐 0.10、字号实测只缩不放；collect 544、fast 532/32.8s、gui 53；见 §10.39；本地未推送。
 > **2026-11-16 R7**：DOC6 已落地（`cab1bd8`）+ 本回写；README 改 Windows CPU、smoke 加 `--with-photoguard`（release 两腿已启用）；collect 548、fast 536/32.1s、gui 53；见 §10.40。
 > **2026-11-17 推送与 CI 取证**：R2–R7/Q5–Q7 已全部推送（`origin/main=e041ddc`，本地 0 ahead）；首轮 ci `44005741694` 的 ubuntu/windows 各 1 例假红已由 `83e576d` 修正，docker `44005741764` 全绿；见 §10.41。
-> **2026-11-18 全项目分析登记**：新增 P59–P72/DOC7 与批次 S–W；S 开工（P59/P60/P62/P63），三条开工裁定见 §3；见 §10.42。
+> **2026-11-18 全项目分析登记**：新增 P59–P72/DOC7 与批次 S–W；S 已落地（P59/P60/P62/P63，`fe7b76b`+`1bd46d5`）：collect 548→557、fast 545/30.68s、gui 54；三条开工裁定见 §3；见 §10.42/§10.43。
 
 ---
 
@@ -104,11 +104,11 @@
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [x] R6 已落地（`2546bd6`）：两处默认 alpha 对齐 `config.DEFAULT_VISIBLE_ALPHA`（0.10）；新增 `_fit_font`，保留旧估算为起点、实测超宽才按比例收缩（只缩不放）。19 CJK @320×240 由 291px 降到 183/158；Latin 默认渲染逐字节不变。见 §10.39。 |
 | DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [x] R7 已落地（`cab1bd8`）：README 六处改为 Windows CPU + 源码 cu130 换装；smoke 新增 opt-in `--with-photoguard`（缺运行库退 5、Windows 出现 CUDA 退 6），release 两腿已传该 flag；本机正向 exit 0、`cuda=None`。见 §10.40。 |
-| P59 | verify 盲检把图内 payload 原样写 stdout | med-high（终端注入） | S | S | CRC 合法信封的 payload 可含 ESC/BEL/换行；`cli.py` 直接 `print`，cp1252 控制台还会替换成 `?` 仍退 0。见 §10.42。 | [ ] 批 S 待落地 |
-| P60 | 盲检成本随上界线性增长，GUI 可填 1M | med | S | S | `find_envelope` 对每个候选长度重算全部比特；12MP 容量约 23k、64MP 约 125k，页内取消不覆盖搜索。见 §10.42。 | [ ] 批 S 待落地 |
+| P59 | verify 盲检把图内 payload 原样写 stdout | med-high（终端注入） | S | S | CRC 合法信封的 payload 可含 ESC/BEL/换行；`cli.py` 直接 `print`，cp1252 控制台还会替换成 `?` 仍退 0。见 §10.42。 | [x] S1 已落地（`fe7b76b`）：`escape_for_display` 转义 Cc/Cf/Zl/Zp；CLI 三条 verify 输出与 GUI 表/CSV 共用；含 ESC/BEL 信封 stdout 单行且退 0。见 §10.43。 |
+| P60 | 盲检成本随上界线性增长，GUI 可填 1M | med | S | S | `find_envelope` 对每个候选长度重算全部比特；12MP 容量约 23k、64MP 约 125k，页内取消不覆盖搜索。见 §10.42。 | [x] S1 已落地（`fe7b76b`）：`_reconstruct_bytes` 支持只重建前 N 字节；`find_envelope` 先比 `PG1:` 前缀，命中才全长；无信封候选不触发全长重建，真实结果不变。见 §10.43。 |
 | P61 | 非 RGB 源 ICC 被写进 RGB 成品 | med-low | S | W | P48 只修 CMYK；L/LAB 带 Gray/LAB profile 时 `convert("RGB")` 后 profile 不变。见 §10.42。 | [ ] 待 W |
-| P62 | 截断图片 `.load()` 抛裸 OSError | med-low | S | S | 头部可解析、像素数据截断时绕过 `cannot read` ValueError 契约。见 §10.42。 | [ ] 批 S 待落地 |
-| P63 | PNG 输出 `--quality 0` 被拒 | med-low | S | S | help/README 说 PNG 忽略 quality，`validate_options` 无条件校验 1–100。见 §10.42。 | [ ] 批 S 待落地 |
+| P62 | 截断图片 `.load()` 抛裸 OSError | med-low | S | S | 头部可解析、像素数据截断时绕过 `cannot read` ValueError 契约。见 §10.42。 | [x] S2 已落地（`1bd46d5`）：`load`/`exif_transpose` 统一包成 `ValueError("cannot decode <path>: ...")`；截断 JPEG CLI 退 2 且文案带路径。见 §10.43。 |
+| P63 | PNG 输出 `--quality 0` 被拒 | med-low | S | S | help/README 说 PNG 忽略 quality，`validate_options` 无条件校验 1–100。见 §10.42。 | [x] S2 已落地（`1bd46d5`）：`validate_options` 新增可选 `output_format`；PNG 的 0/101 退 0，JPEG 仍拒绝越界值。见 §10.43。 |
 | P64 | 核心守卫四处小口径 | low | S | W | 容量文案无条件建议 `--long-edge`、256² 地板双源、三个读入口缺 `_require_method`、SD 建议值 off-by-one。见 §10.42。 | [ ] 待 W |
 | P65 | replace 后 chmod 可被换链 + temp 崩溃残留 | low | S | W | 共享目录 `os.replace` 后到 chmod 的窗口；SIGKILL 留下 `.photoguard-*.tmp`。见 §10.42。 | [ ] 待 W |
 | P66 | 64MP 内存放大与 subject 全尺寸 | med | M | W | loader/convert/transpose/BGR/visible 多层复制；Sobel+积分图峰值约 1.7GB。见 §10.42。 | [ ] 待 W |
@@ -160,7 +160,7 @@
 | **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 已完成（2026-11-16，`2546bd6`）：collect 540→544、fast 532/32.8s、gui 53、compliance 18；见 §10.39。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 已完成（2026-11-16，`cab1bd8`）：collect 544→548、fast 536/32.1s、gui 53、compliance 18；真机 release smoke 待下次 dispatch；见 §10.40。** |
-| **S** | P59 + P60 + P62 + P63（盲检输出/成本、解码包装、PNG quality） | 含 Cc 的合法信封 stdout 单行转义且退 0；无信封图的前缀筛选不触发全长重建、真实信封结果不变；截断 JPEG 退 2 且文案含路径；PNG `--quality 0/101` 退 0 + 既有警告；fast/gui/compliance 全绿。**S 开工（2026-11-18）：三条口径见 §3；先红后绿见 §10.43。** |
+| **S** | P59 + P60 + P62 + P63（盲检输出/成本、解码包装、PNG quality） | 含 Cc 的合法信封 stdout 单行转义且退 0；无信封图的前缀筛选不触发全长重建、真实信封结果不变；截断 JPEG 退 2 且文案含路径；PNG `--quality 0/101` 退 0 + 既有警告；fast/gui/compliance 全绿。**S 已完成（2026-11-18，`fe7b76b`+`1bd46d5`）：先红 3+4 例；collect 548→557、fast 545/30.68s、gui 54/0 skip、compliance 18、四条 fail-loud 锁 37 passed；见 §10.43。** |
 | **T** | P69（smoke 的 Qt/VAE、artifact 零产物、平台测试、Docker 缓存） | `--with-gui` 在缺 Qt/插件时退非 0；artifact 上传 `if-no-files-found: error`；两构建腿跑 fast；镜像内 `/root/.cache` 不随发布层保留（体积前后对比）。 |
 | **U** | P67 + P68 + P72（设备发现/device-index、GUI 小缺口、死代码） | 本机设备表不再把已支持 GPU 标 unsupported；auto+index 选到指定 CUDA 或响亮报错；空白 expected 走线索路径；输出目录为文件时启动前拒绝；gui_main 删除或成为唯一入口。 |
 | **V** | P70 + P71（模型完整性、测试加固） | 0 字节/截断 safetensors 被拒；layers 用例能证明未选层未执行；五种输入格式均跑真实 protect；slow fixture 模型加载次数下降；bench/slow 预检用 `model_dir_is_complete`。 |
@@ -2784,3 +2784,12 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
   - P63：`validate_options` 在 `protect` 知道输出容器之前无条件校验 `quality`，与 CLI help/README 的“PNG 忽略”冲突。
 - **其余登记要点**：P61 L/LAB ICC；P64 容量文案/地板双源/读入口方法门/预算建议 off-by-one；P65 replace 后 chmod 窗口与 SIGKILL temp 残留；P66 64MP 拷贝链与 subject 全尺寸 Sobel/积分图；P67 设备发现双向子串匹配与 auto+index；P68 DeviceDiscoveryWorker 无 finally、空白 expected、输出目录为文件；P69 smoke 不 import Qt/不加载 VAE、artifact 零产物、构建腿不跑测试、Docker 缓存；P70 0 字节 safetensors；P71 三处空心测试、slow fixture 多次加载、bench/slow 预检错目录；P72 noise 的 SD-only 校验、RGBa/La、shiboken6、gui_main；DOC7 头部七条“本地未推送”、AGENTS §8.7、GUI 设备页、notices 缺项。
 - **未纳入本轮**：workflow `run:` 未发现直接插值 `${{ github.* }}` 的注入面；GUI 跨线程信号未见 P26 类回归；`pyproject`/`uv.lock` 的 core/extras/groups 逐项一致。以上作为“本轮核对未发现”记录，不新开 ID。
+
+### 10.43 批 S 落地（2026-11-18，`fe7b76b` + `1bd46d5`）
+
+- **P59 先红（3 例）**：`verify` 盲检对含 `\x1b]0;x\x07` 的合法信封原样输出；`escape_for_display` 不存在；GUI 表同样未净化。**实现**：`watermark_invisible.escape_for_display` 把 Cc/Cf/Zl/Zp 写成 `\xNN`/`\uNNNN`/`\UNNNNNNNN`，其余字符（含 CJK）原样；CLI 的 `--expected-payload`、`--payload-bytes`、盲检三条输出均走该函数；`VerifyWorker` 在 `item_done.emit` 前统一净化，因此 CSV 也拿到单行文本。**修后**：同一信封 stdout 恰为 `a\x1b]0;x\x07b` 的转义形式、退 0；普通 payload 逐字不变。
+- **P60 先红（1 例）**：`find_envelope` 对每个候选长度都调用全长 `_reconstruct_bytes`。**实现**：`_reconstruct_bytes(..., max_bytes=N)` 保持 `wm_len = nbytes * 8` 的分组不变、只算前 N 字节；`find_envelope` 先用 `max_bytes=len("PG1:")` 过滤，命中才做全长重建。**修后**：全零分数图的所有候选长度都只做前缀重建（0 次全长）；`test_the_shortest_envelope_is_still_discoverable`、`test_discover_finds_the_envelope_without_the_length` 与既有 66 长度等价锁全绿。
+- **P62 先红（1 例）**：截断 JPEG 在 `opened.load()` 抛裸 `OSError: image file is truncated (55 bytes not processed)`，CLI 文案无路径。**实现**：`opened.load()`/`exif_transpose` 并入 try；`DecompressionBombError` 保留尺寸文案，其余 `OSError`/`SyntaxError` 统一为 `ValueError(f"cannot decode {path}: {exc}")`。**修后**：CLI 退 2、stderr 含 `cannot decode <path>`、不落成品；`Image.open` 层的 `cannot read` 文案不变。
+- **P63 先红（4 例）**：PNG 的 `quality=0/101` 在 `validate_options` 被拒（库 2 例、CLI 1 例；另一例为 JPEG 仍拒绝的正向 pin）。**实现**：`validate_options(opts, *, output_format=None)`；仅非 PNG 校验 1–100；`protect` 先 `save_format` 再校验。**修后**：PNG 0/101 退 0 且 stderr 保留 `warning: writing PNG, not JPEG`；JPEG 0 仍 `ValueError`；`validate_options()` 不传 `output_format` 时保持旧行为（GUI 入口路径）。
+- **回归**：collect 548→557；fast **545 passed / 12 deselected / 30.68s**；gui **54 passed / 0 skipped**；compliance 18；四条 fail-loud 锁 37 passed；工作区 clean。提交 `fe7b76b`（S1）+ `1bd46d5`（S2），**未推送**。
+- **残余/边界**：P59 只处理显示层，不改变 `discover_payload`/`verify_expected` 的返回值；cp1252 控制台对非 ASCII 仍走既有 `errors="replace"`，本次不扩张。P60 未新增硬上限，最坏成本仍与图像容量×候选长度同阶，但每个未命中候选只付 4 字节重建；真实信封结果与旧实现逐字节一致。P62 只包住 load/transpose，`_cmyk_to_srgb` 等自有 `ValueError` 文案不受影响。P63 的 `validate_options()` 默认仍校验 quality，程序化调用方若要 PNG 语义须经 `protect` 或显式传 `output_format="PNG"`。
