@@ -217,7 +217,7 @@ uv run photo-guard protect input.jpg
 ### 8.7 桌面与打包
 
 - 图像处理必须在 worker 线程（`QThread` + `moveToThread`），**绝不**跑在 Qt 主线程。
-- 打包入口 `packaging/desktop_entry.py`（支持 `--smoke-test`）；`packaging/build_desktop.py` **必须在目标 OS 上运行**（Windows x64 / Apple Silicon macOS，不支持 Intel macOS）。Windows 安装器的 ISCC 路径由 `packaging/find_iscc.py` 解析（`ISCC_PATH` → PATH → 注册表 → 默认目录）；显式 `ISCC_PATH` 无效或全部候选缺失时 release 步骤响亮失败，不得回退硬编码路径。
+- 打包入口 `packaging/desktop_entry.py`（`--smoke-test`；`--with-photoguard` 在导入 torch/diffusers 后真加载 VAE 并对 8×8 图跑一次 `latent_norm`——缺运行库退 5、Windows 出现 CUDA 退 6、VAE 不可用退 8；`--with-gui` 强制 `QT_QPA_PLATFORM=offscreen` 后启动 Qt 并 import GUI 模块——缺 Qt/插件退 7；release 两腿两者都带）；`packaging/build_desktop.py` **必须在目标 OS 上运行**（Windows x64 / Apple Silicon macOS，不支持 Intel macOS）。Windows 安装器的 ISCC 路径由 `packaging/find_iscc.py` 解析（`ISCC_PATH` → PATH → 注册表 → 默认目录）；显式 `ISCC_PATH` 无效或全部候选缺失时 release 步骤响亮失败，不得回退硬编码路径。
 
 ---
 
@@ -232,7 +232,9 @@ uv run photo-guard protect input.jpg
 
 **运行身份与健康探针（P22）**：发布镜像默认以 `app` 非 root 用户运行，UID/GID 由构建参数创建；本地构建用 `--build-arg UID=$(id -u) --build-arg GID=$(id -g)` 对齐宿主持有者，否则 bind mount 的 `/work` 可能不可写。`HEALTHCHECK` 只执行 `photo-guard --help`，证明 venv 与入口可启动，**不**代表处理服务健康。基础镜像按 digest 钉、uv 按版本 tag 钉；apt 包不逐项钉版本（仓库会淘汰旧版本，逐项钉会让构建随机失败）。
 
-冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ **可见水印字号探针（Q2/P41：镜像内 `_load_font(36)` 的 bbox 高 ≥20px，防止回到 ~10px 位图兜底）** → 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → **SD 产物线索回环（`verify out_sd.jpg --payload-bytes 7` 退 3、整行 `线索（未验证）: ci-test`；P4 的 SD-cell 闸门）** → `--target test` 构建 + preflight（torch/diffusers/`photo_guard`/**模型完整性：`config.json` + 至少一个 `*.safetensors`**，Q2/P43）→ **慢档真跑（`uv run --project /app --no-sync pytest -m slow`，单文件限定）** → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算（`test` target 不改变发布镜像的依赖集）。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
+**构建缓存（P69）**：`uv sync` 与 `download-models` 产生的缓存（`/root/.cache/uv`、`/root/.cache/huggingface`）必须与创建它们的 `RUN` **同层**删除，不得留给发布层；删除前先断言 `/app/models` 不含符号链接（否则缓存仍是模型的真实来源，删了会毁模型）。Dockerfile 在删除前用 `du -sb` 打印缓存体积（体积对比的 before），`docker.yml` 打印最终镜像体积并以 `--user 0` 断言两个缓存目录都不存在。
+
+冒烟口径以 `.github/workflows/docker.yml` 为准：构建 → **镜像体积与无构建缓存断言（P69）** → 镜像内离线硬门校验真实 Linux 第三方依赖段（G8：`--network none --read-only` 跑 `generate_notices.py --check`，缺行或多行直接阻断）→ **可见水印字号探针（Q2/P41：镜像内 `_load_font(36)` 的 bbox 高 ≥20px，防止回到 ~10px 位图兜底）** → 合成测试图 → noise protect+verify（含线索路径退 3 与整行精确断言）→ `--network none` 跑 `--perturber sd` 证明模型真在镜像里 → **SD 产物线索回环（`verify out_sd.jpg --payload-bytes 7` 退 3、整行 `线索（未验证）: ci-test`；P4 的 SD-cell 闸门）** → `--target test` 构建 + preflight（torch/diffusers/`photo_guard`/**模型完整性：`config.json` + 至少一个 `*.safetensors`**，Q2/P43）→ **慢档真跑（`uv run --project /app --no-sync pytest -m slow`，单文件限定）** → 不含 safetensors 的模型目录被拒（P15：退出非零、不落成品；当前 CLI 映射为退 2）。Linux 声明以 Docker 镜像的 `photoguard --no-dev` 依赖集为准，不借桌面完整 extras 推算（`test` target 不改变发布镜像的依赖集）。注意 SD 那次产物用的是 raw payload 且未加信封（`--payload-envelope`），对它做盲检必然失败——不要照抄成断言。
 
 ---
 
@@ -243,6 +245,7 @@ uv run photo-guard protect input.jpg
 - `slow` 档现状据实：`tests/test_photoguard_slow.py`（P1 建立）标记 `slow`，跑在 `docker.yml` 的慢档步（显式 `test` target）与本机（`uv sync --frozen --extra photoguard` + `photo-guard download-models`）；核心环境下全 skip 且理由含补齐命令（已用临时 core venv 实测）。fast 档以 `-m 'not slow'` 排除；用例数一律现场跑 `-m slow --collect-only -q` 取。
 - **快速档全绿 ≠ SD 真实路径有效**：快速档跑在 core 环境（不含 torch），既不加载 diffusers 也不跑真实 SD VAE——core 环境走 SD 路径会在加载时抛 `RuntimeError` 提示 `uv sync --extra photoguard`（CLI 映射为 exit 2）；真实 SD 路径的自动化覆盖为 `docker.yml` 的 `--network none` SD 冒烟**加强档真断言**（`test` target + `pytest -m slow`，字节复现只在 CPU/float32 承诺）。
 - `ci.yml`：`test` job 跑 ubuntu-latest / **ubuntu-26.04（F′1 临时预检腿，2026-11-19 后移除）** / windows-latest / macos-15 四腿矩阵（fail-fast: false）；另有独立 `gui` job（暂跑 ubuntu-26.04，装 desktop extra 后以 offscreen 跑 `-m gui`，并验证 `photo-guard-gui --help` 不启动 Qt；迁移完成后回 ubuntu-latest）。合规检查有两道门，**都不得删**：ci.yml 的 Linux shell grep（依赖 POSIX grep，仅 Linux 腿跑）与 `tests/test_compliance.py`（纯 Python `rglob`，全平台经 pytest 生效）。
+- `release-desktop.yml` 的两条构建腿（Windows/macOS）sync 含 `--group dev`，在 notices 之后、下载模型与打包之前跑 `pytest -m 'not slow' -q`（含 GUI 档；Windows 用 `$env:QT_QPA_PLATFORM`、macOS 用 step `env`）；两处 `upload-artifact` 设 `if-no-files-found: error`，零产物即失败；两腿 smoke 以 `--smoke-test --with-photoguard --with-gui` 要求 Qt 与 SD 运行时真的可用（P69）。
 - 四份 workflow 统一顶层 `permissions: contents: read` 与 `concurrency`（release 为 `cancel-in-progress: false`，其余 true）；JS action 全部使用 node24 主版本，`jlumbroso/free-disk-space`（composite）按 SHA 钉死（G11）。
 - `docker.yml` 构建全合一镜像并冒烟，**不推送**。用 `jlumbroso/free-disk-space` 的原因：托管 ubuntu runner 约 14GB 可用，而 torch + nvidia wheel + SD VAE 解包约 6GB，不腾空间易「no space left on device」。
 - **跨平台路径断言一律按 `Path` 比较，不比字符串**：Windows 的 `os.path.expanduser("~/x")` 保留调用方写的分隔符（`C:\Users\x/pics`），与 `str(Path.home() / "x")` 的全反斜杠形态字符串不等——按字符串断言会只在 windows 腿假红（批 M1 的 CI 实测：`docs/fix-plan.md` §10.15）。
