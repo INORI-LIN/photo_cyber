@@ -71,16 +71,23 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.11
-      - run: uv sync --frozen --extra photoguard --extra desktop --group package
+      - run: uv sync --frozen --extra photoguard --extra desktop --group package --group dev
       - name: Third-party notices must match this environment (G2)
         run: uv run --no-sync python packaging/generate_notices.py --check
+      - name: Fast test tier against the release dependency set (P69)
+        # P69: the build legs never ran the suite, so a regression in the exact extras the
+        # bundle is built from only surfaced after a ~40-minute Nuitka round. The GUI cases
+        # run here for the first time on this OS; a red is a defect to fix, not to exclude.
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          uv run --no-sync pytest -m 'not slow' -q
       - run: uv run --no-sync photo-guard download-models
       - run: uv run --no-sync python packaging/build_desktop.py
       - name: Smoke test standalone application
         shell: powershell
-        # DOC6: the bundle claims PyTorch + diffusers; the flag makes a build that dropped
-        # either fail here instead of on the user's first --perturber sd run.
-        run: .\dist\desktop_entry.dist\PhotoGuard.exe --smoke-test --with-photoguard
+        # DOC6/P69: the bundle claims PyTorch + diffusers + Qt; the flags make a build that
+        # dropped any of them fail here instead of on the user's first run.
+        run: .\dist\desktop_entry.dist\PhotoGuard.exe --smoke-test --with-photoguard --with-gui
       - name: Licence material is inside the built tree (G2)
         shell: powershell
         run: |
@@ -135,6 +142,9 @@ jobs:
         with:
           name: PhotoGuard-Windows-x64
           path: release/*
+          # P69: a build that produced nothing used to leave an empty artifact behind and
+          # only fail in the publish job.
+          if-no-files-found: error
 
   macos-arm64:
     needs: verify
@@ -145,9 +155,15 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.11
-      - run: uv sync --frozen --extra photoguard --extra desktop --group package
+      - run: uv sync --frozen --extra photoguard --extra desktop --group package --group dev
       - name: Third-party notices must match this environment (G2)
         run: uv run --no-sync python packaging/generate_notices.py --check
+      - name: Fast test tier against the release dependency set (P69)
+        # Same rationale as the Windows leg: run the suite against the exact extras the
+        # bundle is built from, on this OS, before spending the Nuitka round.
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run --no-sync pytest -m 'not slow' -q
       - run: uv run --no-sync photo-guard download-models
       - run: uv run --no-sync python packaging/build_desktop.py
       - name: Licence material is inside the app bundle (G2)
@@ -180,8 +196,9 @@ jobs:
             BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print -quit)
           fi
           echo "running: $BIN"
-          # DOC6: --with-photoguard also requires the shipped torch/diffusers.
-          if ! "$BIN" --smoke-test --with-photoguard; then
+          # DOC6/P69: --with-photoguard also requires the shipped torch/diffusers and
+          # --with-gui requires a startable Qt with its platform plugins.
+          if ! "$BIN" --smoke-test --with-photoguard --with-gui; then
             echo "::error::smoke test failed — dumping layout for diagnosis"
             ls -la "$APP/Contents" || true
             find "$APP/Contents" -maxdepth 3 \
@@ -204,6 +221,7 @@ jobs:
         with:
           name: PhotoGuard-macOS-arm64
           path: release/*
+          if-no-files-found: error
   publish:
     # 手工调度即使选中 tag ref，也只能构建工件，不能创建 Release。
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')

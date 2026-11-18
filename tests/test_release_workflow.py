@@ -216,3 +216,37 @@ def test_windows_installer_resolves_iscc_before_building() -> None:
     assert "C:\\Program Files" not in build
     assert "$env:ISCC" in build
     assert build.index("$env:ISCC") < build.index("$LASTEXITCODE")
+
+
+# P69：两条构建腿必须在本 OS 的发布依赖集上跑 fast 档，红了按缺陷修而不是排除。
+def test_build_legs_run_the_fast_tier_before_packaging() -> None:
+    for job in ("windows", "macos-arm64"):
+        text = _job(job)
+        assert "--group dev" in text, job
+        step = _step_containing("pytest -m 'not slow' -q", job=job)
+        assert "uv run --no-sync pytest -m 'not slow' -q" in _code(step)
+        # 测试必须在 Nuitka 打包之前：失败应在几十秒内出现，而不是等一轮构建。
+        assert text.index("pytest -m 'not slow' -q") < text.index("build_desktop.py"), job
+
+    # offscreen 是显式设置的：Windows 走 pwsh 赋值，macOS 走 step env。
+    assert '$env:QT_QPA_PLATFORM = "offscreen"' in _code(
+        _step_containing("pytest -m 'not slow' -q", job="windows")
+    )
+    assert "QT_QPA_PLATFORM: offscreen" in _step_containing(
+        "pytest -m 'not slow' -q", job="macos-arm64"
+    )
+
+
+# P69：构建成功但零产物时 upload-artifact 默认只警告，发布 job 才会晚失败。
+def test_build_legs_refuse_empty_artifacts() -> None:
+    for job in ("windows", "macos-arm64"):
+        step = _step_containing("actions/upload-artifact@v7", job=job)
+        assert "if-no-files-found: error" in step, job
+
+
+# P69：bundle 的 smoke 必须同时证明 Qt 与 SD 运行时在包里真的可用。
+def test_build_legs_smoke_the_gui_and_photoguard_runtimes() -> None:
+    for job in ("windows", "macos-arm64"):
+        code = _code(_step_containing("--smoke-test", job=job))
+        assert "--with-photoguard" in code, job
+        assert "--with-gui" in code, job
