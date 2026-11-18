@@ -1,11 +1,55 @@
 from __future__ import annotations
 
+import math
+import os
 import sys
 
+# Held for the process lifetime: a QApplication that only lives on the stack is destroyed
+# while Qt still expects it, and the resulting crash would look like a bundle defect.
+_QT_APP = None
 
-def _smoke_test(with_photoguard: bool = False) -> int:
+
+def _smoke_gui() -> None:
+    """P69: the bundle must be able to start Qt, not merely carry the wheel.
+
+    Forced rather than defaulted: an inherited platform plugin would decide whether the
+    release gate passes. ``offscreen`` needs no display and ships in Nuitka's ``platforms``
+    plugin family, so a bundle whose Qt plugins were dropped fails here (7).
+    """
+    global _QT_APP
+
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    import PySide6
+    from PySide6.QtWidgets import QApplication
+
+    _QT_APP = QApplication.instance() or QApplication([])
+    platform = _QT_APP.platformName()
+    if platform != "offscreen":
+        raise RuntimeError(f"expected the offscreen platform, got {platform!r}")
+    import photo_guard.gui  # noqa: F401  (the window module must be in the bundle)
+    print(f"GUI runtime: PySide6={PySide6.__version__} platform={platform}")
+
+
+def _smoke_vae() -> None:
+    """P69: importing torch/diffusers is not proof the baked weights can be loaded.
+
+    An 8×8 image keeps this to one encoder pass; the norm must be finite, so a directory
+    holding an empty ``*.safetensors`` passes the filename check but fails here (8).
+    """
+    import numpy as np
+
+    from photo_guard import photoguard
+
+    norm = photoguard.build_attack().latent_norm(np.zeros((8, 8, 3), dtype=np.uint8))
+    if not math.isfinite(norm):
+        raise RuntimeError(f"latent norm is not finite: {norm}")
+    print(f"PhotoGuard VAE: loaded (latent_norm={norm:.3f})")
+
+
+def _smoke_test(with_photoguard: bool = False, with_gui: bool = False) -> int:
     """Exit codes: 2 = model/bundle material, 3 = no CPU backend, 4 = licences,
-    5 = PhotoGuard runtime missing, 6 = CUDA torch in a Windows bundle (DOC6)."""
+    5 = PhotoGuard runtime missing, 6 = CUDA torch in a Windows bundle (DOC6),
+    7 = GUI runtime (Qt/plugin) missing, 8 = SD VAE failed to load (P69)."""
     from photo_guard import config, device, pipeline, resources
 
     if not config.PHOTOGUARD_MODEL_ID:
@@ -64,12 +108,33 @@ def _smoke_test(with_photoguard: bool = False) -> int:
                 file=sys.stderr,
             )
             return 6
+    if with_gui:
+        # P69: the GUI is a shipped feature; a bundle without Qt (or without its platform
+        # plugins) used to pass this smoke and only fail when the user opened the app.
+        try:
+            _smoke_gui()
+        except (ImportError, OSError, RuntimeError) as exc:
+            print(f"GUI runtime is missing from the bundle: {exc}", file=sys.stderr)
+            return 7
+    if with_photoguard:
+        # P69: ran after the cheap structural checks above so a broken Qt does not pay for
+        # a VAE load, and after the CUDA policy gate so DOC6 keeps its own exit code.
+        try:
+            _smoke_vae()
+        except Exception as exc:  # safetensors/diffusers raise several unrelated types
+            print(f"PhotoGuard VAE is missing or unreadable: {exc}", file=sys.stderr)
+            return 8
     print("Photo Guard desktop smoke test passed")
     return 0
 
 
 if __name__ == "__main__":
     if "--smoke-test" in sys.argv:
-        raise SystemExit(_smoke_test("--with-photoguard" in sys.argv))
+        raise SystemExit(
+            _smoke_test(
+                with_photoguard="--with-photoguard" in sys.argv,
+                with_gui="--with-gui" in sys.argv,
+            )
+        )
     from photo_guard.gui import main
     raise SystemExit(main())

@@ -162,6 +162,46 @@ def _fake_runtime(cuda):
     return {"torch": torch, "diffusers": types.ModuleType("diffusers")}
 
 
+# --- P69: the smoke must also load the VAE and start Qt ------------------------------
+
+
+def _patch_attack(monkeypatch, *, norm: float = 1.25, error: Exception | None = None) -> None:
+    """Stand-in for the real VAE: ``complete_model`` ships 0-byte weights by design."""
+    from photo_guard import photoguard
+
+    class _FakeAttack:
+        def latent_norm(self, _image):
+            if error is not None:
+                raise error
+            return norm
+
+    monkeypatch.setattr(photoguard, "build_attack", lambda: _FakeAttack())
+
+
+def _fake_qt(*, create_error: Exception | None = None):
+    import types
+
+    pyside = types.ModuleType("PySide6")
+    pyside.__version__ = "6.11.1"
+    widgets = types.ModuleType("PySide6.QtWidgets")
+
+    class QApplication:
+        def __init__(self, _argv):
+            if create_error is not None:
+                raise create_error
+
+        @staticmethod
+        def instance():
+            return None
+
+        def platformName(self):
+            return "offscreen"
+
+    widgets.QApplication = QApplication
+    pyside.QtWidgets = widgets
+    return {"PySide6": pyside, "PySide6.QtWidgets": widgets}
+
+
 def test_smoke_with_photoguard_rejects_a_missing_runtime(monkeypatch, tmp_path, capsys) -> None:
     entry = _prepare_smoke(monkeypatch, tmp_path)
     monkeypatch.setitem(sys.modules, "torch", None)
@@ -178,10 +218,15 @@ def test_smoke_with_photoguard_passes_on_a_cpu_runtime(monkeypatch, tmp_path, ca
     )
     for name, module in _fake_runtime(None).items():
         monkeypatch.setitem(sys.modules, name, module)
+    _patch_attack(monkeypatch)
 
     assert entry._smoke_test(with_photoguard=True) == 0
 
-    assert "cuda=None" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "cuda=None" in out
+    # P69: the old smoke only imported torch/diffusers; a bundle whose safetensors cannot
+    # be parsed still reported success.
+    assert "PhotoGuard VAE: loaded" in out
 
 
 def test_smoke_with_photoguard_rejects_cuda_on_windows(monkeypatch, tmp_path, capsys) -> None:
@@ -206,5 +251,69 @@ def test_smoke_without_the_flag_ignores_a_missing_runtime(monkeypatch, tmp_path)
     """The check is opt-in: a core/dev tree without torch still reports success."""
     entry = _prepare_smoke(monkeypatch, tmp_path)
     monkeypatch.setitem(sys.modules, "torch", None)
+
+    assert entry._smoke_test() == 0
+
+
+def test_smoke_with_photoguard_rejects_a_vae_that_cannot_load(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    """P69: importing torch/diffusers is not proof the bundled weights are usable."""
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        device, "discover_devices", lambda **_kwargs: [device.DeviceInfo("cpu", "Test CPU")]
+    )
+    for name, module in _fake_runtime(None).items():
+        monkeypatch.setitem(sys.modules, name, module)
+    _patch_attack(monkeypatch, error=RuntimeError("corrupt safetensors"))
+
+    assert entry._smoke_test(with_photoguard=True) == 8
+    assert "VAE" in capsys.readouterr().err
+
+
+def test_smoke_with_gui_rejects_a_missing_qt_runtime(monkeypatch, tmp_path, capsys) -> None:
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setitem(sys.modules, "PySide6", None)
+
+    assert entry._smoke_test(with_gui=True) == 7
+
+    assert "GUI runtime is missing" in capsys.readouterr().err
+
+
+def test_smoke_with_gui_rejects_a_qt_that_cannot_start(monkeypatch, tmp_path, capsys) -> None:
+    """A bundle with the PySide6 module but no usable platform plugin must fail here."""
+    import types
+
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    for name, module in _fake_qt(create_error=RuntimeError("no Qt platform plugin")).items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setitem(sys.modules, "photo_guard.gui", types.ModuleType("photo_guard.gui"))
+
+    assert entry._smoke_test(with_gui=True) == 7
+    assert "GUI runtime is missing" in capsys.readouterr().err
+
+
+def test_smoke_with_gui_passes_with_a_working_runtime(monkeypatch, tmp_path, capsys) -> None:
+    import os
+    import types
+
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    for name, module in _fake_qt().items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setitem(sys.modules, "photo_guard.gui", types.ModuleType("photo_guard.gui"))
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+
+    assert entry._smoke_test(with_gui=True) == 0
+
+    out = capsys.readouterr().out
+    assert "GUI runtime: PySide6=6.11.1 platform=offscreen" in out
+    # The platform is forced, not inherited: a stray value in the smoke environment must
+    # not decide whether the release gate passes.
+    assert os.environ["QT_QPA_PLATFORM"] == "offscreen"
+
+
+def test_smoke_without_the_gui_flag_ignores_a_missing_qt(monkeypatch, tmp_path) -> None:
+    entry = _prepare_smoke(monkeypatch, tmp_path)
+    monkeypatch.setitem(sys.modules, "PySide6", None)
 
     assert entry._smoke_test() == 0
