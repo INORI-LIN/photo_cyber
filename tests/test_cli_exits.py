@@ -110,6 +110,36 @@ def test_protect_warns_when_the_envelope_exceeds_the_blind_ceiling(tmp_path: Pat
     assert "--max-payload-bytes 257" in captured.err
 
 
+def test_blind_verify_escapes_control_characters_in_the_payload(tmp_path: Path, capsys) -> None:
+    """P59: the payload comes from the suspect image; it must not reach the terminal raw."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.jpg"
+    _seed_textured(src)
+    payload = "a\x1b]0;x\x07b"
+
+    code = main(
+        [
+            "protect",
+            str(src),
+            "-o",
+            str(out),
+            "--payload",
+            payload,
+            "--payload-envelope",
+            "--layers",
+            "invisible",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    code = main(["verify", str(out)])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert captured.out == "a\\x1b]0;x\\x07b\n"
+    assert "\x1b" not in captured.out
+
+
 def test_verify_no_payload_exits_one(tmp_path: Path, capsys) -> None:
     """A clean image (no embed) → all-NUL payload → exit 1."""
     src = tmp_path / "clean.jpg"

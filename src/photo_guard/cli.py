@@ -205,7 +205,8 @@ def main(argv: list[str] | None = None) -> int:
                     # mismatch, not an absence, and must not be conflated with it.
                     print(f"no payload recovered: {exc}", file=sys.stderr)
                     return 1
-                print(result["payload"])
+                # P59: the value is evidence, but it is still suspect-controlled text.
+                print(watermark_invisible.escape_for_display(result["payload"]))
                 return 0
             if args.payload_bytes is not None:
                 try:
@@ -217,7 +218,10 @@ def main(argv: list[str] | None = None) -> int:
                 # and the advisory metrics go to stderr where they cannot be mistaken for
                 # a verification result. Exit 3 keeps "clue" machine-readably distinct
                 # from "verified" (0) — P19.
-                print(f"\u7ebf\u7d22\uff08\u672a\u9a8c\u8bc1\uff09: {clue.text}")
+                print(
+                    f"\u7ebf\u7d22\uff08\u672a\u9a8c\u8bc1\uff09: "
+                    f"{watermark_invisible.escape_for_display(clue.text)}"
+                )
                 print(
                     f"advisory gates: blocks/bit={clue.blocks_per_bit} "
                     f"mean_margin={clue.mean_margin:.4f} pass={clue.advisory_pass} "
@@ -230,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
             except watermark_invisible.NoPayloadError as exc:
                 print(f"no payload recovered: {exc}", file=sys.stderr)
                 return 1
-            print(payload)
+            print(watermark_invisible.escape_for_display(payload))
             return 0
 
         if args.cmd == "devices":

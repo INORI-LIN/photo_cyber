@@ -240,6 +240,20 @@ def test_cancel_task_is_idempotent_before_any_task(window) -> None:
     assert window._threads == []
 
 
+def test_verify_worker_escapes_control_characters_for_display(monkeypatch) -> None:
+    """P59: the GUI table and its CSV export must not receive raw terminal escapes."""
+    rows: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        gui.pipeline, "discover_payload", lambda *_args, **_kwargs: "a\x1b]0;x\x07b"
+    )
+    worker = gui.VerifyWorker([Path("a.jpg")], "", None, auto_discover=True)
+    worker.item_done.connect(lambda *args: rows.append(args))
+
+    worker.run()
+
+    assert rows == [("a.jpg", "通过（自动发现）", "a\\x1b]0;x\\x07b")]
+
+
 def test_verify_worker_stops_after_current_item_when_cancelled(monkeypatch) -> None:
     """P7/T10: cancellation is observed between items, not in the middle of one."""
     calls: list[Path] = []

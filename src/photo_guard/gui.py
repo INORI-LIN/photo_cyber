@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from . import config, device, gui_logic, outputs, perturb, pipeline
+from . import config, device, gui_logic, outputs, perturb, pipeline, watermark_invisible
 
 _FORMAT_EXTENSIONS = {
     "JPEG": ("jpg", "jpeg"),
@@ -229,7 +229,11 @@ class VerifyWorker(QObject):
                 except Exception as exc:
                     self.item_done.emit(str(path), "未通过", str(exc))
                 else:
-                    self.item_done.emit(str(path), status, value)
+                    # P59: the recovered value is suspect-controlled text; keep the table and
+                    # the CSV single-line even when the envelope carries ESC/BEL/newlines.
+                    self.item_done.emit(
+                        str(path), status, watermark_invisible.escape_for_display(value)
+                    )
                 self.progress.emit(position, len(self.paths), path.name)
         except Exception as exc:
             # P25: see ProtectWorker.run — ``finished`` must be emitted no matter what.

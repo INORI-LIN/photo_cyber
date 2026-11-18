@@ -46,6 +46,10 @@ _MAX_EMBEDDABLE_CHANNEL = 1
 _BLOCK = 4
 _DWT_CROP = 4
 _DECISION = 127.0 / 255.0  # the library tests `avg * 255 > 127`
+# P59: control (Cc), format (Cf) and line/paragraph separators (Zl/Zp) are escaped before a
+# payload is shown in a terminal or table cell. The envelope's CRC only proves integrity, not
+# that the bytes are safe to interpret.
+_DISPLAY_ESCAPE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 def _require_embeddable_channel(channel: int) -> None:
@@ -215,15 +219,23 @@ def _block_scores(
     return scores
 
 
-def _reconstruct_bytes(scores: np.ndarray, nbytes: int) -> bytes:
-    """Bytes from block votes: majority per bit (``mean * 255 > 127``), MSB-first."""
+def _reconstruct_bytes(
+    scores: np.ndarray, nbytes: int, *, max_bytes: int | None = None
+) -> bytes:
+    """Bytes from block votes: majority per bit (``mean * 255 > 127``), MSB-first.
+
+    ``max_bytes`` stops after the first N bytes without changing the bit grouping: the stride
+    is still ``nbytes * 8``, so a prefix is bit-identical to the full reconstruction. P60 uses
+    it to reject candidate lengths that cannot start with ``PG1:`` before paying for the rest.
+    """
     wm_len = nbytes * 8
-    bits = np.zeros(wm_len, dtype=np.uint8)
-    for b in range(wm_len):
+    limit = nbytes if max_bytes is None else min(nbytes, max_bytes)
+    bits = np.zeros(limit * 8, dtype=np.uint8)
+    for b in range(limit * 8):
         group = scores[b::wm_len]
         # An empty bucket is nan in the library, and `nan * 255 > 127` is False -> 0.
         bits[b] = 1 if (float(group.mean()) if group.size else 0.0) * 255 > 127 else 0
-    return np.packbits(bits).tobytes()[:nbytes]
+    return np.packbits(bits).tobytes()[:limit]
 
 
 def _bit_agreements(scores: np.ndarray, nbytes: int) -> np.ndarray:
@@ -444,13 +456,16 @@ class _ImageReader:
         if not lengths:
             return None
         # One extraction pass per carrier, then one cheap reconstruction per candidate
-        # length: the score array depends on the carrier but not on the length.
+        # length: the score array depends on the carrier but not on the length. P60 keeps only
+        # the four-byte ``PG1:`` prefix in the inner loop; a full-length reconstruction is
+        # paid only when that prefix matches (a random candidate cannot).
+        magic = _MAGIC.encode("ascii") + b":"
         for channel, scale in carrier_candidates():
             scores = self._scores_for(channel, scale)
             for length in lengths:
-                raw = _reconstruct_bytes(scores, length)
-                if not raw.startswith(_MAGIC.encode("ascii") + b":"):
+                if _reconstruct_bytes(scores, length, max_bytes=len(magic)) != magic:
                     continue
+                raw = _reconstruct_bytes(scores, length)
                 try:
                     payload, verified = unpack_payload(raw.decode("ascii"))
                 except (UnicodeDecodeError, ValueError):
@@ -569,6 +584,28 @@ def _is_periodic(raw: bytes) -> bool:
         if size % period == 0 and raw == raw[:period] * (size // period):
             return True
     return False
+
+
+def escape_for_display(text: str) -> str:
+    """Escape control/format/separator characters for a single-line display (P59).
+
+    A CRC-valid envelope can carry arbitrary UTF-8, including terminal escape sequences. The
+    value still means the same thing; only its *rendering* changes. Printable characters —
+    including CJK — are left untouched.
+    """
+    escaped: list[str] = []
+    for char in text:
+        if unicodedata.category(char) not in _DISPLAY_ESCAPE_CATEGORIES:
+            escaped.append(char)
+            continue
+        code = ord(char)
+        if code <= 0xFF:
+            escaped.append(f"\\x{code:02x}")
+        elif code <= 0xFFFF:
+            escaped.append(f"\\u{code:04x}")
+        else:
+            escaped.append(f"\\U{code:08x}")
+    return "".join(escaped)
 
 
 def is_recoverable_text(raw: bytes) -> bool:

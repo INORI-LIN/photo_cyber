@@ -84,6 +84,32 @@ def test_reconstruction_is_byte_exact_at_boundary_lengths(
     )
 
 
+def test_blind_search_checks_the_magic_prefix_before_a_full_reconstruction(monkeypatch) -> None:
+    """P60: a candidate length that cannot start with ``PG1:`` must not pay for every bit."""
+    reader = wi._ImageReader(np.zeros((MIN_SIDE, MIN_SIDE, 3), dtype=np.uint8))
+    monkeypatch.setattr(
+        reader, "_scores_for", lambda _channel, _scale: np.zeros(2048, dtype=np.int64)
+    )
+    calls: list[tuple[int, int | None]] = []
+    original = wi._reconstruct_bytes
+
+    def spy(scores, nbytes, **kwargs):
+        calls.append((nbytes, kwargs.get("max_bytes")))
+        return original(scores, nbytes, **kwargs)
+
+    monkeypatch.setattr(wi, "_reconstruct_bytes", spy)
+
+    assert reader.find_envelope(256) is None
+    assert calls, "the search must try at least one candidate length"
+    assert all(max_bytes == len(wi._MAGIC) + 1 for _, max_bytes in calls), calls
+
+
+def test_escape_for_display_neutralises_control_and_format_characters() -> None:
+    """P59: only control/format/separator characters are escaped; printable text is kept."""
+    text = "a\x1b]0;x\x07b\n\u00a9\u202e"
+    assert wi.escape_for_display(text) == "a\\x1b]0;x\\x07b\\x0a\u00a9\\u202e"
+
+
 def test_envelope_lengths_are_the_13_plus_4k_ladder() -> None:
     lengths = wi.envelope_lengths(64)
     assert lengths[:3] == [17, 21, 25]
