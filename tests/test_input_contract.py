@@ -197,6 +197,20 @@ def test_unsupported_formats_are_rejected_actionably(tmp_path, capsys) -> None:
     assert "unsupported input format" in capsys.readouterr().err
 
 
+def test_truncated_pixel_data_is_a_decode_error_with_a_path(tmp_path, capsys) -> None:
+    """P62: a header that opens is not a promise that the pixel data can be decoded."""
+    source = tmp_path / "truncated.jpg"
+    _textured((640, 480)).save(source, quality=92)
+    data = source.read_bytes()
+    source.write_bytes(data[: max(256, len(data) // 2)])
+    out = tmp_path / "out.jpg"
+
+    assert main(["protect", str(source), "-o", str(out)]) == 2
+    err = capsys.readouterr().err
+    assert f"cannot decode {source}" in err
+    assert not out.exists()
+
+
 def test_heic_like_input_is_refused_with_a_hint(tmp_path, capsys) -> None:
     heic = tmp_path / "photo.heic"
     heic.write_bytes(b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + bytes(24))

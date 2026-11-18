@@ -140,6 +140,20 @@ def test_blind_verify_escapes_control_characters_in_the_payload(tmp_path: Path, 
     assert "\x1b" not in captured.out
 
 
+def test_png_output_ignores_an_invalid_jpeg_quality(tmp_path: Path, capsys) -> None:
+    """P63: PNG says quality is ignored, so an out-of-JPEG-range value must not fail."""
+    src = tmp_path / "in.jpg"
+    out = tmp_path / "out.png"
+    _seed_textured(src)
+
+    code = main(
+        ["protect", str(src), "-o", str(out), "--quality", "0", "--layers", "visible"]
+    )
+
+    assert code == 0
+    assert "warning: writing PNG, not JPEG" in capsys.readouterr().err
+
+
 def test_verify_no_payload_exits_one(tmp_path: Path, capsys) -> None:
     """A clean image (no embed) → all-NUL payload → exit 1."""
     src = tmp_path / "clean.jpg"

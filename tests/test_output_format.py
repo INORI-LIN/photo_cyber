@@ -60,6 +60,37 @@ def test_png_output_is_png_and_round_trips(textured_jpg: Path, tmp_path) -> None
     assert pipeline.discover_payload(destination) == payload
 
 
+@pytest.mark.parametrize("quality", [0, 101])
+def test_png_output_ignores_quality_outside_the_jpeg_range(
+    textured_jpg: Path, tmp_path, quality: int
+) -> None:
+    """P63: the help/README promise is "ignored for PNG", not "validated then ignored"."""
+    destination = tmp_path / "out.png"
+
+    pipeline.protect(
+        textured_jpg,
+        destination,
+        pipeline.ProtectOptions(
+            payload="test#png", payload_envelope=True, quality=quality
+        ),
+    )
+
+    with Image.open(destination) as image:
+        image.load()
+        assert image.format == "PNG"
+    assert pipeline.discover_payload(destination) == "test#png"
+
+
+def test_jpeg_output_still_rejects_a_quality_outside_the_range(
+    textured_jpg: Path, tmp_path
+) -> None:
+    """P63 must not relax the JPEG contract while making PNG ignore the knob."""
+    with pytest.raises(ValueError, match="quality"):
+        pipeline.protect(
+            textured_jpg, tmp_path / "out.jpg", pipeline.ProtectOptions(quality=0)
+        )
+
+
 def test_png_gets_no_quality_but_jpeg_gets_configured_quality(
     monkeypatch, textured_jpg: Path, tmp_path
 ) -> None:

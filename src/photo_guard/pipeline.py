@@ -201,9 +201,18 @@ def _load_oriented_rgb(
         if draft_long_edge:
             # 0 keeps the original size (README §参数表); draft((0, 0)) would divide by zero.
             opened.draft("RGB", (draft_long_edge, draft_long_edge))
-        opened.load()
-        icc = opened.info.get("icc_profile")
-        oriented = ImageOps.exif_transpose(opened)
+        try:
+            opened.load()
+            icc = opened.info.get("icc_profile")
+            oriented = ImageOps.exif_transpose(opened)
+        except Image.DecompressionBombError as exc:
+            raise ValueError(
+                f"input is too large to decode (limit: {config.MAX_INPUT_PIXELS} pixels): {path}"
+            ) from exc
+        except (OSError, SyntaxError) as exc:
+            # P62: a parseable header is not a usable image. Pixel-data truncation used to
+            # escape as a bare OSError with no path, bypassing the loader's ValueError contract.
+            raise ValueError(f"cannot decode {path}: {exc}") from exc
         if oriented.mode == "CMYK":
             rgb, icc = _cmyk_to_srgb(oriented, icc, path, notes)
         else:
@@ -289,7 +298,14 @@ def _verify_output(
         )
 
 
-def validate_options(opts: ProtectOptions) -> None:
+def validate_options(opts: ProtectOptions, *, output_format: str | None = None) -> None:
+    """Validate the option set; ``quality`` is a JPEG-only knob.
+
+    P63: the CLI help and README both say PNG ignores ``--quality``, but the range check used
+    to run before ``save_format`` was known. ``protect`` passes the resolved container so a
+    PNG write accepts any value; direct callers that omit ``output_format`` keep the historic
+    unconditional 1–100 check.
+    """
     unknown = set(opts.layers) - ALL_LAYERS
     if unknown:
         raise ValueError(f"unknown layer(s) {sorted(unknown)!r}")
@@ -297,7 +313,7 @@ def validate_options(opts: ProtectOptions) -> None:
         raise ValueError("at least one layer must be enabled")
     if opts.long_edge < 0:
         raise ValueError("long_edge must be zero or positive")
-    if not 1 <= opts.quality <= 100:
+    if output_format != "PNG" and not 1 <= opts.quality <= 100:
         raise ValueError("JPEG quality must be between 1 and 100")
     # P55: alpha is a visible-layer knob, so an unused value is not an error (same rule as
     # text/mode below).
@@ -386,7 +402,9 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
         "protect: %s -> %s layers=%s long_edge=%s",
         input_path, output_path, sorted(opts.layers), opts.long_edge,
     )
-    validate_options(opts)
+    # P63: resolve the container first so ``quality`` is only enforced where it is used.
+    output_format = save_format(output_path)
+    validate_options(opts, output_format=output_format)
     # AGENTS.md §五 wants the original kept for archival; writing the product over it is
     # the one mistake here that cannot be undone, so it is refused rather than warned about.
     if _same_file(input_path, output_path):
@@ -398,7 +416,6 @@ def protect(input_path: Path, output_path: Path, opts: ProtectOptions) -> dict:
     # this is the shared contract point for the CLI, the GUI and programmatic callers.
     if output_path.is_dir():
         raise ValueError(f"output path is a directory: {output_path}")
-    output_format = save_format(output_path)
     warnings_list: list[str] = []
     src, icc = _load_oriented_rgb(
         input_path, draft_long_edge=opts.long_edge, notes=warnings_list
