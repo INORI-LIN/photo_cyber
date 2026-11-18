@@ -19,7 +19,9 @@
 > **2026-11-16 R5**：P56/P57 已落地（`c95eaf9`）+ 本回写；SD 层 4MP 上限 + `--max-perturb-pixels`、顶层 `-v` 日志与 traceback；collect 534、fast 522/32.3s、gui 53；见 §10.37；本地未推送。
 > **2026-11-16 R4**：P55 已落地（`5cd6814`）+ 本回写；`PGDConfig` steps≥1、构造器拒绝未知 kwarg、perturber 必须配层、alpha 按层校验；collect 540、fast 528/32.3s、gui 53；见 §10.38；本地未推送。
 > **2026-11-16 R6**：P58 已落地（`2546bd6`）+ 本回写；center/subject 默认 alpha 对齐 0.10、字号实测只缩不放；collect 544、fast 532/32.8s、gui 53；见 §10.39；本地未推送。
-> **2026-11-16 R7**：DOC6 已落地（`cab1bd8`）+ 本回写；README 改 Windows CPU、smoke 加 `--with-photoguard`（release 两腿已启用）；collect 548、fast 536/32.1s、gui 53；见 §10.40；本地未推送。
+> **2026-11-16 R7**：DOC6 已落地（`cab1bd8`）+ 本回写；README 改 Windows CPU、smoke 加 `--with-photoguard`（release 两腿已启用）；collect 548、fast 536/32.1s、gui 53；见 §10.40。
+> **2026-11-17 推送与 CI 取证**：R2–R7/Q5–Q7 已全部推送（`origin/main=e041ddc`，本地 0 ahead）；首轮 ci `44005741694` 的 ubuntu/windows 各 1 例假红已由 `83e576d` 修正，docker `44005741764` 全绿；见 §10.41。
+> **2026-11-18 全项目分析登记**：新增 P59–P72/DOC7 与批次 S–W；S 开工（P59/P60/P62/P63），三条开工裁定见 §3；见 §10.42。
 
 ---
 
@@ -102,6 +104,21 @@
 | P57 | 零 logging + CLI 宽 except 一律 exit 2 | med（可运维性） | S | R5 | 全仓无 `logging` import；打包 GUI 无控制台；异常无 traceback。见 §10.31。 | [x] R5 已落地（`c95eaf9`）：包级 `NullHandler` + pipeline/photoguard 模块 logger；CLI 顶层 `-v` 输出 DEBUG 日志与 traceback；默认 stderr 仍为空（真实 JPEG protect 实测 0 字节）。见 §10.37。 |
 | P58 | 可见水印默认 alpha=0.35 与 config 0.10 冲突；`len(text)` 字号 | med-low | S | R6 | `apply_center/apply_subject` 直接调用时超 AGENTS 5–15%；CJK 双宽溢出主体框。见 §10.31。 | [x] R6 已落地（`2546bd6`）：两处默认 alpha 对齐 `config.DEFAULT_VISIBLE_ALPHA`（0.10）；新增 `_fit_font`，保留旧估算为起点、实测超宽才按比例收缩（只缩不放）。19 CJK @320×240 由 291px 降到 183/158；Latin 默认渲染逐字节不变。见 §10.39。 |
 | DOC6 | Windows CUDA 承诺与锁文件解析不一致 | high（发布承诺） | S（取证） | R7 | `uv.lock` 的 CUDA 依赖仅 `sys_platform == 'linux'`；Windows wheel 122.9MB vs Linux 532.2MB；README 仍写 Windows CUDA。见 §10.31。 | [x] R7 已落地（`cab1bd8`）：README 六处改为 Windows CPU + 源码 cu130 换装；smoke 新增 opt-in `--with-photoguard`（缺运行库退 5、Windows 出现 CUDA 退 6），release 两腿已传该 flag；本机正向 exit 0、`cuda=None`。见 §10.40。 |
+| P59 | verify 盲检把图内 payload 原样写 stdout | med-high（终端注入） | S | S | CRC 合法信封的 payload 可含 ESC/BEL/换行；`cli.py` 直接 `print`，cp1252 控制台还会替换成 `?` 仍退 0。见 §10.42。 | [ ] 批 S 待落地 |
+| P60 | 盲检成本随上界线性增长，GUI 可填 1M | med | S | S | `find_envelope` 对每个候选长度重算全部比特；12MP 容量约 23k、64MP 约 125k，页内取消不覆盖搜索。见 §10.42。 | [ ] 批 S 待落地 |
+| P61 | 非 RGB 源 ICC 被写进 RGB 成品 | med-low | S | W | P48 只修 CMYK；L/LAB 带 Gray/LAB profile 时 `convert("RGB")` 后 profile 不变。见 §10.42。 | [ ] 待 W |
+| P62 | 截断图片 `.load()` 抛裸 OSError | med-low | S | S | 头部可解析、像素数据截断时绕过 `cannot read` ValueError 契约。见 §10.42。 | [ ] 批 S 待落地 |
+| P63 | PNG 输出 `--quality 0` 被拒 | med-low | S | S | help/README 说 PNG 忽略 quality，`validate_options` 无条件校验 1–100。见 §10.42。 | [ ] 批 S 待落地 |
+| P64 | 核心守卫四处小口径 | low | S | W | 容量文案无条件建议 `--long-edge`、256² 地板双源、三个读入口缺 `_require_method`、SD 建议值 off-by-one。见 §10.42。 | [ ] 待 W |
+| P65 | replace 后 chmod 可被换链 + temp 崩溃残留 | low | S | W | 共享目录 `os.replace` 后到 chmod 的窗口；SIGKILL 留下 `.photoguard-*.tmp`。见 §10.42。 | [ ] 待 W |
+| P66 | 64MP 内存放大与 subject 全尺寸 | med | M | W | loader/convert/transpose/BGR/visible 多层复制；Sobel+积分图峰值约 1.7GB。见 §10.42。 | [ ] 待 W |
+| P67 | 设备发现重复/误标 + device-index 静默忽略 | med-low | S | U | Apple/NVIDIA 已支持适配器再列为 unsupported；auto 分支不看 index。见 §10.42。 | [ ] 待 U |
+| P68 | GUI 三处纪律缺口 | low | S | U | DeviceDiscoveryWorker 无 finally；空白 expected 绕过互斥；输出目录为文件时整批晚失败。见 §10.42。 | [ ] 待 U |
+| P69 | 发布链四处缺口 | med | M | T | smoke 不 import Qt/不加载 VAE；artifact 零产物；构建腿不跑测试；Docker 缓存残留。见 §10.42。 | [ ] 待 T |
+| P70 | 模型完整性只查文件名 | low-med | S | V | 0 字节 safetensors 通过 download/build/smoke；测试把空文件钉成完整。见 §10.42。 | [ ] 待 V |
+| P71 | 测试空心与慢档基建 | med | M | V | layers/格式/missing-dep 三处自证；slow fixture 约 7 次加载；bench/slow 预检错目录。见 §10.42。 | [ ] 待 V |
+| P72 | 低优先代码收口 | low | S | U/W | noise 也校验 SD-only steps；RGBa/La 未叠白；shiboken6 未声明；gui_main 死模块。见 §10.42。 | [ ] 待 U/W |
+| DOC7 | 文档对账：头部未推 / AGENTS §8.7 / GUI 设备页 / notices | low | S | W | 七条“本地未推送”已不成立；smoke flag 未入 §8.7；设备页未注 Windows CPU；Qt/Pillow/uv 二进制未入 notices。见 §10.42。 | [ ] 待 W |
 
 ---
 
@@ -143,6 +160,11 @@
 | **R5** | P56 + P57（`PHOTOGUARD_MAX_PIXELS`；包级 `NullHandler` + CLI `-v`） | 超限 sd 退 2 且无成品；默认 CLI stderr 逐行不变；`-v` 有 traceback；docker SD 冒烟不受影响。**R5 已完成（2026-11-16，`c95eaf9`）：4MP 默认 + `--max-perturb-pixels`；collect 523→534、fast 522/32.3s、gui 53、compliance 18；见 §10.37。** |
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 已完成（2026-11-16，`2546bd6`）：collect 540→544、fast 532/32.8s、gui 53、compliance 18；见 §10.39。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 已完成（2026-11-16，`cab1bd8`）：collect 544→548、fast 536/32.1s、gui 53、compliance 18；真机 release smoke 待下次 dispatch；见 §10.40。** |
+| **S** | P59 + P60 + P62 + P63（盲检输出/成本、解码包装、PNG quality） | 含 Cc 的合法信封 stdout 单行转义且退 0；无信封图的前缀筛选不触发全长重建、真实信封结果不变；截断 JPEG 退 2 且文案含路径；PNG `--quality 0/101` 退 0 + 既有警告；fast/gui/compliance 全绿。**S 开工（2026-11-18）：三条口径见 §3；先红后绿见 §10.43。** |
+| **T** | P69（smoke 的 Qt/VAE、artifact 零产物、平台测试、Docker 缓存） | `--with-gui` 在缺 Qt/插件时退非 0；artifact 上传 `if-no-files-found: error`；两构建腿跑 fast；镜像内 `/root/.cache` 不随发布层保留（体积前后对比）。 |
+| **U** | P67 + P68 + P72（设备发现/device-index、GUI 小缺口、死代码） | 本机设备表不再把已支持 GPU 标 unsupported；auto+index 选到指定 CUDA 或响亮报错；空白 expected 走线索路径；输出目录为文件时启动前拒绝；gui_main 删除或成为唯一入口。 |
+| **V** | P70 + P71（模型完整性、测试加固） | 0 字节/截断 safetensors 被拒；layers 用例能证明未选层未执行；五种输入格式均跑真实 protect；slow fixture 模型加载次数下降；bench/slow 预检用 `model_dir_is_complete`。 |
+| **W** | P61 + P64 + P65 + P66 + DOC7（ICC/核心守卫/输出窗口/大图内存/文档） | L/LAB ICC 不再错配；容量文案只在可缩放时提 `--long-edge`；地板/方法门单源；chmod 窗口与 temp 清理有结论；64MP RSS 有实测；头部七条“未推送”清零。 |
 
 五条硬定序，实施时不得调换：
 
@@ -228,6 +250,13 @@
 2. **P56=4MP（R5）**：`config.PHOTOGUARD_MAX_PIXELS=4_000_000` + `--max-perturb-pixels` 覆盖；仅 `--perturber sd` 生效。依据：VAE 首层 128 通道全分辨率特征图在 24MP 为 fp32 11.4GiB / fp16 5.7GiB，8GB 机器必 OOM；24/32MP 不作为默认。
 3. **watermark 语料例外（R3）**：`1..66`→`{1,2,3,7,8,9,13,16,17,33,64,65,66}`×2 载体；**语料缩减，不是等价**。全扫不在 CI（docker 慢档只跑 `test_photoguard_slow.py`）；G1 等价锁由边界集 + `test_dwt_dct_svd` 外部夹具承担。如需恢复全扫，另开批次改 CI 命令。
 4. **Q5=P47/P48（Q5）**：P47 取“响亮拒绝非 8-bit”（`I`/`F`/`I;16*` 退 2）；P48 取“有 ICC 用 ImageCms 转 sRGB 并写 sRGB profile；无 ICC 朴素转+丢 profile+protect 警告；不拒 CMYK”。见 §10.34。
+
+**2026-11-18 全项目分析批 S 开工裁定（用户逐条采纳推荐）**：
+
+1. **P59 输出净化**：转义 Cc/Cf/Zl/Zp 为 `\xNN`/`\uNNNN`，其余可打印 Unicode 原样保留；CLI 与 GUI 共用同一函数；目标是不破坏终端/表格显示且不改变 payload 语义。cp1252 控制台的非 ASCII 替换属既有 console 行为，不在本条扩张。
+2. **P60 盲检上界**：只做 `PG1:` 前缀筛选，不新增硬上限、不改变默认 256 与“超过图像容量时 clamp 到容量”的既有语义；命中前缀后才做全长重建，结果必须与旧实现逐字节一致。
+3. **P63 PNG quality**：PNG 路径完全忽略 `quality`（0/101 也成功），仅 JPEG 路径保留 1–100 校验；`validate_options()` 的默认行为保持不变，新增可选 `output_format` 参数供 `protect` 传入。
+4. **批序**：S（安全与验真）→ T（发布链）→ U（GUI/设备）→ V（测试/模型）→ W（性能/杂项/文档）；每批仍按 §5 先红后绿、只提交不推送。
 
 ---
 
@@ -2744,3 +2773,14 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **负控**：把 `_require_temp_identity` 替换为空操作后，`destination` 变成指向 victim 的符号链接、`read_bytes()` 为 `victim-bytes`，新断言必红——用例不再空转。
 - **口径更正**：§10.39 原写“Latin 默认渲染逐字节不变”，只在字体足够窄（macOS）时成立；Linux/Windows 的 fallback 字体下默认文本也会被收缩。已在该节补更正，AGENTS §8.3 的“只缩不放”表述不受影响。
 - **修复后回归**：collect 548 不变；fast 536 passed / 32.98s；gui 53/0 skip；compliance 18；四条 fail-loud 锁 39。
+
+### 10.42 全项目分析登记（2026-11-18，HEAD `e041ddc`）
+
+- **口径**：三路只读审计（核心管线 / GUI+发布链 / 测试+文档）逐条 grep 历史 ID 去重；关键结论用本机探针或源码复核。登记 14 个新 ID（P59–P72）与 DOC7，切批 S–W；本轮只开工 S（P59/P60/P62/P63），其余只登记、不改码。
+- **S 批证据**：
+  - P59：`cli.py` 盲检分支 `print(payload)`，信封 CRC 只保证完整性，不保证可打印；`is_recoverable_text` 只用于旧版线索路径。
+  - P60：`_ImageReader.find_envelope` 对 `envelope_lengths()` 的每个长度调用 `_reconstruct_bytes`；成本随上界线性增长；GUI 上界 1,000,000、CLI 无硬上限，且 `protect` 会建议按存储字节调大。
+  - P62：`_load_oriented_rgb` 只包住 `Image.open`；头部可解析、像素数据截断的 JPEG 在 `opened.load()` 抛裸 `OSError`。
+  - P63：`validate_options` 在 `protect` 知道输出容器之前无条件校验 `quality`，与 CLI help/README 的“PNG 忽略”冲突。
+- **其余登记要点**：P61 L/LAB ICC；P64 容量文案/地板双源/读入口方法门/预算建议 off-by-one；P65 replace 后 chmod 窗口与 SIGKILL temp 残留；P66 64MP 拷贝链与 subject 全尺寸 Sobel/积分图；P67 设备发现双向子串匹配与 auto+index；P68 DeviceDiscoveryWorker 无 finally、空白 expected、输出目录为文件；P69 smoke 不 import Qt/不加载 VAE、artifact 零产物、构建腿不跑测试、Docker 缓存；P70 0 字节 safetensors；P71 三处空心测试、slow fixture 多次加载、bench/slow 预检错目录；P72 noise 的 SD-only 校验、RGBa/La、shiboken6、gui_main；DOC7 头部七条“本地未推送”、AGENTS §8.7、GUI 设备页、notices 缺项。
+- **未纳入本轮**：workflow `run:` 未发现直接插值 `${{ github.* }}` 的注入面；GUI 跨线程信号未见 P26 类回归；`pyproject`/`uv.lock` 的 core/extras/groups 逐项一致。以上作为“本轮核对未发现”记录，不新开 ID。
