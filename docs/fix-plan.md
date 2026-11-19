@@ -22,7 +22,7 @@
 > **2026-11-16 R7**：DOC6 已落地（`cab1bd8`）+ 本回写；README 改 Windows CPU、smoke 加 `--with-photoguard`（release 两腿已启用）；collect 548、fast 536/32.1s、gui 53；见 §10.40。
 > **2026-11-17 推送与 CI 取证**：R2–R7/Q5–Q7 已全部推送（`origin/main=e041ddc`，本地 0 ahead）；首轮 ci `44005741694` 的 ubuntu/windows 各 1 例假红已由 `83e576d` 修正，docker `44005741764` 全绿；见 §10.41。
 > **2026-11-18 全项目分析登记**：新增 P59–P72/DOC7 与批次 S–W；S 已落地（P59/P60/P62/P63，`fe7b76b`+`1bd46d5`）：collect 548→557、fast 545/30.68s、gui 54；三条开工裁定见 §3；见 §10.42/§10.43。
-> **2026-11-18 批 T**：P69 已落地（`b8fd73e`+`ffa4ac6`+`c1e24ac`）+ 本回写；smoke 新增 `--with-gui`（offscreen，退 7）与真 VAE 加载（退 8）、两构建腿跑 fast（含 GUI）、artifact 零产物即失败、镜像同层清理 uv/HF 缓存；collect 557→567、core fast 501/2 skip/12、extras fast 555/12、gui 54/0 skip；已推送 `db954db`，ci `44286164318` 与 docker `44286164400` 全绿（镜像 9.26GB、删缓存 4.73GiB）；bundle 与构建腿取证待 release dispatch；见 §10.44。
+> **2026-11-18 批 T**：P69 已落地（`b8fd73e`+`ffa4ac6`+`c1e24ac`）+ 本回写；smoke 新增 `--with-gui`（offscreen，退 7）与真 VAE 加载（退 8）、两构建腿跑 fast（含 GUI）、artifact 零产物即失败、镜像同层清理 uv/HF 缓存；collect 557→567、core fast 501/2 skip/12、extras fast 555/12、gui 54/0 skip；已推送 `db954db`，ci `44286164318` 与 docker `44286164400` 全绿（镜像 9.26GB、删缓存 4.73GiB）。**首次 dispatch 暴露两处真机缺陷**：Windows 构建腿 GUI 子进程 cp1252 编码（`d07128f`）与 macOS bundle 模型根被 `Resources/models` 影子遮蔽（P73，`8d2e6fa`）；bundle 的 Qt/VAE 冒烟待下一轮 dispatch；见 §10.44。
 
 ---
 
@@ -119,6 +119,7 @@
 | P70 | 模型完整性只查文件名 | low-med | S | V | 0 字节 safetensors 通过 download/build/smoke；测试把空文件钉成完整。见 §10.42。 | [ ] 待 V |
 | P71 | 测试空心与慢档基建 | med | M | V | layers/格式/missing-dep 三处自证；slow fixture 约 7 次加载；bench/slow 预检错目录。见 §10.42。 | [ ] 待 V |
 | P72 | 低优先代码收口 | low | S | U/W | noise 也校验 SD-only steps；RGBa/La 未叠白；shiboken6 未声明；gui_main 死模块。见 §10.42。 | [ ] 待 U/W |
+| P73 | macOS bundle 的模型根被 `Resources/models` 影子遮蔽 | high（bundle 内 SD 不可用） | S（已落地） | T | Nuitka 把模型的 `.cache/huggingface` 点目录迁到 `Contents/Resources` 并留符号链接，`find_resource("models")` 先命中只有 `.cache` 的根；权重实际在 `MacOS/models`，bundle 内 `--perturber sd` 会找不到模型。见 §10.44。 | [x] T 已落地（2026-11-19，`8d2e6fa`）：`config._resolve_models_dir()` 按 `model_dir_is_complete` 选根，全部不完整时保留旧回退；smoke 失败文案逐根打印 complete/missing；2 条布局单测。 |
 | DOC7 | 文档对账：头部未推 / AGENTS §8.7 / GUI 设备页 / notices | low | S | W | 七条“本地未推送”已不成立；smoke flag 未入 §8.7；设备页未注 Windows CPU；Qt/Pillow/uv 二进制未入 notices。见 §10.42。 | [ ] 待 W |
 
 ---
@@ -162,7 +163,7 @@
 | **R6** | P58（默认 alpha 对齐 config；字号按 bbox 宽度反推） | 默认值断言 + 长文本宽度断言；`test_visible_watermark_modes` 全绿；像素 diff 仅限显式 alpha。**R6 已完成（2026-11-16，`2546bd6`）：collect 540→544、fast 532/32.8s、gui 53、compliance 18；见 §10.39。** |
 | **R7** | DOC6（Windows CUDA 取证；桌面 smoke 加 photoguard 导入检查） | 真机输出 `torch.version.cuda`/`cuda.is_available()`；缺 torch 的 bundle smoke 失败；正常 bundle 通过。**R7 已完成（2026-11-16，`cab1bd8`）：collect 544→548、fast 536/32.1s、gui 53、compliance 18；真机 release smoke 待下次 dispatch；见 §10.40。** |
 | **S** | P59 + P60 + P62 + P63（盲检输出/成本、解码包装、PNG quality） | 含 Cc 的合法信封 stdout 单行转义且退 0；无信封图的前缀筛选不触发全长重建、真实信封结果不变；截断 JPEG 退 2 且文案含路径；PNG `--quality 0/101` 退 0 + 既有警告；fast/gui/compliance 全绿。**S 已完成（2026-11-18，`fe7b76b`+`1bd46d5`）：先红 3+4 例；collect 548→557、fast 545/30.68s、gui 54/0 skip、compliance 18、四条 fail-loud 锁 37 passed；见 §10.43。** |
-| **T** | P69（smoke 的 Qt/VAE、artifact 零产物、平台测试、Docker 缓存） | `--with-gui` 在缺 Qt/插件时退非 0；artifact 上传 `if-no-files-found: error`；两构建腿跑 fast；镜像内 `/root/.cache` 不随发布层保留（体积前后对比）。**T 已完成（2026-11-18，`b8fd73e`+`ffa4ac6`+`c1e24ac`）：先红 5+3+2 例；smoke 真加载 VAE（8×8 latent_norm=9.734）与 offscreen Qt，退出码 7/8；两构建腿 dev 组 + fast 档（含 GUI）；artifact 零产物即失败；Dockerfile 同层删缓存并打印体积；collect 557→567、core fast 501/2 skip/12、extras fast 555/12、gui 54/0 skip；Docker 已取证（9.26GB，删缓存 4.73GiB）、bundle 与构建腿待 release dispatch；见 §10.44。** |
+| **T** | P69（smoke 的 Qt/VAE、artifact 零产物、平台测试、Docker 缓存） | `--with-gui` 在缺 Qt/插件时退非 0；artifact 上传 `if-no-files-found: error`；两构建腿跑 fast；镜像内 `/root/.cache` 不随发布层保留（体积前后对比）。**T 已完成（2026-11-18，`b8fd73e`+`ffa4ac6`+`c1e24ac`）：先红 5+3+2 例；smoke 真加载 VAE（8×8 latent_norm=9.734）与 offscreen Qt，退出码 7/8；两构建腿 dev 组 + fast 档（含 GUI）；artifact 零产物即失败；Dockerfile 同层删缓存并打印体积；collect 557→567、core fast 501/2 skip/12、extras fast 555/12、gui 54/0 skip；Docker 已取证（9.26GB，删缓存 4.73GiB）；首次 dispatch（`44445013882`）暴露 Windows GUI 子进程编码与 macOS bundle 模型根影子两处真机缺陷，修复为 `d07128f`+`8d2e6fa`（P73），bundle 的 Qt/VAE 冒烟待下一轮；见 §10.44。** |
 | **U** | P67 + P68 + P72（设备发现/device-index、GUI 小缺口、死代码） | 本机设备表不再把已支持 GPU 标 unsupported；auto+index 选到指定 CUDA 或响亮报错；空白 expected 走线索路径；输出目录为文件时启动前拒绝；gui_main 删除或成为唯一入口。 |
 | **V** | P70 + P71（模型完整性、测试加固） | 0 字节/截断 safetensors 被拒；layers 用例能证明未选层未执行；五种输入格式均跑真实 protect；slow fixture 模型加载次数下降；bench/slow 预检用 `model_dir_is_complete`。 |
 | **W** | P61 + P64 + P65 + P66 + DOC7（ICC/核心守卫/输出窗口/大图内存/文档） | L/LAB ICC 不再错配；容量文案只在可缩放时提 `--long-edge`；地板/方法门单源；chmod 窗口与 temp 清理有结论；64MP RSS 有实测；头部七条“未推送”清零。 |
@@ -265,6 +266,7 @@
 2. **VAE 加载归属**：并入现有 `--with-photoguard`（导入 torch/diffusers 后真加载 VAE 并对 8×8 图跑一次 `latent_norm`，失败退 8）；release 两腿不新增旗标。
 3. **构建腿测试范围**：两条构建腿跑全量 `-m 'not slow'`（含 GUI 档；sync 加 `--group dev`），红了按缺陷修，不排除、不放宽。
 4. **Docker 体积证据**：本机无 docker，采用「Dockerfile 同层 `du -sb` 打印清理前体积 + `docker.yml` 打印最终镜像体积并以 `--user 0` 断言缓存目录不存在」；不额外构建基线镜像。
+5. **P73 的模型根解析（首轮 dispatch 后发现）**：不用 `--noinclude-data-files` 排除 `.cache`（依赖 Nuitka 的匹配语义），改为 `model_dir_is_complete()` 优先选根、全部不完整才回退旧路径；smoke 失败时逐根打印 complete/missing，保留「权重真缺就退 2」的硬门。
 
 ---
 
@@ -2810,4 +2812,6 @@ AGENTS.md：无冲突，无需用户裁定（零依赖、层级不变、不编�
 - **Docker**：两条 `uv sync` 与 `download-models` RUN 同层 `rm -rf /root/.cache/uv /root/.cache/huggingface`，删除前 `du -sb` 打印字节数；download RUN 先断言 `/app/models` 无符号链接再删缓存，删除后 `test ! -e` 复核。docker.yml 新增「镜像体积 + 无构建缓存」步骤（`docker image ls ... {{.Size}}`；`--user 0` 断言两个缓存目录不存在；打印 `/app/.venv`、`/app/models` 体积）。
 - **回归**：collect 557→567；core 临时 venv（`UV_PROJECT_ENVIRONMENT=/tmp/pg-core-t`）**501 passed / 2 skipped / 12 deselected / 17.53s**（2 skip 为两份 GUI 模块的 `importorskip`）；extras 档（photoguard+desktop，构建腿代理）**555 passed / 12 deselected / 31.25s**；GUI 档 **54 passed / 0 skip**；四份 workflow PyYAML 解析 4/4；Dockerfile runtime 段 6 条 RUN 的 `sh -n` 全过。
 - **推送后 CI 取证（2026-11-18，`db954db`）**：`ci` run `44286164318` **success**（test 四腿 + gui）；`docker` run `44286164400` **success**。构建日志的体积证据：依赖层 `uv cache before cleanup: 5082706738 bytes`（约 4.73 GiB，同层删除）、项目层 63720 B、download 层 HF 49286 B / uv 992 B，随后 `build caches removed from the release layer`；`docker image ls` **photo-guard:ci 9.26GB**，`du -sb` 为 `/app/.venv 5134627402`、`/app/models 334644241`，`--user 0` 断言输出 `no uv/HF build cache in the image`。按「before ≈ 最终镜像 + 被删缓存」计，修复前约 **14.0 GB**（9.26 GB + 4.73 GiB），修复后 **9.26 GB**。
-- **残余/边界**：Docker 缓存与体积已由 `docker` run 取证。`release-desktop.yml` 的构建腿 fast 档、bundle 的 offscreen Qt 与真 VAE 加载仍待一次 `workflow_dispatch`（该 workflow 不由 push 触发；本机无 Windows/macOS 打包环境）；若 bundle 退 7，回退方案是在 `build_desktop.py` 显式加 `--include-qt-plugins=platforms`。`--with-gui` 强制覆盖调用方已有的 `QT_QPA_PLATFORM` 是刻意行为（避免环境决定发布门）。DOC7 的「smoke flag 未入 §8.7」一项随本批 §8.7 更新覆盖，DOC7 其余仍归批 W。
+- **首次真机 dispatch（2026-11-19，run `44445013882`，ref `db954db`）**：`verify` 全绿（fast + GUI + 入口 --help）；**Windows 构建腿在新增的 fast 档红 1 例**：`test_quit_event_after_grace_is_consumed_and_a_second_one_exits` 的子进程用 ANSI 代码页 stdout 打印中文状态栏文案，`print()` 抛 `UnicodeEncodeError`、退 7（`1 failed, 552 passed, 2 skipped`）。修复 `d07128f`：三处 GUI 子进程 harness 统一 `PYTHONIOENCODING=utf-8` + `encoding="utf-8"`，断言未改；本机以 `PYTHONIOENCODING=cp1252` 复现同一 exit 7，修复后 GUI 档 54 passed。
+- **macOS 构建腿**：fast 档 **success**；bundle smoke 在模型完整性检查处退 **2**（`Resources/models/sd-vae-ft-mse` 缺 `config.json`/权重）。根因（P73）：模型目录带 `.cache/huggingface`，Nuitka 把点目录从 `Contents/MacOS` 迁到 `Contents/Resources` 并留符号链接，于是 `Resources/models` 只含 `.cache`；旧 `find_resource("models")` 先命中它，权重实际在 `MacOS/models`。修复 `8d2e6fa`：`config._resolve_models_dir()` 按 `model_dir_is_complete()` 选根，全部不完整才回退旧路径；smoke 失败文案逐根打印 `complete/missing`；新增 2 条布局单测与 probe 断言。本轮因此未走到 `--with-gui`/VAE 两段，bundle 的 Qt/VAE 证据待下一轮 dispatch。该轮 macOS Nuitka 构建耗时约 2h50m（CI 日志多次 `Slow C compilation`），非仓内可优化项。
+- **残余/边界**：Docker 缓存与体积已由 `docker` run 取证；首轮 dispatch 的两处真机缺陷已修（`d07128f`/`8d2e6fa`），Windows 构建腿 fast 档与 macOS bundle 的模型检查待下一轮 dispatch 复核；bundle 的 offscreen Qt（日志已见 `Including Qt plugins '…,platforms,…'`）与真 VAE 两段尚未被走到（模型检查在其之前）。若下一轮仍退 7，回退方案是在 `build_desktop.py` 显式加 `--include-qt-plugins=platforms`。`--with-gui` 强制覆盖调用方已有的 `QT_QPA_PLATFORM` 是刻意行为（避免环境决定发布门）。DOC7 的「smoke flag 未入 §8.7」一项随本批 §8.7 更新覆盖，DOC7 其余仍归批 W。
