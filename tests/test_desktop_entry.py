@@ -64,6 +64,9 @@ def test_smoke_test_rejects_an_incomplete_model_directory(monkeypatch, tmp_path,
     assert entry._smoke_test() == 2
     err = capsys.readouterr().err
     assert "incomplete" in err and "safetensors" in err
+    # P73: the failure must say which roots were probed — that is what turns a 3-hour
+    # macOS build round into a one-look diagnosis.
+    assert "probed:" in err
 
 
 @pytest.mark.parametrize("missing", ["LICENSE", "THIRD_PARTY_NOTICES.md"])

@@ -160,3 +160,41 @@ def test_override_expands_user(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
 
     assert resources.candidate_roots() == ((home / "pinned").resolve(),)
+
+
+# --- P73: a relocated .cache subtree must not shadow the real model --------------------
+
+
+def test_model_dir_resolution_prefers_the_complete_root(monkeypatch, tmp_path) -> None:
+    """Nuitka moves dotted subtrees (``.cache/huggingface``) to Resources and symlinks them.
+
+    That creates an otherwise empty ``Resources/models``; probing for the directory alone
+    picked it and reported the bundle's model as incomplete although ``MacOS/models`` held
+    the weights (release run 44445013882).
+    """
+    from photo_guard import config
+
+    resources_dir, macos = _frozen_bundle(tmp_path)
+    (resources_dir / "models" / "sd-vae-ft-mse" / ".cache" / "huggingface").mkdir(
+        parents=True
+    )
+    complete = macos / "models" / "sd-vae-ft-mse"
+    complete.mkdir(parents=True)
+    (complete / "config.json").write_text("{}", encoding="utf-8")
+    (complete / "diffusion_pytorch_model.safetensors").write_bytes(b"")
+    _freeze(monkeypatch, macos)
+
+    assert config._resolve_models_dir() == macos / "models"
+
+
+def test_model_dir_resolution_keeps_the_old_fallback_when_nothing_is_complete(
+    monkeypatch, tmp_path
+) -> None:
+    """A bundle with no usable weights must still resolve to a path the smoke can name."""
+    from photo_guard import config
+
+    resources_dir, macos = _frozen_bundle(tmp_path)
+    (resources_dir / "models" / "sd-vae-ft-mse").mkdir(parents=True)
+    _freeze(monkeypatch, macos)
+
+    assert config._resolve_models_dir() == resources_dir / "models"

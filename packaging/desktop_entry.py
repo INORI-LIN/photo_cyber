@@ -58,9 +58,21 @@ def _smoke_test(with_photoguard: bool = False, with_gui: bool = False) -> int:
     # config.json. Without the completeness check a machine that never ran
     # `download-models` (or whose models/ was not shipped fully) still reported success.
     if not config.model_dir_is_complete(config.PHOTOGUARD_MODEL_ID):
+        # P73: name every candidate root and whether its model is usable. The macOS bundle
+        # can hold a shadow ``Resources/models`` (relocated ``.cache`` symlink) while the
+        # weights live in ``MacOS/models``; without this probe the failure path alone said
+        # "missing" without saying which root was chosen.
+        probes = "; ".join(
+            f"{candidate}="
+            + ("complete" if config.model_dir_is_complete(candidate) else "missing/incomplete")
+            for candidate in (
+                root / "models" / config.PHOTOGUARD_MODEL_NAME
+                for root in resources.candidate_roots()
+            )
+        )
         print(
             f"model directory missing or incomplete: {config.PHOTOGUARD_MODEL_ID} "
-            "(needs config.json and *.safetensors)",
+            f"(needs config.json and *.safetensors; probed: {probes})",
             file=sys.stderr,
         )
         return 2

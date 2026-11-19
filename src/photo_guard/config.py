@@ -60,13 +60,49 @@ NOISE_EPSILON = 2.0 / 255.0  # 肉眼几乎无感的轻量占位扰动
 from . import resources as _resources
 
 PHOTOGUARD_MODEL_NAME = "sd-vae-ft-mse"
+
+
+def model_dir_is_complete(path: str | Path) -> bool:
+    """A usable local SD VAE directory: ``config.json`` + at least one ``*.safetensors``.
+
+    Q2/N5: ``is_dir()`` alone accepted an empty or half-downloaded snapshot in the
+    downloader, the desktop build and the bundle smoke — all three reported success and the
+    failure only surfaced on the first ``--perturber sd`` run. The exact weight filename is
+    left open because diffusers has used more than one (`diffusion_pytorch_model` variants).
+    """
+    directory = Path(path)
+    return (
+        directory.is_dir()
+        and (directory / "config.json").is_file()
+        and any(directory.glob("*.safetensors"))
+    )
+
+
+def _resolve_models_dir() -> Path:
+    """The ``models/`` root that actually holds a usable SD VAE (P73).
+
+    P33 probes candidate roots per item, but probing for the *directory* is not enough on
+    macOS: Nuitka relocates dotted subtrees from ``Contents/MacOS`` to ``Contents/Resources``
+    and leaves a symlink behind, so the model's ``.cache/huggingface`` metadata creates an
+    empty-looking ``Resources/models`` that shadows the real ``MacOS/models``. Picking the
+    first root whose model directory passes :func:`model_dir_is_complete` resolves the
+    weights instead. The old single-root fallback is kept for downloads and for bundles
+    whose weights really are missing (the smoke must still fail, with a path).
+    """
+    for root in _resources.candidate_roots():
+        candidate = root / "models" / PHOTOGUARD_MODEL_NAME
+        if model_dir_is_complete(candidate):
+            return candidate.parent
+    return _resources.find_resource("models") or (
+        _resources.application_root() / "models"
+    )
+
+
 # P33: probe the bundle's candidate roots before falling back to a single path, so a macOS
 # bundle that keeps data-dirs in Contents/Resources and data-files in Contents/MacOS resolves
 # either layout. The `or` fallback deliberately yields a non-existent path when the model was
 # never shipped — the is_dir() checks (G6) must fail loudly, not silently succeed.
-PHOTOGUARD_MODELS_DIR = _resources.find_resource("models") or (
-    _resources.application_root() / "models"
-)
+PHOTOGUARD_MODELS_DIR = _resolve_models_dir()
 PHOTOGUARD_REMOTE_REPO = "stabilityai/sd-vae-ft-mse"
 # P15: the immutable commit the download and the loader both pin to, so the Docker bake and
 # the desktop bundles are reproducible. Measured 2026-09-29 (last modified 2023-06-06).
@@ -87,23 +123,7 @@ PHOTOGUARD_SEED = 0
 PHOTOGUARD_MAX_PIXELS = 4_000_000
 
 
-def model_dir_is_complete(path: str | Path) -> bool:
-    """A usable local SD VAE directory: ``config.json`` + at least one ``*.safetensors``.
-
-    Q2/N5: ``is_dir()`` alone accepted an empty or half-downloaded snapshot in the
-    downloader, the desktop build and the bundle smoke — all three reported success and the
-    failure only surfaced on the first ``--perturber sd`` run. The exact weight filename is
-    left open because diffusers has used more than one (`diffusion_pytorch_model` variants).
-    """
-    directory = Path(path)
-    return (
-        directory.is_dir()
-        and (directory / "config.json").is_file()
-        and any(directory.glob("*.safetensors"))
-    )
-
-
-# Layer ③ visible watermark
+# Layer ③ visible watermark# Layer ③ visible watermark
 # AGENTS.md 三③ wants "压在主体关键纹理上" — `subject` mode binds the
 # watermark to a detected face/saliency box, which is the most faithful
 # realisation. `tile` and `center` are kept as fallbacks / stylistic choices.
