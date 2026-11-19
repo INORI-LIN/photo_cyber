@@ -230,12 +230,20 @@ print("two shown rounds completed")
 
 def test_two_shown_rounds_under_offscreen_do_not_crash(tmp_path) -> None:
     """P26 — the crash is SIGSEGV, so the rounds run in a child process (exit 139 pre-fix)."""
-    env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "PG_WORK": str(tmp_path)}
+    env = {
+        **os.environ,
+        "QT_QPA_PLATFORM": "offscreen",
+        "PG_WORK": str(tmp_path),
+        # The child prints the Chinese status-bar text; Windows would otherwise encode
+        # stdout with the ANSI code page and die inside print() (P69 build-leg run).
+        "PYTHONIOENCODING": "utf-8",
+    }
     result = subprocess.run(
         [sys.executable, "-c", _SHOWN_ROUNDS],
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=180,
     )
     assert result.returncode == 0, f"child exited {result.returncode}\n{result.stderr}"
@@ -361,12 +369,14 @@ def _run_close_child(tmp_path, *, mode: str, work: float, grace: float, retry_ms
         "PG_WORK_SECONDS": str(work),
         "PG_CLOSE_GRACE": str(grace),
         "PG_CLOSE_RETRY_MS": str(retry_ms),
+        "PYTHONIOENCODING": "utf-8",
     }
     result = subprocess.run(
         [sys.executable, "-c", _CLOSE_ROUNDS],
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, (
@@ -511,12 +521,14 @@ def _run_quit_child(tmp_path, *, mode: str, work: float, grace: float, budget: f
         "PG_WORK_SECONDS": str(work),
         "PG_QUIT_GRACE": str(grace),
         "PG_QUIT_BUDGET": str(budget),
+        "PYTHONIOENCODING": "utf-8",
     }
     result = subprocess.run(
         [sys.executable, "-c", _QUIT_ROUNDS],
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, (
