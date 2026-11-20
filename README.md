@@ -3,7 +3,7 @@
 一个离线优先的照片防盗工具，通过三层组合保护降低直接搬运和 AI 二次编辑风险：
 
 1. **隐形水印**：DWT-DCT-SVD 频域嵌入，用于事后取回完整性线索（不构成作者/归属认证）；
-2. **PhotoGuard 对抗扰动**：攻击 Stable Diffusion VAE encoder，增加 AI 去水印、换脸和重绘成本（只实现 encoder-attack 变体，强度未测量；见「已知边界」）；
+2. **PhotoGuard 对抗扰动**：攻击 Stable Diffusion 1.x 系的 VAE encoder，增加基于该模型族的 AI 去水印、换脸和重绘成本（实验性；只实现 encoder-attack 变体，强度未测量，对更新的编辑模型没有有效性证据；见「已知边界」）；
 3. **明水印**：绑定人脸或主体区域，或以低透明度网格覆盖全图。
 
 > 本工具用于抬高盗用成本并提供完整性线索，不承诺阻止保存、截图、全图重绘或未来模型攻击（PhotoGuard 扰动亦然：抬高成本，非必然崩坏）。
@@ -40,6 +40,8 @@ Windows AMD/Intel 显卡和其他适配器会显示在设备列表中，但当�
 - `PhotoGuard-macOS-arm64.dmg`
 
 完整安装包包含 Qt、PyTorch（Windows 为 CPU 版）、diffusers 和 SD VAE，安装后可离线使用。当前构建未进行 Windows 代码签名或 Apple notarization，首次启动可能出现未知开发者提示。
+
+> **已知问题（2026-11-20）**：最近一次构建（2026-11-19）两个平台的应用都无法加载 PhotoGuard（SD）层：macOS 冒烟失败、未生成 DMG；Windows 冒烟被误判为通过，该次构建产物（未公开发布）同样受影响。原因是打包时漏掉了 diffusers 在导入时要检查的依赖元数据（`docs/fix-plan.md` P74/P75，待修复）。v0.1.0 使用相同的打包参数，推断同样受影响。该问题只涉及 PhotoGuard（SD）层。
 
 ### 从源码启动
 
@@ -100,8 +102,11 @@ uv sync --frozen
 uv run photo-guard protect input.jpg \
   -o output.jpg \
   --payload "owner:alice#2026" \
+  --payload-envelope \
   --visible-text "© Alice"
 ```
+
+示例带了 `--payload-envelope`，产物可以直接用不带参数的 `verify` 盲检。不加它时，CLI 目前写入的是无校验和的 raw 载荷：不带参数的 `verify` 读不出（退 1），只能用 `--payload-bytes` 拿到「线索」（退 3，见下文）。计划把 CLI 默认改为写信封（`docs/fix-plan.md` P80）。
 
 CLI 默认层为 `invisible,visible`；默认输出 JPEG，长边 1080px、质量 85。`-o` 的扩展名决定容器：`.jpg`/`.jpeg` 为 JPEG，`.png` 为 PNG（stderr 打 `warning: writing PNG, not JPEG`，忽略 `--quality`）；`.bmp`/未知扩展名/尾点/尾空格退 2，不落文件。无后缀 `out` 仍按 JPEG。`--long-edge 0` 表示保持原尺寸。
 
@@ -406,13 +411,13 @@ uv run python packaging/build_desktop.py
 **信任边界（CRC32 能证明什么）**：信封里的 CRC32 只校验「这串载荷没有被改坏」，它不绑定图片像素、也不绑定作者；任何拿到工具的人都能重新计算 CRC 并写入一个新的合法信封。因此 `verify` 命中只说明「该载荷被嵌入过且当前可读」，不能单独证明作者或归属；旧版无校验和路径只是线索。需要可举证的归属时，请保留原图/拍摄记录，或另行使用外部签名/可信时间戳留底。
 
 - `-o out.png` 是 CLI 的显式例外：PNG 无损但体积更大，`--quality` 被忽略；默认与桌面发布件仍为 JPEG；
-- 隐水印可能在大幅裁剪、多轮强压缩或全图重绘后丢失；
+- 隐水印能扛住常见的重新压缩，但对**几何与亮度变化**很脆弱：裁掉左边或右边（1 px 即可）、裁掉顶边（实测 ≥3 px 全部失败，纹理丰富的图 1 px 即失败）、旋转（1° 即可）、直接缩放，以及特定幅度的整体亮度平移（实测 −6～−2 与 +3～+7 级读不出，±1、+2、+8、±9 级可读），都会让它读不出；只裁底边不受影响；全图重绘同样会丢失。实测（2026-11-20，`3b51e31`，bench 合成语料、37 B 信封）：JPEG q75/q60/q50 再压全部可读（见 `docs/fix-plan.md` P81–P83、§10.45）；
 - **信封回环不是长度无关的**：历史实测（2026-09-23，两张测试图 × payload 1–66 字节；该轮未记录 commit sha）修复前本机成品的验真通过率仅 31/66 与 17/66，且失败长度取决于图像与 payload 内容；载体改到亮度通道 + step 72 并修掉库的细节带互换后，本机成品与再叠一轮平台压缩均已 66/66（见 `docs/fix-plan.md` P10/P11）；
-- **平台二次压缩是验真的主要敌人**：上传后平台会按 4:2:0 重新采样色度（本机保存同样如此）。实测把成品缩小一半再放大后，**四个参数组合全部无法验真** —— 请把 `verify` 的通过理解为「这个本地文件可读」，不要理解为「上传后仍可验真」；
+- **平台的缩放与裁剪是验真的主要敌人**：重新压缩（含 4:2:0 色度重采样）本身已不是主要问题，但成品一旦被缩放，直接验真就会失败。把它按原尺寸放大回去后，当前载体可以读回（2026-11-20 复测：缩小一半再放大，LANCZOS、双线性等常用算子下载荷 1–66 字节都可读，最近邻算子在较长载荷上失败）；读侧自动按尺寸归一化已排入计划（P81），目前尚未实现。2026-09-23 的旧实测曾是「缩小一半再放大后四个参数组合全部无法验真」。请把 `verify` 的通过理解为「这个本地文件可读」，不要理解为「上传后仍可验真」；
 - Haar 人脸检测对侧脸、遮挡和多人场景能力有限；
 - 输入契约（见上文）之外的边界：HEIC/HEIF/AVIF 与 GIF 不支持（先转 JPEG/PNG）、超过 64 MP 或多帧的文件会被拒绝；成品剥除 EXIF（含 GPS）；RGB/灰度输入的 ICC 原样保留、不做色彩管理；CMYK 是有管理的例外（有 ICC 转 sRGB 并写 sRGB profile，无 ICC 朴素转+丢 profile+警告）；16-bit/float 输入拒绝；16-bit RGB TIFF 仍可能被 Pillow 降位（已知残余）；
-- **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零）；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；效果依赖目标模型族，净化、未来模型或非扩散编辑流程可能绕过；
-- **SD 层有 4 MP 的每图像素上限**（`PHOTOGUARD_MAX_PIXELS`）：VAE 编码器的全分辨率激活内存随像素线性增长（4 MP fp16 约 0.95 GiB，12 MP 约 2.86 GiB）；`--long-edge 0` 或长边 >约 2000 的图配 `--perturber sd` 会退 2 并给出建议长边，确有大内存时可 `--max-perturb-pixels` 显式放开；
+- **PhotoGuard 只实现了 encoder-attack 变体**（PGD 把 VAE 潜表示推向零），目标只有 **SD 1.x 系的 VAE**（`stabilityai/sd-vae-ft-mse`），属实验性功能；diffusion attack 变体未实现、强度未测量——它抬高 AI 重绘成本，**不承诺**「必然崩坏、失真」；经编码链的残存比例由 bench 度量（见下，那不是防护强度）；对 SDXL、SD3、FLUX、Qwen-Image-Edit、GPT-image 等更新的编辑模型没有任何有效性证据（有研究报告换架构、JPEG 重压或净化可绕过同类扰动，见 `docs/fix-plan.md` P86），未来模型或非扩散编辑流程同样可能绕过；
+- **SD 层的内存开销远高于此前估算**：实测（2026-11-20，`3b51e31`，Apple M4 Pro，CPU fp32）一张 1080×816 的图跑一步 PGD，峰值内存约 17.5 GiB（比载入模型后多约 17 GiB，约 20 KiB/像素，随像素数近似线性增长），半尺寸 540×408 约多 4.9 GiB。也就是说，按默认长边 1080 运行时，8 GB、16 GB 内存的机器（包括只有 CPU 的 Windows 安装包）都可能内存不足；macOS 选 `Auto` 时走 MPS fp16，这条路径的内存尚未系统实测。现有的 4 MP 每图像素上限（`PHOTOGUARD_MAX_PIXELS`）**不能**保证 8 GB 机器跑得动，上限与默认值将按实测重定（`docs/fix-plan.md` P85）。现行行为：按 `--long-edge` 缩放后像素数仍超过 4 MP（正方形约长边 2000、4:3 约 2309）时，配 `--perturber sd` 会退 2 并给出建议长边（`--long-edge 0` 保留大图原尺寸时最常触发），`--max-perturb-pixels` 可显式放开；
 - Windows 安装包仅 CPU（NVIDIA 显卡也不加速）；需要 CUDA 请按源码安装换 cu130 torch。当前没有 Windows AMD/Intel GPU 加速、Intel Mac 包、代码签名或 Apple notarization；
 - 平台抗重编码/扰动残存的**可复现基准**由 `bench/efficacy_matrix.py` 承担（12 格重编码矩阵，每周由 `efficacy.yml` 跑 noise 档并把 `cells.csv` / `retention.csv` / `summary.md` 作为产物上传；方法与列名契约见 `bench/README.md`）。隐水印 `pass` 由 CRC 信封判定；`rms_ratio` 量的是「扰动还剩多少」，**不是防护强度**。数字须带日期与 commit sha，且不被测试钉住。首轮实测（2026-10-09，`138022c`，本机 noise 档）：36 格中 **30 格通过**，其中指定格 textured_detail 的 identity 与 jpeg_q85 均 100%（37 B 信封 / 296 bit）；`downscale_720` 与 `combo_repost` 全数失败——与「缩小后无法验真」的已知边界一致。
 

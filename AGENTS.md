@@ -102,9 +102,10 @@ uv init photo-guard --package
 cd photo-guard
 
 # 3. 添加依赖（uv 自动创建 .venv 并写入 pyproject.toml + uv.lock）
-uv add pillow invisible-watermark numpy
-#   PhotoGuard / Fawkes 等如需从源码或特定源安装：
-uv add "torch" --index https://download.pytorch.org/whl/cpu
+#   隐水印算式已仓内转录（见 §8.6），不要 add invisible-watermark：它导入时会把 torch 拉进 core
+uv add pillow numpy opencv-python-headless pywavelets
+#   PhotoGuard / Fawkes 等如需从源码或特定源安装（torch 只进可选 extra，不进 core）：
+uv add --optional photoguard "torch" --index https://download.pytorch.org/whl/cpu
 
 # 4. 同步环境（在新机器/CI 上据 uv.lock 精确还原）
 uv sync --frozen
@@ -139,7 +140,7 @@ uv run photo-guard protect input.jpg
 ```bash
 # 环境准备（一次性）
 uv python install 3.11 && uv python pin 3.11
-uv add pillow invisible-watermark numpy
+uv add pillow numpy opencv-python-headless pywavelets   # 不要 add invisible-watermark（会把 torch 拉进 core，见 §8.6）
 # 运行
 uv run photo-guard protect input.jpg
 ```
