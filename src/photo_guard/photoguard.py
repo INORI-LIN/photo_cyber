@@ -27,9 +27,50 @@ from typing import Callable
 
 import numpy as np
 
-from . import config, device as device_mod
+from . import config, device as device_mod, resources
 
 logger = logging.getLogger(__name__)
+
+# P76: the longest original-exception text the runtime-import error quotes.
+_CAUSE_LIMIT = 300
+
+
+def _runtime_import_error(exc: ImportError) -> RuntimeError:
+    """The error for a torch/diffusers runtime that cannot be imported (P76).
+
+    ``exc`` is the failed import itself, or the ``ImportError`` that diffusers' dummy
+    ``AutoencoderKL`` raises from ``from_pretrained`` when torch's distribution metadata is
+    missing (the import succeeds, only the first call fails). The original exception is
+    always quoted: P74's bundle failed on missing metadata, and the fixed wording hid it. In
+    a source tree the hint stays (AGENTS §8.4); inside the installed application there is no
+    ``uv`` to run, so the bundle wording points at the installation instead.
+
+    The quote is normalised for both wordings. Whitespace runs become one space: the dummy
+    class's message starts with a newline and spans lines, and the smoke prints this on one
+    log line. Everything from the first `` Try:`` on is dropped: diffusers' version check
+    (``require_version_core``) appends a hint for another package manager there, after a
+    newline that the first step turned into a space. The rest is capped at
+    ``_CAUSE_LIMIT`` characters (``...`` marks the cut), and the type name stays:
+    ``PackageNotFoundError`` is what P74 needed to see. The caller chains ``exc``
+    (``raise ... from exc``), so the full text stays in ``__cause__``.
+    """
+    detail = " ".join(str(exc).split())
+    hint = detail.find(" Try:")
+    if hint != -1:
+        detail = detail[:hint]
+    if len(detail) > _CAUSE_LIMIT:
+        detail = detail[: _CAUSE_LIMIT - 3] + "..."
+    cause = f"{type(exc).__name__}: {detail}"
+    if resources.is_bundled():
+        return RuntimeError(
+            f"The PhotoGuard runtime inside this application failed to import ({cause}). "
+            "The installation is incomplete: reinstall the application, "
+            "or report this error if reinstalling does not help."
+        )
+    return RuntimeError(
+        "PhotoGuard needs the optional `photoguard` extra. "
+        f"Run `uv sync --extra photoguard`. (import failed: {cause})"
+    )
 
 
 @dataclass
@@ -83,10 +124,7 @@ class _SDEncoderAttack:
             import torch
             from diffusers import AutoencoderKL
         except ImportError as exc:
-            raise RuntimeError(
-                "PhotoGuard needs the optional `photoguard` extra. "
-                "Run `uv sync --extra photoguard`."
-            ) from exc
+            raise _runtime_import_error(exc) from exc
 
         model_path = Path(self.cfg.model_id)
         if not config.model_dir_is_complete(model_path):
@@ -109,10 +147,16 @@ class _SDEncoderAttack:
         # directory. A local directory is a trust boundary: `--perturber-model` accepts any
         # path, so the loader must not execute whatever it finds there. `revision` is a
         # statement of intent for a local directory (it only bites on the download side).
-        self._vae = AutoencoderKL.from_pretrained(
-            str(model_path), torch_dtype=self._dtype, local_files_only=True,
-            use_safetensors=True, revision=config.PHOTOGUARD_REVISION,
-        ).to(self._device)
+        try:
+            vae = AutoencoderKL.from_pretrained(
+                str(model_path), torch_dtype=self._dtype, local_files_only=True,
+                use_safetensors=True, revision=config.PHOTOGUARD_REVISION,
+            )
+        except ImportError as exc:
+            # P76: a dummy AutoencoderKL (torch metadata missing, P74) only fails here,
+            # after the import guard above has already passed.
+            raise _runtime_import_error(exc) from exc
+        self._vae = vae.to(self._device)
         self._vae.eval()
         for parameter in self._vae.parameters():
             parameter.requires_grad_(False)
@@ -131,8 +175,10 @@ class _SDEncoderAttack:
 
         Created per :meth:`attack` call on purpose: a generator stored on the instance would
         advance across calls, so the second attack with the same seed would differ. A device
-        whose generator API is unsupported (e.g. MPS) falls back to the global RNG — the
-        documented cost is that byte-level reproducibility is then not guaranteed.
+        whose generator API is unsupported falls back to the global RNG — the documented cost
+        is that byte-level reproducibility is then not guaranteed. Measured on torch 2.12.1:
+        CPU and MPS both seed a device generator; which devices lack one is not enumerated
+        here (P76 smoke's moved-versus-start check is exact wherever this succeeds).
         """
         try:
             generator = self._torch.Generator(device=x_orig.device)

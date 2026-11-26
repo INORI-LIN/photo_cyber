@@ -7,6 +7,8 @@ environment — the real stack is exercised by ``docker.yml``'s offline SD smoke
 """
 from __future__ import annotations
 
+import importlib.metadata
+import re
 import sys
 import types
 from pathlib import Path
@@ -113,6 +115,200 @@ def test_the_loader_refuses_an_incomplete_directory(monkeypatch, tmp_path) -> No
 
     with pytest.raises(RuntimeError, match="incomplete"):
         attack._load()
+
+
+# --- P76: a failed runtime import must carry its root cause ----------------------------
+
+
+def _diffusers_without_metadata(monkeypatch) -> importlib.metadata.PackageNotFoundError:
+    """``diffusers`` as the P74 bundle saw it: its import-time version check could not find
+    the ``requests`` distribution metadata.
+
+    The real module raises while being imported; a PEP 562 ``__getattr__`` raising the same
+    exception type on first access is that failure as ``from diffusers import AutoencoderKL``
+    sees it. The message is the stdlib's, not diffusers' (whose hint the compliance scan
+    forbids in repository files).
+    """
+    root = importlib.metadata.PackageNotFoundError("requests")
+
+    def __getattr__(name):
+        raise root
+
+    _stub(monkeypatch, "diffusers", __getattr__=__getattr__)
+    return root
+
+
+def test_a_failed_runtime_import_keeps_the_uv_hint_and_adds_the_root_cause(
+    monkeypatch, tmp_path
+) -> None:
+    """Source tree: the extra is the usual fix (AGENTS §8.4 keeps the hint), but the fixed
+    wording alone hid what actually failed."""
+    _stub(monkeypatch, "torch", float32="float32-stub")
+    root = _diffusers_without_metadata(monkeypatch)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    attack = photoguard._SDEncoderAttack(
+        photoguard.PGDConfig(model_id=str(complete_model(tmp_path / "model")))
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        attack._load()
+
+    message = str(excinfo.value)
+    assert "uv sync --extra photoguard" in message
+    assert "No package metadata" in message and str(root) in message
+    assert "PackageNotFoundError: " in message  # the cause names its type
+    assert excinfo.value.__cause__ is root
+
+
+def test_a_failed_runtime_import_inside_a_bundle_names_the_root_cause_without_uv(
+    monkeypatch, tmp_path
+) -> None:
+    """Inside the installed application there is no uv: P74's release log showed the user a
+    command they cannot run instead of the missing metadata."""
+    _stub(monkeypatch, "torch", float32="float32-stub")
+    root = _diffusers_without_metadata(monkeypatch)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    attack = photoguard._SDEncoderAttack(
+        photoguard.PGDConfig(model_id=str(complete_model(tmp_path / "model")))
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        attack._load()
+
+    message = str(excinfo.value)
+    assert "No package metadata" in message and str(root) in message
+    assert "PackageNotFoundError: " in message  # the cause names its type
+    assert re.search(r"\buv\b", message) is None, message
+    assert "reinstall" in message
+    assert excinfo.value.__cause__ is root
+
+
+def test_a_dummy_autoencoder_is_reported_as_a_runtime_import_failure(
+    monkeypatch, tmp_path
+) -> None:
+    """Without torch's metadata diffusers still imports but hands out a dummy AutoencoderKL;
+    only its ``from_pretrained`` raises ImportError, which used to escape ``_load`` bare."""
+    root = ImportError("x1 stub: AutoencoderKL placeholder without its torch backend")
+
+    class _DummyAutoencoderKL:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            raise root
+
+    _stub(monkeypatch, "torch", float32="float32-stub")
+    _stub(monkeypatch, "diffusers", AutoencoderKL=_DummyAutoencoderKL)
+    monkeypatch.setattr(photoguard.device_mod, "resolve_device", lambda *a, **k: ("cpu", None, None))
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    # _load sets these with setdefault; pinning them here lets monkeypatch restore the env.
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
+
+    attack = photoguard._SDEncoderAttack(
+        photoguard.PGDConfig(model_id=str(complete_model(tmp_path / "model")))
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        attack._load()
+
+    message = str(excinfo.value)
+    assert str(root) in message
+    assert "uv sync --extra photoguard" in message
+    assert excinfo.value.__cause__ is root
+    assert attack._vae is None
+
+
+def test_a_diffusers_without_autoencoderkl_is_a_runtime_import_failure(
+    monkeypatch, tmp_path
+) -> None:
+    """``from diffusers import AutoencoderKL`` on a diffusers without the class raises a plain
+    ``ImportError`` ("cannot import name"), not ``ModuleNotFoundError``: the guard must catch
+    the base class."""
+    _stub(monkeypatch, "torch", float32="float32-stub")
+    _stub(monkeypatch, "diffusers")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    attack = photoguard._SDEncoderAttack(
+        photoguard.PGDConfig(model_id=str(complete_model(tmp_path / "model")))
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        attack._load()
+
+    message = str(excinfo.value)
+    assert "uv sync --extra photoguard" in message
+    assert "(import failed: ImportError: cannot import name 'AutoencoderKL'" in message
+    assert type(excinfo.value.__cause__) is ImportError
+
+
+# The shape of diffusers' version-check failure (P74), not its text: the real hint after
+# " \nTry:" recommends another package manager, which repository files must not quote.
+_VERSION_CHECK_SHAPE = (
+    "The 'requests' distribution was not found and is required by this application. "
+    "\nTry: x1-stub-installer requests -U"
+)
+
+
+@pytest.mark.parametrize("bundled", [False, True], ids=["source-tree", "bundle"])
+def test_the_cause_drops_the_package_manager_hint(monkeypatch, bundled) -> None:
+    """diffusers appends a hint for another package manager after `` \\nTry:``. A user of
+    the installed application cannot act on it, and in a source tree it contradicts the uv
+    hint beside it. The chained original (``__cause__``) still carries it."""
+    if bundled:
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+    else:
+        monkeypatch.delattr(sys, "frozen", raising=False)
+    root = importlib.metadata.PackageNotFoundError(_VERSION_CHECK_SHAPE)
+
+    message = str(photoguard._runtime_import_error(root))
+
+    assert (
+        "PackageNotFoundError: No package metadata was found for The 'requests' distribution "
+        "was not found and is required by this application." in message
+    )
+    assert "Try:" not in message and "x1-stub-installer" not in message
+    assert "\n" not in message
+    assert ("uv sync --extra photoguard" in message) is not bundled
+    if bundled:
+        assert re.search(r"\buv\b", message) is None, message
+
+
+@pytest.mark.parametrize("bundled", [False, True], ids=["source-tree", "bundle"])
+def test_the_cause_is_one_line(monkeypatch, bundled) -> None:
+    """The dummy class's message starts with a newline and spans lines; the smoke prints the
+    cause inside a single log line."""
+    if bundled:
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+    else:
+        monkeypatch.delattr(sys, "frozen", raising=False)
+    root = ImportError("\nx1 stub: AutoencoderKL needs its torch\nbackend.\n")
+
+    message = str(photoguard._runtime_import_error(root))
+
+    assert "\n" not in message
+    cause = "ImportError: x1 stub: AutoencoderKL needs its torch backend."
+    if bundled:
+        assert f"failed to import ({cause}). The installation is incomplete" in message
+    else:
+        assert message.endswith(f"(import failed: {cause})")
+
+
+def test_only_the_literal_try_hint_is_cut(monkeypatch) -> None:
+    """The cut is the case-sensitive literal `` Try:``; other uses of the word stay."""
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    text = "x1 stub: try: the other build. Try again later"
+
+    message = str(photoguard._runtime_import_error(ImportError(text)))
+
+    assert message.endswith(f"(import failed: ImportError: {text})")
+
+
+@pytest.mark.parametrize(("length", "capped"), [(300, False), (301, True)])
+def test_the_cause_is_capped_at_300_characters(monkeypatch, length, capped) -> None:
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    text = ("x1 stub " + "y" * length)[:length]
+
+    message = str(photoguard._runtime_import_error(ImportError(text)))
+
+    shown = text[:297] + "..." if capped else text
+    assert message.endswith(f"(import failed: ImportError: {shown})")
 
 
 def test_the_download_pins_the_revision_and_filters_formats(monkeypatch, tmp_path) -> None:

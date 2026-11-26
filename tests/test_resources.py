@@ -9,8 +9,11 @@ pin which root each lookup resolves to; no macOS runner needed.
 """
 from __future__ import annotations
 
+import builtins
 import sys
 from pathlib import Path
+
+import pytest
 
 from photo_guard import resources
 
@@ -160,6 +163,106 @@ def test_override_expands_user(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
 
     assert resources.candidate_roots() == ((home / "pinned").resolve(),)
+
+
+# --- P76: one "am I in a bundle" predicate --------------------------------------------
+
+
+def test_is_bundled_is_true_when_frozen(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delattr(resources, "__compiled__", raising=False)
+
+    assert resources.is_bundled() is True
+
+
+def test_is_bundled_honours_the_nuitka_marker(monkeypatch) -> None:
+    """Nuitka does not set ``sys.frozen``; it puts ``__compiled__`` in the module globals."""
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(resources, "__compiled__", True, raising=False)
+
+    assert resources.is_bundled() is True
+
+
+def test_is_bundled_is_false_in_the_source_tree(monkeypatch) -> None:
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delattr(resources, "__compiled__", raising=False)
+
+    assert resources.is_bundled() is False
+
+
+def test_candidate_roots_ask_is_bundled(monkeypatch, tmp_path) -> None:
+    """P76: the resource lookup and ``photoguard``'s runtime error share one predicate, so
+    they can never disagree about whether the process runs from a bundle."""
+    resources_dir, macos = _frozen_bundle(tmp_path)
+    monkeypatch.delenv("PHOTO_GUARD_RESOURCE_DIR", raising=False)
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.delattr(resources, "__compiled__", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "executable", str(macos / "desktop_entry"))
+
+    monkeypatch.setattr(resources, "is_bundled", lambda: True)
+    assert resources.candidate_roots() == (resources_dir, macos)
+
+    monkeypatch.setattr(resources, "is_bundled", lambda: False)
+    assert resources.candidate_roots() == (Path(resources.__file__).resolve().parents[2],)
+
+
+# --- P76: the program path must not depend on multiprocessing having been imported ----
+
+
+def test_program_path_prefers_the_nuitka_binary(monkeypatch, tmp_path) -> None:
+    """Nuitka standalone: until ``multiprocessing`` is imported, ``sys.executable`` is
+    ``<binary dir>/<build interpreter's basename>``, a ``python.exe`` Nuitka does not ship.
+    The builtin ``__nuitka_binary_exe`` names the real program from the start (the ``..``
+    pins the resolution)."""
+    exe = tmp_path / "dist" / "PhotoGuard.exe"
+    exe.parent.mkdir()
+    exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(exe.parent / "python.exe"))
+    monkeypatch.setattr(
+        builtins, "__nuitka_binary_exe", str(exe.parent / ".." / "dist" / exe.name), raising=False
+    )
+
+    assert resources.program_path() == exe.resolve()
+
+
+@pytest.mark.parametrize("builtin", [None, ""], ids=["absent", "empty"])
+def test_program_path_falls_back_to_sys_executable(monkeypatch, tmp_path, builtin) -> None:
+    """Source trees and PyInstaller-style freezers have no Nuitka builtin; there
+    ``sys.executable`` is the program."""
+    exe = tmp_path / "bin" / "python"
+    exe.parent.mkdir()
+    exe.write_text("", encoding="utf-8")
+    if builtin is None:
+        monkeypatch.delattr(builtins, "__nuitka_binary_exe", raising=False)
+    else:
+        monkeypatch.setattr(builtins, "__nuitka_binary_exe", builtin, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe.parent / ".." / "bin" / exe.name))
+
+    assert resources.program_path() == exe.resolve()
+
+
+@pytest.mark.parametrize(
+    "interpreter",
+    ["MacOS/python", "build/python"],
+    ids=["before-multiprocessing", "unrelated-directory"],
+)
+def test_a_bundle_takes_its_roots_from_the_program_path(
+    monkeypatch, tmp_path, interpreter
+) -> None:
+    """The roots come from :func:`resources.program_path`. ``before-multiprocessing`` is
+    Nuitka's real starting state (a missing ``python`` beside the binary); in
+    ``unrelated-directory`` only the builtin can yield the bundle's layout."""
+    resources_dir, macos = _frozen_bundle(tmp_path)
+    _freeze(monkeypatch, macos)
+    contents = macos.parent
+    monkeypatch.setattr(sys, "executable", str(contents / interpreter))
+    monkeypatch.setattr(
+        builtins, "__nuitka_binary_exe", str(macos / "desktop_entry"), raising=False
+    )
+
+    assert not Path(sys.executable).exists()
+    assert resources.candidate_roots() == (resources_dir, macos)
 
 
 # --- P73: a relocated .cache subtree must not shadow the real model --------------------
