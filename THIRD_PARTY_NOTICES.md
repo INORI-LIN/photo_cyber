@@ -28,6 +28,9 @@ bundles; they are MIT-licensed and unmodified.
 |---|---|---|---|
 | Vendored `imwatermark/dwtDctSvd.py` from invisible-watermark | 0.2.0 | MIT | https://pypi.org/project/invisible-watermark/ — transcribed in `src/photo_guard/_dwt_dct_svd.py`, which carries the complete upstream MIT text and Copyright (c) 2021 ShieldMnt. |
 | FFmpeg bundled in the opencv-python-headless wheel | opencv-python-headless 4.13.0.92; FFmpeg version not stated by the wheel notice | LGPL-2.1 | https://github.com/opencv/opencv-python — the full wheel-provided third-party notice and licence texts are in `licenses/LICENSE-3RD-PARTY-opencv.txt`. |
+| Qt runtime libraries and plugins in the PySide6_Essentials and PySide6_Addons wheels (installed with PySide6; the GUI imports QtCore, QtGui and QtWidgets) | PySide6 6.11.1; Qt 6.11.1 as reported by `qVersion()` | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only (wheel metadata); used here under LGPL-3.0-only | https://pyside.org — the full LGPL-3.0 text and the GPL-3.0 text it incorporates are `licenses/LGPL-3.0.txt` and `licenses/GPL-3.0.txt`; `packaging/build_desktop.py` includes the whole `licenses/` directory, so both ship inside the desktop bundles. |
+| Native libraries bundled in the Pillow wheel; on macOS arm64, 18 dylibs under `PIL/.dylibs`: libavif, brotli (common, dec), FreeType, HarfBuzz, libjpeg-turbo, Little CMS 2, liblzma, OpenJPEG, libpng, LibTIFF, libwebp (webp, webpdemux, webpmux, sharpyuv), libxcb, libXau, zlib-ng | pillow 12.2.0; library versions as built into the wheel | per library; see the wheel's notice file | https://github.com/python-pillow/Pillow — the wheel's `pillow-12.2.0.dist-info/licenses/LICENSE` holds Pillow's MIT-CMU text followed by 21 per-library sections (AOM through ZSTD), one for every library family behind the 18 dylibs; it is one combined file whose sections go beyond this wheel (XDMCP, for example, has no counterpart here). The Windows and Linux wheels' library sets were not measured here. |
+| uv binary in the Docker image: `COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv` in the `runtime` stage, which the default `release` stage builds on; the image entrypoint runs it | uv 0.13.7 | MIT OR Apache-2.0 | https://github.com/astral-sh/uv — upstream's published dual licence (`license = "MIT OR Apache-2.0"` in the workspace `Cargo.toml` at the 0.13.7 tag); the image copies only the binary, not uv's licence files. |
 
 The generated `opencv-python-headless` platform row reports the OpenCV distribution's
 Apache 2.0 metadata; it does not describe every library bundled in its wheel. The copied
@@ -36,6 +39,15 @@ The pinned Windows wheel carries the same full text with CRLF endings; checks en
 wheel's native bytes and require them to match the shipped LF text after the documented
 line-ending conversion. Linux ships the same LF bytes. This notice does not by itself
 certify all binary redistribution obligations.
+
+The generated `PySide6`, `PySide6_Essentials`, `PySide6_Addons` and `pillow` rows report
+distribution metadata only: they name neither the Qt build nor the libraries bundled in
+Pillow's wheel, and uv appears in no platform table because the image copies it as a binary
+rather than installing it as a Python distribution. Known residual: the desktop bundles do
+not yet ship the full notice texts for Pillow's bundled native libraries, for third-party
+code built into the Qt libraries (for example libpng in the macOS QtGui framework) or for
+native libraries inside the torch wheel (for example libomp); Qt's own LGPL-3.0 and GPL-3.0
+texts do ship via `licenses/`.
 
 ## Darwin / arm64
 
