@@ -65,6 +65,9 @@ jobs:
   windows:
     needs: verify
     runs-on: windows-latest
+    # P76: measured 3h02m (macOS) / about 2h50m (Windows, installer included) per build leg;
+    # 300 leaves headroom without letting a hang burn the 6-hour hosted-runner limit.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -85,9 +88,55 @@ jobs:
       - run: uv run --no-sync python packaging/build_desktop.py
       - name: Smoke test standalone application
         shell: powershell
+        # P76: Start-Process -Wait has no timeout of its own; a hung bundle must fail this
+        # step instead of holding the runner until the job limit.
+        timeout-minutes: 30
         # DOC6/P69: the bundle claims PyTorch + diffusers + Qt; the flags make a build that
         # dropped any of them fail here instead of on the user's first run.
-        run: .\dist\desktop_entry.dist\PhotoGuard.exe --smoke-test --with-photoguard --with-gui
+        # P75: PhotoGuard.exe is built with --windows-console-mode=disable, i.e. it is a
+        # GUI-subsystem program. A bare call neither waits for it nor sets $LASTEXITCODE: run
+        # 44473940993 printed the exit-5 message and this step was still green. Start-Process
+        # -Wait -PassThru reports the real ExitCode ($null fails the step, it is never a pass).
+        # Its output goes to files that are echoed through Out-Host, because anything else a
+        # PowerShell function emits becomes part of its return value; both call sites also
+        # reject a result that is not an [int], so a polluted return (an array, or $null)
+        # cannot compare as a pass. Strings use "${Label}:", since "$Label:" would parse as a
+        # drive-qualified variable.
+        # P75/P76: the negative control points the resource root at an empty directory (model
+        # and licences missing) and must exit exactly 2, proving that this step sees a failing
+        # exit code at all. The override is cleared in `finally`, so the real smoke never
+        # inherits it.
+        run: |
+          $exe = (Resolve-Path -LiteralPath "dist\desktop_entry.dist\PhotoGuard.exe").ProviderPath
+          Write-Host "running: $exe"
+          function Invoke-Smoke {
+            param([string]$Label, [string[]]$Arguments)
+            $stdoutFile = Join-Path $env:RUNNER_TEMP "smoke-${Label}.stdout.txt"
+            $stderrFile = Join-Path $env:RUNNER_TEMP "smoke-${Label}.stderr.txt"
+            $proc = Start-Process -FilePath $exe -ArgumentList $Arguments -NoNewWindow -Wait -PassThru `
+              -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+            Write-Host "--- ${Label} stdout ---"
+            Get-Content -LiteralPath $stdoutFile -Encoding UTF8 | Out-Host
+            Write-Host "--- ${Label} stderr ---"
+            Get-Content -LiteralPath $stderrFile -Encoding UTF8 | Out-Host
+            if ($null -eq $proc.ExitCode) { throw "${Label}: the process reported no exit code" }
+            $code = [int]$proc.ExitCode
+            Write-Host "${Label} exit code: $code"
+            return $code
+          }
+          $empty = Join-Path $env:RUNNER_TEMP "smoke-empty-resources"
+          New-Item -ItemType Directory -Force -Path $empty | Out-Null
+          $env:PHOTO_GUARD_RESOURCE_DIR = $empty
+          try {
+            $neg = Invoke-Smoke -Label "negative-control" -Arguments @("--smoke-test")
+          } finally {
+            $env:PHOTO_GUARD_RESOURCE_DIR = $null
+          }
+          if ($neg -isnot [int] -or $neg -ne 2) {
+            throw "negative control must exit 2 (bundle model missing), got $neg"
+          }
+          $rc = Invoke-Smoke -Label "smoke" -Arguments @("--smoke-test", "--with-photoguard", "--with-gui")
+          if ($rc -isnot [int] -or $rc -ne 0) { throw "smoke test failed (exit $rc)" }
       - name: Licence material is inside the built tree (G2)
         shell: powershell
         run: |
@@ -149,6 +198,8 @@ jobs:
   macos-arm64:
     needs: verify
     runs-on: macos-15
+    # P76: same budget as the Windows leg (measured 3h02m here); see the comment there.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -183,6 +234,8 @@ jobs:
             echo "found: $found"
           done
       - name: Smoke test app bundle
+        # P76: a hung bundle must fail this step instead of holding the runner for hours.
+        timeout-minutes: 30
         # The entry point locates the licence material through resources.application_root()
         # and returns 4 when it is missing (G2), so this is also the S2 layout check.
         # NB: pick the app's own executable explicitly. The bundle's Contents/MacOS also holds
@@ -196,14 +249,35 @@ jobs:
             BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm +111 -print -quit)
           fi
           echo "running: $BIN"
+          # P75/P76: negative control first. An empty resource root holds neither the model
+          # nor the licences, so the bundle must exit with exactly 2 (its first failing
+          # check); any other code means this step cannot tell a broken bundle from a good
+          # one. The variable prefixes that single command, so the real smoke never sees it.
+          EMPTY="$RUNNER_TEMP/smoke-empty-resources"
+          mkdir -p "$EMPTY"
+          neg=0
+          PHOTO_GUARD_RESOURCE_DIR="$EMPTY" "$BIN" --smoke-test || neg=$?
+          echo "negative-control exit code: $neg"
+          if [ "$neg" -ne 2 ]; then
+            echo "::error::negative control must exit 2 (bundle model missing), got $neg"
+            exit 1
+          fi
           # DOC6/P69: --with-photoguard also requires the shipped torch/diffusers and
           # --with-gui requires a startable Qt with its platform plugins.
-          if ! "$BIN" --smoke-test --with-photoguard --with-gui; then
-            echo "::error::smoke test failed — dumping layout for diagnosis"
+          # P76: the old negated `if` around the smoke reported every failure as 1; keep the
+          # bundle's own code so the log says which check failed. `cmd || rc=$?` is safe
+          # under `bash -e`; no pipe, or $? would be the last stage's status.
+          rc=0
+          "$BIN" --smoke-test --with-photoguard --with-gui || rc=$?
+          echo "smoke exit code: $rc"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::smoke test failed (exit $rc) — dumping layout for diagnosis"
             ls -la "$APP/Contents" || true
+            # `|| true`: a find error must not end the script (e.g. under pipefail) before
+            # it exits with the smoke's own code.
             find "$APP/Contents" -maxdepth 3 \
-              \( -name "config.json" -o -name "THIRD_PARTY_NOTICES.md" \) -print | head -10
-            exit 1
+              \( -name "config.json" -o -name "THIRD_PARTY_NOTICES.md" \) -print | head -10 || true
+            exit "$rc"
           fi
       - run: packaging/create_dmg.sh
       - name: Checksums (SHA256, sha256sum-compatible)

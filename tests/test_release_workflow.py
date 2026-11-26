@@ -11,6 +11,15 @@ the other platform also used.
 These assertions pin the invariants that let the steps run at all — output excluded from the
 enumeration, explicit encoding, distinct per-platform filenames — rather than the exact
 wording of either script.
+
+X1 (P75/P76) adds the same kind of locks for the bundle smoke steps: the Windows step must
+read the GUI-subsystem executable's real exit code through ``Start-Process``, both steps
+run a negative control that must fail with exactly 2 before the real smoke, macOS exits
+with the smoke's own code, and both build legs carry timeouts.
+
+The failure branches are pinned by what they exit with and the result variables by where they
+are assigned: a presence check on the comparison text alone let ``exit 0`` in a branch, an
+extra ``exit``/``return``, or a later ``rc=0`` turn a failing smoke into a green step.
 """
 from __future__ import annotations
 
@@ -46,6 +55,9 @@ def _step_containing(marker: str, *, job: str) -> str:
     """在指定 job 内定位唯一的 step，避免跨 job 同名文本误匹配。"""
     matches = [step for step in _steps(_job(job)) if marker in step]
     assert len(matches) == 1, f"expected one {job!r} step containing {marker!r}, got {len(matches)}"
+    # X1：唯一性照旧按整段 step 文本计；命中还必须落在可执行行里——注释里为排查保留的旧写法
+    # 不能替真实脚本作证（只剩注释提到 marker 时，旧实现会照样返回这个 step）。
+    assert marker in _code(matches[0]), f"{marker!r} only occurs in comments of the {job!r} step"
     return matches[0]
 
 
@@ -53,6 +65,55 @@ def _step_containing(marker: str, *, job: str) -> str:
 def _code(step: str) -> str:
     """The step's executable lines (comments may mention the old, broken invocations)."""
     return "\n".join(line for line in step.splitlines() if not line.lstrip().startswith("#"))
+
+
+# PowerShell 以行尾反引号续行；拼回一行后，一条命令的开关不论怎么折行都按同一条调用检查。
+def _join_continuations(code: str) -> str:
+    """Fold PowerShell backtick line continuations into single logical lines."""
+    return re.sub(r"`\n[ \t]*", " ", code)
+
+
+# 引号里的文案（如 "::error::… must exit 2"）不是命令：先清空引号内容，再判断一行是否真的执行了某个词。
+def _unquoted(line: str) -> str:
+    """The line with every quoted string emptied, so message text cannot pass for a command."""
+    quotes = r'"[^"]*"|\'[^\']*\''
+    return re.sub(quotes, '""', line).partition(" #")[0]
+
+
+# 只看 run: | 块里的脚本：步骤名（name:）里提到 exit code 之类不影响命令清单。
+def _run_block(step: str) -> str:
+    """The step's script body (everything after ``run: |``), comments excluded."""
+    _, _, body = step.partition("run: |")
+    return _code(body)
+
+
+# bash 的 if 块按整行表头定位（`elif …` 也含 "if "，按子串找会认错块），块体取到第一行 fi 为止。
+def _bash_if_block(code: str, header: str) -> list[str]:
+    """Stripped body lines of the single bash ``if`` block whose header line is exactly ``header``.
+
+    A closer may carry a trailing ``;`` or comment (``fi # …``); a ``fi`` inside a message is
+    quoted, so it never closes a block.
+    """
+    lines = [line.strip() for line in code.splitlines()]
+    starts = [i for i, line in enumerate(lines) if line == header]
+    assert len(starts) == 1, f"expected one {header!r} line, got {len(starts)}"
+    body = lines[starts[0] + 1 :]
+    closers = [i for i, line in enumerate(body) if re.fullmatch(r"fi\s*(?:;.*)?", _unquoted(line))]
+    assert closers, f"no bare 'fi' closes {header!r}"
+    return body[: closers[0]]
+
+
+# 真正执行 exit 的行（引号外的 exit 一词）：分支与整步都只许出现预期的那几处退出。
+def _bash_exits(lines: list[str]) -> list[str]:
+    """Stripped lines that run ``exit``."""
+    return [line.strip() for line in lines if re.search(r"(?<![\w-])exit\b", _unquoted(line))]
+
+
+# 给 shell 变量 name 赋值的行：行首，或空白与 ; & | ( 之后的 `name=`。
+def _bash_assignments(lines: list[str], name: str) -> list[str]:
+    """Stripped lines that assign the shell variable ``name``."""
+    pattern = rf"(?:^|[\s;&|(]){re.escape(name)}="
+    return [line.strip() for line in lines if re.search(pattern, _unquoted(line))]
 
 
 # 防止 Windows 校验和步骤把正在写入的清单再次纳入哈希输入。
@@ -250,3 +311,194 @@ def test_build_legs_smoke_the_gui_and_photoguard_runtimes() -> None:
         code = _code(_step_containing("--smoke-test", job=job))
         assert "--with-photoguard" in code, job
         assert "--with-gui" in code, job
+
+
+# P75：PhotoGuard.exe 以 --windows-console-mode=disable 构建，是 GUI 子系统程序；PowerShell
+# 裸调用它既不等待也不设 $LASTEXITCODE——run 44473940993 打印了退 5 文案，这一步仍判绿。
+def test_windows_smoke_reads_the_real_exit_code_through_start_process() -> None:
+    step = _step_containing("--smoke-test", job="windows")
+    assert "shell: powershell" in step
+    code = _join_continuations(_code(step))
+    lines = code.splitlines()
+
+    calls = [line for line in lines if "Start-Process" in line]
+    assert len(calls) == 1, f"expected one Start-Process call, got {calls}"
+    for flag in (
+        "-FilePath",
+        "-ArgumentList",
+        "-NoNewWindow",
+        "-Wait",
+        "-PassThru",
+        "-RedirectStandardOutput",
+        "-RedirectStandardError",
+    ):
+        assert re.search(rf"(?<![\w-]){flag}(?![\w-])", calls[0]), flag
+    # Start-Process 不走 PowerShell 的命令查找，可执行文件给绝对路径。
+    assert "Resolve-Path" in code
+    assert code.index("function Invoke-Smoke") < code.index("Start-Process")
+    # 两份重定向文件都要回显进日志，且必须经 Out-Host：函数里任何没接住的输出都会混进返回值。
+    for flag in ("-RedirectStandardOutput", "-RedirectStandardError"):
+        target = re.search(rf"{flag}\s+(\$\w+)", calls[0])
+        assert target is not None, flag
+        assert any(
+            "Get-Content" in line
+            and target.group(1) in line
+            and line.rstrip().endswith("| Out-Host")
+            for line in lines
+        ), f"the {flag} file is not echoed through Out-Host"
+    # 取不到 ExitCode 必须响亮失败，不能当成 0 放行；取到的码要打印进日志。
+    assert re.search(r"\$null\s+-eq\s+\$\w+\.ExitCode\s*\)\s*\{\s*throw\b", code)
+    assert re.search(r'Write-Host "\$\{?Label\}? exit code: ', code)
+    # 两处调用都校验返回值是 [int]：被污染的返回（数组或 $null）不能比较成通过。
+    assert code.count("-isnot [int]") >= 2
+
+    # 旧的裸调用（含 & 调用运算符）不得回到可执行行；带 --smoke-test 的行一律经 Invoke-Smoke。
+    for line in lines:
+        command = line.strip()
+        if command.startswith("run:"):
+            command = command[len("run:"):].strip()
+        assert not command.startswith("&"), line
+        assert not re.match(r"""["']?[^\s"']*PhotoGuard\.exe(?![\w.])""", command), line
+    smoke = [line for line in lines if "--smoke-test" in line]
+    assert smoke and all("Invoke-Smoke" in line for line in smoke), smoke
+    # 双引号里的 "$Label:" 会被解析成驱动器限定变量（要写 "${Label}:"）；这一步只该出现 $env:。
+    assert set(re.findall(r"\$(\w+):", code)) <= {"env"}, re.findall(r"\$\w+:", code)
+
+
+# P75/P76：负控与正式 smoke 在同一 step 且先跑：资源根指向空目录（模型与许可都缺），首个
+# 失败码恰为 2——证明这一步看得见失败退码；退 0 或别的码都说明判定链本身失灵。
+def test_build_leg_smokes_run_a_negative_control_first() -> None:
+    for job in ("windows", "macos-arm64"):
+        code = _code(_step_containing("--smoke-test", job=job))
+        runs = [line for line in code.splitlines() if "--smoke-test" in line]
+        assert len(runs) >= 2, f"{job}: the negative control must run inside the smoke step"
+        negative, real = runs[0], runs[-1]
+        assert "--with-" not in negative, f"{job}: the negative control runs only --smoke-test"
+        assert "--with-photoguard" in real and "--with-gui" in real, job
+        assert code.index("PHOTO_GUARD_RESOURCE_DIR") < code.index("--with-photoguard"), job
+        assert "-ne 2" in code, f"{job}: the negative control must exit exactly 2"
+
+    # Windows：先设变量、跑负控，finally 里置回 $null，之后才跑正式 smoke。
+    windows = _run_block(_step_containing("--smoke-test", job="windows"))
+    # 只认这一条失败通道：$ErrorActionPreference 改宽（throw 变通知）、trap 吞错、try/catch
+    # 不重抛，都会让失败静默通过；这几种写法出现即红。
+    assert not re.search(r"(?i)\$ErrorActionPreference\s*=", _unquoted(windows))
+    assert not re.search(r"(?i)(?<![\w$.-])trap\b", _unquoted(windows))
+    assert not re.search(r"(?i)(?<![\w$.-])catch\b", _unquoted(windows))
+    runs = [line for line in windows.splitlines() if "--smoke-test" in line]
+    assign = re.search(r"\$env:PHOTO_GUARD_RESOURCE_DIR\s*=\s*(?!\$null\b)\S", windows)
+    reset = re.search(
+        r"finally\s*\{[^}]*\$env:PHOTO_GUARD_RESOURCE_DIR\s*=\s*\$null[^}]*\}", windows
+    )
+    assert assign is not None, "the negative control must point the resource root somewhere"
+    assert reset is not None, "the resource override must be cleared in a finally block"
+    assert assign.start() < windows.index(runs[0]) < reset.start() < windows.index(runs[-1])
+    assert '-Label "negative-control"' in runs[0] and '-Label "smoke"' in runs[-1]
+    # 比较的必须是各自调用接住的那个返回值：负控恰为 2，正式 smoke 恰为 0，否则 throw。
+    for run, expected in ((runs[0], 2), (runs[-1], 0)):
+        captured = re.match(r"\s*(\$\w+)\s*=\s*Invoke-Smoke\b", run)
+        assert captured is not None, run
+        name = re.escape(captured.group(1))
+        assert re.search(rf"if \(.*{name} -ne {expected}\) \{{\s*throw\b", windows), run
+        # 接住返回值的只能是这一次调用：之后再写一句 `$rc = 0`（变量名不分大小写，复合赋值同理）
+        # 就会把失败改判成通过。
+        assigned = [
+            line
+            for line in windows.splitlines()
+            if re.search(rf"(?i)(?:^|[;{{(])\s*{name}\s*[-+*/%]?=", _unquoted(line))
+        ]
+        assert assigned == [run], assigned
+    # 这一步只能经 throw 失败，或跑完正式 smoke 后自然结束：除函数自己的 `return $code` 外再出现
+    # exit/return（如负控检查之后插一句 exit 0）都会跳过正式 smoke 判绿。关键字同样不分大小写。
+    leaves = [
+        line.strip()
+        for line in windows.splitlines()
+        if re.search(r"(?i)(?<![\w$.-])(?:exit|return)\b", _unquoted(line))
+    ]
+    assert leaves == ["return $code"], leaves
+
+    # macOS：变量只作负控那一条命令的前缀，不得 export 给正式 smoke。
+    macos = _run_block(_step_containing("--smoke-test", job="macos-arm64"))
+    runs = [line.strip() for line in macos.splitlines() if "--smoke-test" in line]
+    assert runs[0].startswith("PHOTO_GUARD_RESOURCE_DIR="), runs[0]
+    assert [line.strip() for line in macos.splitlines() if "PHOTO_GUARD_RESOURCE_DIR" in line] == [runs[0]]
+    # 两条命令都必须就是它们应有的形状：负控只带 --smoke-test 接住 `|| neg=$?`，正式 smoke
+    # 带两个 --with- 接住 `|| rc=$?`。前面加 `true ||`、`echo`、`|| true ||` 或把命令换掉都红。
+    assert re.fullmatch(
+        r'PHOTO_GUARD_RESOURCE_DIR="\$\w+"\s+"\$BIN"\s+--smoke-test\s+\|\|\s+neg=\$\?', runs[0]
+    ), runs[0]
+    assert re.fullmatch(r'"\$BIN"\s+--smoke-test\s+--with-photoguard\s+--with-gui\s+\|\|\s+rc=\$\?', runs[-1]), runs[-1]
+    assert re.search(r'\[ "\$neg" -ne 2 \]', macos)
+    assert 'echo "negative-control exit code: $neg"' in macos
+    # 负控结果只在两处赋值：先置 0，再由负控那条命令的 `|| neg=$?` 接住；之后再赋值（如 neg=2）
+    # 或干脆 unset 掉换别的变量判定（后者已由上面两条命令的形状锁住）都会放行。
+    assert _bash_assignments(macos.splitlines(), "neg") == ["neg=0", runs[0].strip()]
+    # neg 只出现在这五条上（引号内的引用也算）：两处赋值、那句 echo、判定与 ::error::。
+    mentions = [
+        line.strip() for line in macos.splitlines() if re.search(r"(?<!\w)neg\b", line)
+    ]
+    assert mentions == [
+        "neg=0",
+        runs[0].strip(),
+        'echo "negative-control exit code: $neg"',
+        'if [ "$neg" -ne 2 ]; then',
+        'echo "::error::negative control must exit 2 (bundle model missing), got $neg"',
+    ], mentions
+    # 负控失败的分支必须以 exit 1 收尾：删掉 exit、改成 exit 0（正式 smoke 被跳过、整步判绿）或只
+    # 降级成 ::warning:: 都会放行。
+    branch = _bash_if_block(macos, 'if [ "$neg" -ne 2 ]; then')
+    assert _bash_exits(branch) == ["exit 1"] and branch[-1] == "exit 1", branch
+
+
+# P76：macOS 旧写法 `if ! "$BIN" …; then … exit 1` 把所有非零退码压成 1；须打印并以原码退出。
+def test_macos_smoke_keeps_the_original_exit_code() -> None:
+    step = _step_containing("--smoke-test", job="macos-arm64")
+    code = _run_block(step)
+    # 整段 step（含注释）都不得再出现旧写法，免得有人照注释抄回去。
+    assert 'if ! "$BIN"' not in step
+    real = [line for line in code.splitlines() if "--with-photoguard" in line]
+    assert len(real) == 1, real
+    assert real[0].rstrip().endswith("|| rc=$?"), real[0]
+    # 经管道（如 tee）时 $? 是管道末段的状态，不再是 smoke 自己的码。
+    # 这一步没写 shell:，GitHub 以 `bash -e {0}` 运行（不开 pipefail；显式 `shell: bash` 才是 -eo pipefail）。
+    assert "|" not in real[0].split("||")[0], real[0]
+    initial = re.search(r"(?m)^[ \t]*rc=0[ \t]*$", code)
+    assert initial is not None and initial.start() < code.index(real[0])
+    assert 'echo "smoke exit code: $rc"' in code
+    assert re.search(r'(?m)^[ \t]*if \[ "\$rc" -ne 0 \]; then$', code)
+    assert 'exit "$rc"' in code
+    # 布局转储保留，且在以原码退出之前。
+    assert code.index('ls -la "$APP/Contents"') < code.index('exit "$rc"')
+    # smoke 码只在两处赋值：先置 0，再由正式 smoke 的 `|| rc=$?` 接住；之后再写 rc=0 或
+    # `(( rc = 0 ))` 会把失败改判成通过。
+    assert _bash_assignments(code.splitlines(), "rc") == ["rc=0", real[0].strip()]
+    # rc 只出现在这五处（引号内的引用也算）：两处赋值、那句 echo、判定与退出。`unset rc`、
+    # `printf -v rc` 之类出现即红。
+    mentions = [
+        line.strip() for line in code.splitlines() if re.search(r"(?<!\w)rc\b", line)
+    ]
+    assert mentions == [
+        "rc=0",
+        real[0].strip(),
+        'echo "smoke exit code: $rc"',
+        'if [ "$rc" -ne 0 ]; then',
+        'echo "::error::smoke test failed (exit $rc) — dumping layout for diagnosis"',
+        'exit "$rc"',
+    ], mentions
+    # 失败分支先转储、最后以原码退出，且这是分支里唯一的退出：在转储前插一句 exit 1 就回到 P76。
+    branch = _bash_if_block(code, 'if [ "$rc" -ne 0 ]; then')
+    assert _bash_exits(branch) == ['exit "$rc"'] and branch[-1] == 'exit "$rc"', branch
+    # 整步只有这两处退出；别处再插 exit（如负控检查之后 exit 0）会跳过正式 smoke 判绿。
+    assert _bash_exits(code.splitlines()) == ["exit 1", 'exit "$rc"']
+
+
+# P76：两条构建腿实测 macOS 3h02m、Windows 约 2h50m，原先都没有超时，一次挂起会烧满托管
+# runner 的 6 小时上限；Start-Process -Wait 自己也没有超时，所以 smoke 步另设 30 分钟。
+def test_build_legs_and_their_smoke_steps_have_timeouts() -> None:
+    for job in ("windows", "macos-arm64"):
+        # job 级键缩进 4 格；step 级键缩进 8 格，不会被这条正则误收。
+        values = re.findall(r"(?m)^    timeout-minutes: (\d+)[ \t]*$", _job(job))
+        assert len(values) == 1, f"{job}: expected one job-level timeout-minutes, got {values}"
+        assert 0 < int(values[0]) < 360, f"{job}: {values[0]} must stay below the 6-hour limit"
+        step = _step_containing("--smoke-test", job=job)
+        assert re.findall(r"(?m)^        timeout-minutes: (\d+)[ \t]*$", step) == ["30"], job
